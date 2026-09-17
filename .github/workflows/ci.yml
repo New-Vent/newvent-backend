@@ -1,0 +1,62 @@
+# .github/workflows/ci.yml
+#
+# newvent-backend — PR·푸시에서 빌드와 테스트를 돌립니다.
+#
+# ★ LLM 을 부르지 않습니다.
+#   application.yaml 기본값 provider: mock 
+#   이 워크플로에 SPRING_PROFILES_ACTIVE 를 넣지 마세요.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [ develop, main ]
+  push:
+    branches: [ develop, main ]
+
+permissions:
+  contents: read
+
+# 같은 브랜치에 연속 푸시하면 이전 실행 취소
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'          # build.gradle 의 toolchain 과 같아야 합니다
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # 윈도우에서 커밋하면 gradlew 에 실행 권한이 없습니다.
+      # 근본 해결:  git update-index --chmod=+x gradlew
+      - name: gradlew 실행 권한
+        run: chmod +x gradlew
+
+      # build = compileJava + compileTestJava + test + check + bootJar
+      # Spotless 를 적용했다면 spotlessCheck 가 check 에 자동으로 붙어
+      # 여기서 같이 돕니다. 따로 적지 않아도 됩니다.
+      - name: Build
+        run: ./gradlew build
+
+      - name: 테스트 리포트 저장
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            build/reports/tests/test
+            build/test-results/test
+            build/reports/spotless
+          retention-days: 7
