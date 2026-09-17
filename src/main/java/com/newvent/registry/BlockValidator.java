@@ -58,16 +58,7 @@ public class BlockValidator {
                 }
                 continue;
             }
-            if (b.must() != null && el.selectFirst(b.must()) == null) {
-                f.add(new Failure("empty_" + b.key(),
-                        b.key() + " 안에 " + b.shape() + " — 맨 텍스트만 두면 안 됩니다."));
-            } else if (b.minItems() > 0) {
-                int n = el.select("li").size();
-                if (n < b.minItems()) {
-                    f.add(new Failure("few_" + b.key(),
-                            b.key() + " 항목이 " + n + "개입니다. " + b.minItems() + "개 이상 필요합니다."));
-                }
-            }
+            checkShape(b, el, f);
         }
 
         // 서버 소유 블록을 모델이 만들었나
@@ -100,16 +91,42 @@ public class BlockValidator {
                         b.key() + " 영역은 만들지 마세요. 요청한 영역만 출력하세요."));
             }
         }
-        if (target.must() != null && el.selectFirst(target.must()) == null) {
-            f.add(new Failure("empty_" + target.key(),
-                    target.key() + " 안에 " + target.shape()));
-        }
+        checkShape(target, el, f);
         return f;
+    }
+
+    /**
+     * 블록 하나가 제 모양을 갖췄나.
+     *
+     * ★ 생성·수정이 같은 규칙을 쓰게 하는 지점입니다.
+     *   두 곳에 따로 적으면 어긋납니다 — 실제로 minItems 가 수정 쪽에만 빠져 있었고,
+     *   그래서 "생성으로는 못 만드는 상태를 수정으로는 만들 수 있는" 구멍이 있었습니다.
+     */
+    private static void checkShape(Block b, Element el, List<Failure> f) {
+        if (b.must() == null) return;
+
+        if (el.selectFirst(b.must()) == null) {
+            f.add(new Failure("empty_" + b.key(),
+                    b.key() + " 안에 " + b.shape() + " — 맨 텍스트만 두면 안 됩니다."));
+            return;
+        }
+        if (b.minItems() > 0) {
+            // ★ li 를 하드코딩하지 않는다. must() 가 곧 세는 기준이다.
+            int n = el.select(b.must()).size();
+            if (n < b.minItems()) {
+                f.add(new Failure("few_" + b.key(),
+                        b.key() + " 항목이 " + n + "개입니다. " + b.minItems() + "개 이상 필요합니다."));
+            }
+        }
     }
 
     /**
      * 정화 — 명세 24행. <script> 제거, style 속성만 허용.
      * 모델이 JS 를 잘 쓰더라도(qwen2.5 30/30) 검토 안 된 코드는 실행시키지 않습니다.
+     *
+     * ★ 이 함수는 "모델이 준 조각" 에만 겁니다.
+     *   서버가 조립한 최종 문서나 템플릿에 걸면 템플릿의 button·script 가 다 죽습니다.
+     *   순서:  sanitize(모델 출력) → merge  (반대로 하지 마세요)
      */
     public static String sanitize(String html) {
         Safelist s = Safelist.relaxed()

@@ -114,4 +114,16 @@ class BlockRegistryTest {
                     b.key() + " 가 라우터 프롬프트에 없습니다. 그 영역은 분류가 안 됩니다.");
         }
     }
+
+    @Test
+    @DisplayName("수정 결과도 minItems 를 지켜야 한다")
+    void 수정도_항목수를_본다() {
+        String 하나만 = "<section data-block=\"benefits\"><ul><li>하나뿐</li></ul></section>";
+
+        List<BlockValidator.Failure> fails =
+                BlockValidator.validateEdited(Block.BENEFITS, 하나만);
+
+        assertTrue(fails.stream().anyMatch(f -> f.code().equals("few_benefits")),
+                "수정에서 항목 수를 안 봤습니다: " + fails);
+    }
 }
