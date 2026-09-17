@@ -1,3 +1,32 @@
 spring:
   application:
     name: newvent-backend
+
+server:
+  port: 8080
+
+# LLM — 기본값은 목(mock)
+
+llm:
+  provider: mock
+  daily-limit: 200      # 하루 최대 호출 수 — 무한루프 방어
+  max-retry: 3          # 재시도 상한
+  timeout-seconds: 120
+
+# DB — ERD 확정 전까지 키지 않는다
+
+# spring:
+#   datasource:
+#     url: jdbc:postgresql://localhost:5432/newvent
+#     username: newvent
+#     password: ${DB_PASSWORD}
+#   jpa:
+#     hibernate:
+#       ddl-auto: validate      # Flyway 가 스키마를 만든다
+#     open-in-view: false
+#   flyway:
+#     enabled: true
+
+logging:
+  level:
+    com.newvent: DEBUG

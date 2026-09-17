@@ -2,6 +2,7 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.1.1'
 	id 'io.spring.dependency-management' version '1.1.7'
+	id 'com.diffplug.spotless' version '8.10.2'
 }
 
 group = 'com.newvent'
@@ -29,13 +30,23 @@ dependencies {
 
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+
+	// 블록 검증·정화·병합 (BlockValidator)
+	implementation 'org.jsoup:jsoup:1.18.1'
+	// 라우터 응답 JSON 파싱 (OllamaClient)
+	implementation 'com.fasterxml.jackson.core:jackson-databind'
+
 	compileOnly 'org.projectlombok:lombok'
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 
 	annotationProcessor 'org.projectlombok:lombok'
-	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-flyway-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
+
+	// TODO: DB 작업 시작할 때 위 본체(JPA·Flyway·Security)와 같이 살립니다.
+	//       본체가 꺼져 있는데 이것만 켜면 contextLoads() 가 DataSource 를 찾다 죽습니다.
+	// testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+	// testImplementation 'org.springframework.boot:spring-boot-starter-flyway-test'
+	// testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
+
 	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	testCompileOnly 'org.projectlombok:lombok'
@@ -43,6 +54,34 @@ dependencies {
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
+// ── 포맷 통일 ─────────────────────────────────────────────────
+//   포맷터(googleJavaFormat 등)는 일부러 안 넣었습니다.
+//   한글 주석이 100자 제한에 이상하게 잘리고, 도입하는 날 전체가 재포맷돼 diff 가 폭발합니다.
+//   아래 넷만으로 실제 충돌 원인(import 순서·공백)은 다 잡힙니다.
+//
+//   로컬 자동 수정:  ./gradlew spotlessApply
+spotless {
+	java {
+		removeUnusedImports()
+		importOrder('java', 'javax', 'jakarta', 'org', 'com', '')
+		trimTrailingWhitespace()
+		endWithNewline()
+	}
+}
+
+// ── 테스트 ────────────────────────────────────────────────────//
+//   ./gradlew test                     CI 와 동일 (스모크는 skip)
+//   ./gradlew test --rerun             한 번 통과하면 UP-TO-DATE 로 건너뛰므로 강제 실행
+//   OLLAMA=1 ./gradlew test --rerun    실제 Ollama 로 스모크까지
 tasks.named('test') {
 	useJUnitPlatform()
+
+	jvmArgs '-Dsun.stdout.encoding=UTF-8', '-Dsun.stderr.encoding=UTF-8'
+
+
+	testLogging {
+		events 'passed', 'skipped', 'failed'
+		showStandardStreams = true
+		exceptionFormat = 'full'
+	}
 }
