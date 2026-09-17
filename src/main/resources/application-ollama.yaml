@@ -1,0 +1,11 @@
+# 로컬 Ollama 로 실제 모델을 돌릴 때.
+#
+#   SPRING_PROFILES_ACTIVE=ollama ./gradlew bootRun
+#
+
+
+llm:
+  provider: ollama
+  base-url: http://localhost:11434
+  model: qwen2.5:7b     # 추후 수정
+  timeout-seconds: 180  
