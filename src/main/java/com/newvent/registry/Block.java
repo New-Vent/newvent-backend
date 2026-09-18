@@ -13,14 +13,13 @@ import java.util.stream.Collectors;
  */
 public enum Block {
 
-    HERO("hero", true, Source.LLM,
-            "이벤트 제목과 한 줄 소개",
+    // ★ PERIOD 는 블록이 아니라 슬롯이다 (Slot.PERIOD).
+    //   템플릿 5종 전부 기간이 hero 안에 들어가 있어서 독립 섹션으로 뺄 수 없다.
+    //   기간 값은 서버가 [data-slot="period"] 를 찾아 채운다.
+    HERO("hero", true, Source.MIXED,
+            "이벤트 제목과 한 줄 소개. 기간은 서버가 넣는다",
             "제목은 <h1>, 소개는 <p> 로 감싼다",
             "h1", 0),
-
-    PERIOD("period", true, Source.SERVER,
-            "이벤트 기간 — 폼 값을 서버가 삽입",
-            null, null, 0),
 
     BENEFITS("benefits", true, Source.MIXED,
             "혜택 — 항목은 폼 값, 문장만 다듬는다",
@@ -139,7 +138,7 @@ public enum Block {
                 case "EDIT", "ADD" ->
                         desc + " 영역은 시스템이 관리합니다. 채팅으로 바꿀 수 없습니다.";
                 case "DELETE" ->
-                        "유의사항·기간은 반드시 표시해야 해서 지울 수 없습니다.";
+                        "유의사항은 반드시 표시해야 해서 지울 수 없습니다.";
                 default -> null;
             };
         }

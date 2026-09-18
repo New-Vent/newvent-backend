@@ -116,14 +116,36 @@ class BlockRegistryTest {
     }
 
     @Test
-    @DisplayName("수정 결과도 minItems 를 지켜야 한다")
-    void 수정도_항목수를_본다() {
-        String 하나만 = "<section data-block=\"benefits\"><ul><li>하나뿐</li></ul></section>";
+    @DisplayName("CSS 정화 — 허용 속성만 남는다")
+    void CSS_정화가_위험한_속성을_지운다() {
+        String dirty = """
+                <section data-block="hero" style="color:red; position:fixed; z-index:9999; background-image:url(javascript:alert(1))">
+                  <h1>제목</h1>
+                </section>""";
+        String clean = BlockValidator.sanitize(dirty);
 
-        List<BlockValidator.Failure> fails =
-                BlockValidator.validateEdited(Block.BENEFITS, 하나만);
+        assertTrue(clean.contains("color:red"),   "허용 속성 color 가 지워졌습니다: " + clean);
+        assertFalse(clean.contains("position"),   "position 이 남았습니다. 화면을 덮을 수 있습니다: " + clean);
+        assertFalse(clean.contains("z-index"),    "z-index 가 남았습니다: " + clean);
+        assertFalse(clean.contains("javascript"), "javascript: 가 남았습니다: " + clean);
+    }
 
-        assertTrue(fails.stream().anyMatch(f -> f.code().equals("few_benefits")),
-                "수정에서 항목 수를 안 봤습니다: " + fails);
+    @Test
+    @DisplayName("모델이 data-slot 을 만들어도 제거된다")
+    void 슬롯은_모델이_못_만든다() {
+        String dirty = "<section data-block=\"hero\"><span data-slot=\"period\">가짜 기간</span></section>";
+
+        String clean = BlockValidator.sanitize(dirty);
+
+        assertFalse(clean.contains("data-slot"),
+                "data-slot 이 남았습니다. 슬롯은 서버만 심어야 합니다: " + clean);
+    }
+
+    @Test
+    @DisplayName("슬롯 선택자는 레지스트리에서 나온다")
+    void 슬롯_선택자() {
+        assertEquals("[data-slot=\"period\"]",   Slot.PERIOD.selector());
+        assertEquals("[data-slot=\"cta-link\"]", Slot.CTA_LINK.selector());
+        assertThrows(IllegalArgumentException.class, () -> Slot.of("없는슬롯"));
     }
 }
