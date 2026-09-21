@@ -1,6 +1,7 @@
 package com.newvent.registry;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -76,8 +77,17 @@ public class BlockValidator {
         return f;
     }
 
-    /** 수정 결과 검증 — 그 블록만 왔는가 */
-    public static List<Failure> validateEdited(Block target, String html) {
+    /**
+     * 수정 결과 검증 — 그 블록만 왔는가, 그리고 건드리면 안 되는 게 그대로인가.
+     *
+     * ★ before 가 필요한 이유
+     *   수정은 "원본 대비" 로만 판정할 수 있는 항목이 있습니다. 슬롯이 그렇습니다.
+     *   원본에 있던 [data-slot] 이 없어졌는지는 원본을 봐야 압니다.
+     *
+     * @param before 수정 전 그 블록의 HTML (서버가 갖고 있는 것)
+     * @param html   모델이 돌려준 것 (sanitizeEdited 를 먼저 거친 것)
+     */
+    public static List<Failure> validateEdited(Block target, String before, String html) {
         List<Failure> f = new ArrayList<>();
         Document doc = Jsoup.parseBodyFragment(html == null ? "" : html);
 
@@ -93,6 +103,7 @@ public class BlockValidator {
             }
         }
         checkShape(target, el, f);
+        checkSlots(before, html, f);
         return f;
     }
 
@@ -121,6 +132,46 @@ public class BlockValidator {
         }
     }
 
+    // ── 슬롯 보존 ──────────────────────────────────────────────────
+
+    /** 이 HTML 안에 있는 data-slot 키들 */
+    private static Set<String> slotsOf(String html) {
+        Document doc = Jsoup.parseBodyFragment(html == null ? "" : html);
+        Set<String> keys = new LinkedHashSet<>();
+        for (Element el : doc.body().select("[data-slot]")) {
+            String k = el.attr("data-slot").trim();
+            if (!k.isEmpty()) keys.add(k);
+        }
+        return keys;
+    }
+
+    /**
+     * 슬롯 집합이 원본과 같은가.
+     *
+     * ★ 수정에서 슬롯이 사라지면 그 이벤트는 영구히 그 값을 못 채웁니다.
+     *   merge 가 블록을 통째로 갈아끼우기 때문에, 한 번 없어지면 복구할 자리가 없습니다.
+     *   지우는 것도 새로 만드는 것도 둘 다 실패입니다.
+     */
+    private static void checkSlots(String before, String after, List<Failure> f) {
+        Set<String> was = slotsOf(before);
+        Set<String> now = slotsOf(after);
+
+        for (String key : was) {
+            if (!now.contains(key)) {
+                f.add(new Failure("slot_lost_" + key,
+                        "data-slot=\"" + key + "\" 가 붙은 태그를 지웠습니다. "
+                                + "그 자리는 서버가 채우는 곳입니다. 태그와 속성을 원래대로 두세요."));
+            }
+        }
+        for (String key : now) {
+            if (!was.contains(key)) {
+                f.add(new Failure("slot_invented_" + key,
+                        "data-slot=\"" + key + "\" 를 새로 만들었습니다. "
+                                + "data-slot 은 서버만 심습니다. 원래 있던 것만 그대로 두세요."));
+            }
+        }
+    }
+
     // ── 정화 ──────────────────────────────────────────────────────
 
     /**
@@ -139,20 +190,39 @@ public class BlockValidator {
             "border", "border-color", "border-width", "border-style", "border-radius");
 
     /**
-     * 정화 — 명세 REQ-LLM-45. <script> 제거 + style 값 검사.
-     * 모델이 JS 를 잘 쓰더라도(qwen2.5 30/30) 검토 안 된 코드는 실행시키지 않는다.
+     * 생성 결과 정화 — data-slot 을 **지운다**.
      *
+     * 빈 문서에서 만드는 것이라 슬롯이 있을 이유가 없다.
+     * 모델이 data-slot 을 만들어내면 서버의 쓰기 지점을 모델이 만드는 셈이 된다.
+     */
+    public static String sanitizeGenerated(String html) {
+        return clean(html, false);
+    }
+
+    /**
+     * 수정 결과 정화 — data-slot 을 **남긴다**.
+     *
+     * ★ 생성과 반대다. 원본에 이미 있던 슬롯을 보존해야 하기 때문이다.
+     *   대신 모델이 지어낸 슬롯은 validateEdited 의 checkSlots 가 잡는다.
+     *   "지우기" 와 "대조하기" 중 하나만 있으면 안 된다 — 둘이 한 쌍이다.
+     */
+    public static String sanitizeEdited(String html) {
+        return clean(html, true);
+    }
+
+    /**
      * ★ 이 함수는 "모델이 준 조각" 에만 건다.
      *   서버가 조립한 최종 문서나 템플릿에 걸면 템플릿의 button·script 가 다 죽는다.
      *   순서:  sanitize(모델 출력) → merge   (반대로 하지 말 것)
-     *
-     * ★ data-slot 은 일부러 허용하지 않는다.
-     *   슬롯은 서버가 템플릿에 심는 것이고, 모델이 만들어낼 수 있으면 안 된다.
      */
-    public static String sanitize(String html) {
+    private static String clean(String html, boolean keepSlots) {
         Safelist s = Safelist.relaxed()
                 .addAttributes(":all", "style", "data-block", "class")
-                .addTags("section");
+                .addTags("section")
+        		.addProtocols("a", "href", "#");
+        if (keepSlots) {
+            s = s.addAttributes(":all", "data-slot");
+        }
         String cleaned = Jsoup.clean(html, "", s, new Document.OutputSettings().prettyPrint(false));
 
         // ★ Jsoup 은 style 속성이 "있는지"만 보고 "값"은 보지 않는다. 값은 여기서 거른다.
@@ -205,5 +275,11 @@ public class BlockValidator {
         else old.replaceWith(incoming);
 
         return cur.body().html();
+    }
+
+    /** 문서에서 블록 하나만 떼어낸다 — 수정 요청과 validateEdited 의 before 로 쓴다 */
+    public static String blockOf(String doc, Block target) {
+        Element el = Jsoup.parseBodyFragment(doc).body().selectFirst(target.selector());
+        return el == null ? "" : el.outerHtml();
     }
 }
