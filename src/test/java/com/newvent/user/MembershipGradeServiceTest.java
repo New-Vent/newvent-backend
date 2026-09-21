@@ -34,7 +34,7 @@ class MembershipGradeServiceTest {
         assertEquals(MembershipGrade.NORMAL, atSignUp);
 
         // 1년 뒤 로그인: 12개월 경과 → 1~5년(2점) + 스탠다드(2점) = 4점 → 우수
-        // 실제 서비스에서는 이 값을 users.membership_grade에 다시 저장한다. 
+        // 실제 서비스에서는 이 값을 users.membership_grade에 다시 저장한다.
         // 로그인이 없었다면 이 재계산 자체가 안 일어나므로 저장된 값은 가입 시점 그대로 남는다 그게 MembershipGradeService의 javadoc에 적어둔 "허용한 지연"이다.
         MembershipGrade oneYearLater = MembershipGradeService.onLogin(plan, joinedAt, LocalDate.of(2026, 9, 1));
         assertEquals(MembershipGrade.EXCELLENT, oneYearLater);

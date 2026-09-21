@@ -5,9 +5,9 @@ import java.time.temporal.ChronoUnit;
 
 /**
  * 멤버십 등급 산정 로직.
- *   DB의 membership_grade 컬럼은 이 계산 결과를 캐시해둔 값일 뿐이다. 조회 API는 항상 이 계산기를
- *   다시 돌려서 응답을 만들고, 저장된 컬럼 값을 그대로 믿지 않는다.
- *   등급이 바뀌어도 이미 발급된 로그인 토큰에는 즉시 반영되지 않는다 - Access Token이 30분~1시간의 지연은 허용하기로 함.
+ *   순수 계산 함수라 스스로는 "언제 호출돼야 하는지" 모른다 — 그건 MembershipGradeService가 정한다.
+ *   이 클래스를 조회(GET)할 때마다 다시 호출하지 않는다. 대신 회원가입/요금제변경/로그인, 이 3곳 에서만 호출해 결과를 users.membership_grade에 저장하고, 그 외 조회는 저장된 값을 신뢰한다
+ *   (MembershipGradeService 참고). 등급이 바뀌어도 이미 발급된 로그인 토큰에는 즉시 반영되지 않는다 - Access Token이 30분~1시간으로 짧으므로 그 정도 지연은 허용하기로 함.
  */
 public final class MembershipGradeCalculator {
 
