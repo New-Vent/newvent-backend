@@ -25,7 +25,7 @@ public class LlmCallLog {
 
 	// 호출 실패 분류. DB CHECK 4 값과 1:1 대응. 값 추가 시 마이그레이션도 함께
 	public enum FailureType{
-		VALIDATION_FAIL, TIMEOUT, LLM_ERROR, STOPPED, TRUCATED
+		VALIDATION_FAIL, TIMEOUT, LLM_ERROR, STOPPED, TRUNCATED
 	}
 	
 	@Id
