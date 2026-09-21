@@ -6,7 +6,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.api.condition.EnabledIf;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,41 +14,53 @@ import com.newvent.infra.llm.LlmClient;
 import com.newvent.infra.llm.OllamaClient;
 
 /**
- * 실제 Ollama 로 한 바퀴 돌려본다. **CI 에서는 돌지 않는다.**
+ * 실제 모델로 한 바퀴 돌려본다. **CI 에서는 돌지 않는다.**
  *
- *   OLLAMA=1 ./gradlew test --rerun          실제 모델로
- *   ./gradlew test                            CI 와 동일 — 여기는 skip
- *   OLLAMA=1 OLLAMA_MODEL=exaone3.5:7.8b ./gradlew test --rerun
+ *   LLM_SMOKE=1 ./gradlew test --rerun                          기본 (ollama)
+ *   LLM_SMOKE=1 LLM_MODEL=exaone3.5:7.8b ./gradlew test --rerun
+ *   LLM_SMOKE=1 LLM_PROVIDER=bedrock ./gradlew test --rerun     (BedrockClient 생기면)
+ *   OLLAMA=1 ./gradlew test --rerun                             예전 명령도 그대로 됨
+ *
+ * ★ provider 중립이다
+ *   구현체를 client() 한 곳에서만 고른다. Bedrock 으로 바꿀 때 이 파일에서
+ *   고칠 곳은 switch 한 줄뿐이고, 테스트 본문은 그대로 유효하다.
+ *   본문이 주장하는 건 "결과가 검증을 통과한다" 이지 "Ollama 가 어떻다" 가 아니기 때문이다.
  *
  * ★ 왜 CI 에 넣지 않는가
  *   깃허브 러너에는 GPU 도 Ollama 도 없다. 그리고 있다 해도 넣으면 안 된다 —
  *   벤치마크에서 회차 간 편차가 16.7pp 였다. 이유 없이 빨간불이 나는 테스트는
  *   사람들이 무시하기 시작하고, 그때부터 진짜 실패도 같이 묻힌다.
  *
- * ★ 무엇을 주장하는가
- *   "프롬프트 문자열이 이거다" 가 아니라 "결과가 검증을 통과한다" 이다.
- *   그래서 PromptBuilder 가 바뀌어도 이 테스트는 그대로 유효하다.
- *   깨진다면 그건 프롬프트를 바꿨더니 모델이 못 따르게 됐다는 뜻이고,
- *   그게 정확히 알고 싶은 것이다.
- *
  * ★ 실제 파이프라인과 같은 순서로 돈다
  *   extract → sanitize → validate. 생성은 sanitizeGenerated, 수정은 sanitizeEdited 다.
  *   여기서 순서를 다르게 하면 "스모크는 통과하는데 서비스는 깨지는" 상태가 된다.
+ *   실제로 그래서 href="#" 유실을 6주 동안 못 봤다.
  */
-@EnabledIfEnvironmentVariable(named = "OLLAMA", matches = "1")
-class OllamaSmokeTest {
+@EnabledIf("스모크_켜짐")
+class LlmSmokeTest {
 
-    private static final String BASE  = env("OLLAMA_URL",   "http://localhost:11434");
-    private static final String MODEL = env("OLLAMA_MODEL", "qwen2.5:7b");
+    static boolean 스모크_켜짐() {
+        return "1".equals(System.getenv("LLM_SMOKE")) || "1".equals(System.getenv("OLLAMA"));
+    }
 
     private static String env(String k, String fallback) {
         String v = System.getenv(k);
         return (v == null || v.isBlank()) ? fallback : v;
     }
 
-    /** ★ 이 생성자가 OllamaClient 가 지켜야 할 계약입니다 */
+    /** ★ 구현체를 고르는 유일한 지점. Bedrock 은 여기 한 줄만 추가하면 된다. */
     private LlmClient client() {
-        return new OllamaClient(BASE, MODEL, 180);
+        String provider = env("LLM_PROVIDER", "ollama");
+        return switch (provider) {
+            case "ollama" -> new OllamaClient(
+                    env("OLLAMA_URL", "http://localhost:11434"),
+                    env("LLM_MODEL", env("OLLAMA_MODEL", "qwen2.5:7b")),
+                    180);
+            // case "bedrock" -> new BedrockClient(env("AWS_REGION", "ap-northeast-2"),
+            //                                     env("LLM_MODEL", "..."), 180);
+            default -> throw new IllegalStateException(
+                    "모르는 provider: " + provider + " (ollama | bedrock)");
+        };
     }
 
     private static void 기록(String 무엇, LlmClient.Response r) {
@@ -72,8 +84,10 @@ class OllamaSmokeTest {
         기록("생성", r);
 
         assertFalse(r.truncated(),
-                "출력이 num_predict 에 걸려 잘렸습니다. done_reason 매핑이나 상한을 보세요.");
+                "출력이 상한에 걸려 잘렸습니다. Mode.HTML 의 1536 을 보거나, 프롬프트가 길어졌는지 보세요.");
         assertTrue(r.outputTokens() > 0, "출력 토큰이 0 입니다. 응답 파싱이 잘못됐습니다.");
+        // ★ inputTokens 는 단언하지 않는다 — Ollama 는 프롬프트가 캐시되면 0 으로 온다.
+        //   Bedrock 은 항상 오므로, 전환 후에는 여기에 > 0 단언을 넣을 수 있다.
 
         String html = BlockValidator.sanitizeGenerated(BlockValidator.extract(r.content()));
         assertFalse(html.isBlank(), "HTML 을 못 뽑았습니다. 원문:\n" + r.content());
@@ -109,7 +123,8 @@ class OllamaSmokeTest {
         String 병합 = BlockValidator.merge(현재, Block.CTA, out);
         assertTrue(병합.contains("여름 데이터 대방출"), "건드리면 안 되는 hero 가 사라졌습니다.");
         assertTrue(병합.contains("데이터 3GB"),        "건드리면 안 되는 benefits 가 사라졌습니다.");
-        assertTrue(병합.contains("href=\"#\""),        "href 가 바뀌었습니다. 실제 주소를 만들어 넣었습니다.");
+        assertTrue(병합.contains("href=\"#\""),
+                "href 가 사라졌습니다. 모델이 바꿨거나, Safelist 의 \"#\" 프로토콜이 빠졌습니다.");
     }
 
     @Test
@@ -150,7 +165,9 @@ class OllamaSmokeTest {
 
         String raw = r.content().trim();
         int s = raw.indexOf('{'), e = raw.lastIndexOf('}');
-        assertTrue(s >= 0 && e > s, "JSON 을 못 찾았습니다. 원문:\n" + raw);
+        assertTrue(s >= 0 && e > s,
+                "JSON 을 못 찾았습니다. Ollama 는 format:\"json\" 으로 강제하지만 "
+                + "Bedrock 에는 그게 없습니다 — toolConfig 로 강제할지 정해야 합니다.\n원문:\n" + raw);
 
         JsonNode j = new ObjectMapper().readTree(raw.substring(s, e + 1));
 
@@ -164,5 +181,50 @@ class OllamaSmokeTest {
             assertDoesNotThrow(() -> Block.of(target),
                     "레지스트리에 없는 영역을 골랐습니다: " + target);
         }
+    }
+
+    @Test
+    @DisplayName("⑤ ★ 일부러 잘리게 하면 truncated 가 true 로 온다")
+    void 잘림이_감지된다() {
+        // ★ 왜 이 테스트가 필요한가
+        //   나머지 테스트는 전부 assertFalse(truncated) 다. "잘리지 않았다" 만 주장하고,
+        //   "잘렸을 때 제대로 true 가 되는가" 는 아무도 확인하지 않는다.
+        //   이 매핑이 틀리면 잘린 HTML 이 그대로 저장된다 — Jsoup 이 끊긴 태그를
+        //   자동으로 닫아버려서 검증도 통과한다. 조용히 깨지는 종류다.
+        //
+        //     Ollama   done_reason == "length"
+        //     Bedrock  stopReason  == "max_tokens"
+        //
+        // ★ 왜 "지어내라" 가 아니라 "받아쓰라" 인가
+        //   처음엔 "혜택 40개를 만들어라" 로 시켰는데 463 토큰만 나오고 멈췄다.
+        //   모델은 분량 요구를 따르지 않는다 — 적당히 만들고 끝낸다.
+        //   받아쓰기는 다르다. 줄 게 있으면 그만큼 낸다. 그래서 길이를 통제할 수 있다.
+        //
+        // ★ 왜 ROUTER 모드인가
+        //   상한이 256 이라 1536 보다 넘기기 쉽다. 잘림 판정은 클라이언트 한 곳에서
+        //   하므로(done_reason), 어느 모드로 재든 같은 코드를 검증한다.
+        //   프로덕션 코드는 건드리지 않는다.
+        StringBuilder 받아쓸것 = new StringBuilder();
+        for (int i = 1; i <= 40; i++) {
+            받아쓸것.append(i).append(". 여름 데이터 대방출 이벤트의 ")
+                    .append(i).append("번째 안내 문구입니다.\n");
+        }
+
+        LlmClient.Response r = client().chat(LlmClient.Request.router(
+                "너는 받아쓰기를 하는 도우미다. 요약하거나 생략하지 마라.",
+                "다음 목록을 한 줄도 빠뜨리지 말고 그대로 JSON 배열로 옮겨라.\n\n" + 받아쓸것));
+        기록("잘림유도", r);
+
+        int 상한 = LlmClient.Mode.ROUTER.maxTokens;
+
+        assertTrue(r.outputTokens() >= 상한 - 16,
+                "출력이 상한에 닿지 않아 잘림을 확인할 수 없습니다. 출력 " + r.outputTokens()
+                + " / 상한 " + 상한 + ". 받아쓸 항목 수를 늘리세요.");
+
+        assertTrue(r.truncated(),
+                "출력 " + r.outputTokens() + " 토큰으로 상한 " + 상한 + " 에 닿았는데 "
+                + "truncated 가 false 입니다. done_reason / stopReason 매핑이 틀렸습니다.\n"
+                + "이대로면 잘린 HTML 이 검증을 통과해서 그대로 저장됩니다 — "
+                + "Jsoup 이 끊긴 태그를 자동으로 닫아주기 때문입니다.");
     }
 }
