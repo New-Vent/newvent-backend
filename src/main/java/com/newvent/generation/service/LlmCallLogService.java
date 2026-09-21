@@ -4,74 +4,111 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.common.error.LlmDailyLimitExceededException;
 import com.newvent.generation.domain.LlmCallLog;
-import com.newvent.generation.domain.LlmCallLog.FailureType;
 import com.newvent.generation.repository.LlmCallLogRepository;
-
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import com.newvent.infra.llm.LlmProps;
+import com.newvent.registry.BlockValidator.Failure;
 
 /**
- * 로그 기록·집계·상한 검사의 진입점. GenerationService 가 호출하는 쪽
- * 호출 순서 (GenerationService 담당자 확인 필요!)
- *  1. checkDailyLimit() 1회 -> 2. LLM 호출·재시도 -> 3. 시도(retry)마다 record() 1회
- *  record()는 DB 실패해도 예외를 삼켜서 본 플로우를 죽이지 않는다. (로그 때문에 이벤트 생성이 막히는 사태 방지)
+ * llm_call_logs 쓰기 전담
  */
-@Slf4j
 @Service
-@Transactional(readOnly = true)
-@RequiredArgsConstructor
 public class LlmCallLogService {
 
-	private final LlmCallLogRepository repository;
+	private final LlmCallLogRepository logs;
 	private final Clock clock;
+	private final int dailyLimit;
 	
-	/**
-	 * 호출 1건을 기록 -> 성공·실패·연결 실패 모두 이 메서드로 남김
-	 * failCodes 가 비어 있으면 null 로 저장 ( 빈 문자열과 null 구분 목적 : null = 실패 상세 없음, 값 있음 = 상세 있음 )
-	 */
-	@Transactional
-	public void record(Long eventId, Long versionId, int attemptNo, String modelName,
-			int inputTokens, int outputTokens, Integer wallMs,
-			boolean success, FailureType failureType, List<String> failCodes) {
-		try {
-			String joined = (failCodes == null || failCodes.isEmpty()) ? null : String.join("|", failCodes);
-			LlmCallLog log = LlmCallLog.create(eventId, versionId, attemptNo, modelName, 
-					inputTokens, outputTokens, wallMs, 
-					success, failureType, joined, Instant.now(clock));
-			repository.save(log);
-		} catch(Exception e) {
-			// 자가 방어 : 저장 실패 (DB 다운 등) 가 GenerationService 로 번지지 않게 여기서 끝냄
-			log.warn("LLM 호출 로그 저장 실패 : eventId = {}", eventId, e);
-		}
+	@Autowired
+	public LlmCallLogService(LlmCallLogRepository logs, Clock clock, LlmProps props) {
+		this(logs, clock, props.dailyLimit());
 	}
+	
+	/** 테스트용 — 일일 상한을 직접 준다 */
+    LlmCallLogService(LlmCallLogRepository logs, Clock clock, int dailyLimit) {
+        this.logs = logs;
+        this.clock = clock;
+        this.dailyLimit = dailyLimit;
+    }
 
-	// 오늘(KST) 호출 건수 -> 자정 경계는 Clock 기준이라 테스트에서 고정 시간으로 검증 레포지토리는 범위만 받고, 범위 계산 책임은 여기 있음
-	public long countToday() {
-		LocalDate today = LocalDate.now(clock);
-		ZoneId zone = clock.getZone();
-		Instant start = today.atStartOfDay(zone).toInstant();
-		Instant end = today.plusDays(1).atStartOfDay(zone).toInstant();
-		return repository.countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(start, end);
-	}
-	
-	// 요청 시작 시 1회 호출 -> 재시도 시도마다 row 가 쌓이므로 과금 기준은 호출
-	// -> 초과 시 LlmDailyLimitExceededException -> 429 매핑 예정 (GlobalExceptionHandler 위치 결정 후)
-	public void checkDailyLimit(int dailyLimit) {
-		long used = countToday();
-		if (used >= dailyLimit) {
-			throw new LlmDailyLimitExceededException(dailyLimit, used);
-		}
-	}
-	
-	// 주 N 주치 사용량 -> UsageController (나중) 호출 예정. from 이전 데이터는 읽지 않음.
-	public List<LlmCallLogRepository.WeeklyUsageRow> weeklyUsage(Instant from){
-		return repository.sumTokensByWeek(from);
-	}
+    // 매핑 규칙 (한 곳)
+
+    /** Trace 한 건 -> 로그 한 행 */
+    static LlmCallLog recordToEntity(RetryService.Trace t, long eventId, Long versionId,
+            String modelName, Instant createdAt) {
+        boolean success = t.passed();
+        LlmCallLog.FailureType type = success ? null : failureTypeOf(t);
+        String codes = success ? null : t.failures().stream()
+                .map(Failure::code)
+                .collect(Collectors.joining("|"));
+        return LlmCallLog.create(eventId, versionId, t.attempt(), modelName,
+                t.inputTokens(), t.outputTokens(), (int) t.wallMs(),
+                success, type, codes, createdAt);
+    }
+
+    /** TRUNCATED 우선 — 잘림은 done_reason 이라는 별개 사실이라 검증 실패보다 위 */
+    static LlmCallLog.FailureType failureTypeOf(RetryService.Trace t) {
+        boolean truncated = t.truncated()
+                || t.failures().stream().anyMatch(f -> f.code().equals("truncated"));
+        return truncated ? LlmCallLog.FailureType.TRUNCATED
+                         : LlmCallLog.FailureType.VALIDATION_FAIL;
+    }
+
+    // 쓰기
+
+    /** 재시도 전체 결과를 행으로 떨군다. 호출 전에 checkDailyLimit 를 먼저 부른다. */
+    public List<LlmCallLog> record(RetryService.Result result, long eventId,
+            Long versionId, String modelName) {
+        List<LlmCallLog> rows = new ArrayList<>();
+        Instant at = clock.instant();
+        int last = result.traces().size();
+        int i = 0;
+        for (RetryService.Trace t : result.traces()) {
+            i++;
+            // versionId 는 "저장까지 이어진" 마지막 성공 시도에만.
+            // 선행 실패 시도·실패 결과는 무조건 null
+            Long vid = (result.ok() && i == last) ? versionId : null;
+            rows.add(recordToEntity(t, eventId, vid, modelName, at));
+        }
+        return logs.saveAll(rows);
+    }
+
+    /**
+     * 호출 자체 실패(연결 끊김·타임아웃·500) — Trace 가 없어서 별도 기록.
+     * 타입 분류는 부르는 쪽(GenerationService) 정책이다. 여기는 받아서 저장만 한다.
+     * 토큰은 0(측정 못 함), 응답시간은 null.
+     */
+    public LlmCallLog recordCallFailure(long eventId, Long versionId, String modelName,
+            LlmCallLog.FailureType type) {
+        LlmCallLog row = LlmCallLog.create(eventId, versionId, 1, modelName,
+                0, 0, null, false, type, null, clock.instant());
+        return logs.save(row);
+    }
+
+    // 일일 상한
+
+    /** 오늘 사용량(전역 합산). KST 자정 경계 계산은 여기서 한다. */
+    long usedToday() {
+        ZoneId zone = clock.getZone();
+        LocalDate today = clock.instant().atZone(zone).toLocalDate();
+        Instant start = today.atStartOfDay(zone).toInstant();
+        Instant end = today.plusDays(1).atStartOfDay(zone).toInstant();
+        return logs.countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(start, end);
+    }
+
+    /** 호출 전 방어선 — used >= dailyLimit 이면 거부 (상한 직전까지 허용) */
+    public void checkDailyLimit() {
+        long used = usedToday();
+        if (used >= dailyLimit) {
+            throw new LlmDailyLimitExceededException(dailyLimit, used);
+        }
+    }
 }
