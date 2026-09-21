@@ -30,6 +30,10 @@ import com.newvent.infra.llm.OllamaClient;
  *   그래서 PromptBuilder 가 바뀌어도 이 테스트는 그대로 유효하다.
  *   깨진다면 그건 프롬프트를 바꿨더니 모델이 못 따르게 됐다는 뜻이고,
  *   그게 정확히 알고 싶은 것이다.
+ *
+ * ★ 실제 파이프라인과 같은 순서로 돈다
+ *   extract → sanitize → validate. 생성은 sanitizeGenerated, 수정은 sanitizeEdited 다.
+ *   여기서 순서를 다르게 하면 "스모크는 통과하는데 서비스는 깨지는" 상태가 된다.
  */
 @EnabledIfEnvironmentVariable(named = "OLLAMA", matches = "1")
 class OllamaSmokeTest {
@@ -71,7 +75,7 @@ class OllamaSmokeTest {
                 "출력이 num_predict 에 걸려 잘렸습니다. done_reason 매핑이나 상한을 보세요.");
         assertTrue(r.outputTokens() > 0, "출력 토큰이 0 입니다. 응답 파싱이 잘못됐습니다.");
 
-        String html = BlockValidator.extract(r.content());
+        String html = BlockValidator.sanitizeGenerated(BlockValidator.extract(r.content()));
         assertFalse(html.isBlank(), "HTML 을 못 뽑았습니다. 원문:\n" + r.content());
 
         List<BlockValidator.Failure> fails = BlockValidator.validateGenerated(html);
@@ -87,15 +91,18 @@ class OllamaSmokeTest {
                 <section data-block="benefits"><ul><li>데이터 3GB</li><li>요금 30% 할인</li></ul></section>
                 <section data-block="cta"><a href="#" class="btn">참여하기</a></section>""";
 
+        // ★ 수정 검증은 "원본 대비" 다. before 를 떼어내서 같이 넘긴다.
+        String before = BlockValidator.blockOf(현재, Block.CTA);
+
         LlmClient.Response r = client().chat(LlmClient.Request.html(
                 PromptBuilder.edit(Block.CTA),
-                "현재 영역:\n" + 현재 + "\n\n요청: 버튼 문구를 '지금 신청하기' 로 바꿔줘"));
+                "현재 영역:\n" + before + "\n\n요청: 버튼 문구를 '지금 신청하기' 로 바꿔줘"));
         기록("수정", r);
 
         assertFalse(r.truncated(), "수정 출력이 잘렸습니다.");
 
-        String out = BlockValidator.extract(r.content());
-        List<BlockValidator.Failure> fails = BlockValidator.validateEdited(Block.CTA, out);
+        String out = BlockValidator.sanitizeEdited(BlockValidator.extract(r.content()));
+        List<BlockValidator.Failure> fails = BlockValidator.validateEdited(Block.CTA, before, out);
         assertTrue(fails.isEmpty(),
                 "수정 결과가 검증에 걸렸습니다: " + fails + "\n─── 출력 ───\n" + out);
 
@@ -106,7 +113,31 @@ class OllamaSmokeTest {
     }
 
     @Test
-    @DisplayName("③ 라우터 — JSON 한 줄이 파싱되고 값이 유효하다")
+    @DisplayName("③ 슬롯 수정 — 서버가 채울 자리가 살아남는다")
+    void 슬롯_보존_왕복() {
+        String before = """
+                <section data-block="hero" class="vp-hero">\
+                <h1>여름 데이터 대방출</h1>\
+                <p class="vp-period" data-slot="period"></p>\
+                </section>""";
+
+        LlmClient.Response r = client().chat(LlmClient.Request.html(
+                PromptBuilder.edit(Block.HERO),
+                "현재 영역:\n" + before + "\n\n요청: 제목을 더 강렬하게 바꿔줘"));
+        기록("슬롯수정", r);
+
+        String out = BlockValidator.sanitizeEdited(BlockValidator.extract(r.content()));
+
+        assertTrue(out.contains("data-slot=\"period\""),
+                "슬롯이 사라졌습니다. 이 이벤트는 기간을 영영 못 채웁니다.\n─── 출력 ───\n" + out);
+
+        List<BlockValidator.Failure> fails = BlockValidator.validateEdited(Block.HERO, before, out);
+        assertTrue(fails.isEmpty(),
+                "슬롯 수정이 검증에 걸렸습니다: " + fails + "\n─── 출력 ───\n" + out);
+    }
+
+    @Test
+    @DisplayName("④ 라우터 — JSON 한 줄이 파싱되고 값이 유효하다")
     void 라우터_왕복() throws Exception {
         LlmClient.Response r = client().chat(LlmClient.Request.router(
                 PromptBuilder.router(),

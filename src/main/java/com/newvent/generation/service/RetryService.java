@@ -8,17 +8,18 @@ import org.springframework.stereotype.Service;
 
 import com.newvent.infra.llm.LlmClient;
 import com.newvent.infra.llm.LlmProps;
-import com.newvent.registry.BlockValidator;
 import com.newvent.registry.BlockValidator.Failure;
 
 /**
  * 검증을 통과한 HTML 이 나올 때까지 모델을 다시 부른다. — REQ-LLM-42, REQ-LLM-43
  *
  * 하는 일은 하나다 — "유효한 HTML 한 덩어리". 그 외는 안 한다:
- *   저장 · 로그 적재 · 폴백 삽입 · merge 는 전부 부르는 쪽(GenerationService / editor) 몫이다.
+ *   저장 · 로그 적재 · merge 는 전부 부르는 쪽(GenerationService / editor) 몫이다.
  *
- * ★ 검증 규칙은 registry.BlockValidator 에만 있다.
- *   여기에 "h1 이 있나" 같은 걸 쓰지 말 것. 규칙이 두 군데가 되는 순간 어긋난다.
+ * ★ 이 파일에 규칙이 없다
+ *   무엇을 지우고 무엇을 합격으로 볼지는 전부 HtmlPolicy 가 갖고 있다.
+ *   여기에 "h1 이 있나" 나 "data-slot 을 지운다" 를 쓰지 말 것.
+ *   규칙이 두 군데가 되는 순간 어긋난다.
  *
  * ★ 재시도가 작동하는 이유
  *   Failure.message 는 "hero 영역이 없습니다" 같은 **의미** 메시지다.
@@ -32,6 +33,9 @@ import com.newvent.registry.BlockValidator.Failure;
  * ★ LlmCallException 은 잡지 않는다
  *   연결 끊김 · 타임아웃 · 500 은 프롬프트를 고쳐도 안 고쳐진다.
  *   그대로 위로 던진다. 여기서 4번 기다리면 Ollama 가 꺼졌을 때 4배로 죽는다.
+ *
+ * ★ 다 실패하면 ok=false 로 끝난다. 여기서 기본 틀을 끼워 넣지 않는다.
+ *   실패를 완료로 포장하면 관리자가 자기 요청이 반영된 줄 알고 게시한다.
  */
 @Service
 public class RetryService {
@@ -48,21 +52,6 @@ public class RetryService {
     RetryService(LlmClient llm, int maxRetry) {
         this.llm = llm;
         this.maxRetry = maxRetry;
-    }
-
-    /**
-     * 검증 규칙을 밖에서 받는다.
-     *
-     * ★ 이게 생성(generation)과 수정(editor)이 같은 RetryService 를 쓰게 하는 지점이다.
-     *   같은 HTML 이라도 합격 기준이 정반대라 여기서 if 로 가를 수 없다.
-     *   hero 하나만 있는 HTML → 생성이면 불합격(나머지 4개 없음), hero 수정이면 합격.
-     *
-     *   생성:  BlockValidator::validateGenerated
-     *   수정:  html -> BlockValidator.validateEdited(target, html)
-     */
-    @FunctionalInterface
-    public interface HtmlValidator {
-        List<Failure> validate(String html);
     }
 
     /**
@@ -100,11 +89,9 @@ public class RetryService {
     /**
      * 최초 1회 + 재시도 maxRetry 회. 기본값이면 최대 4회다.
      *
-     * @param system    PromptBuilder.generate() 또는 PromptBuilder.edit(block)
-     * @param user      이벤트 정보 또는 수정 요청
-     * @param validator 위 HtmlValidator 참고
-     */
-    public Result run(String system, String user, HtmlValidator validator) {
+     *
+     *     */
+    public Result run(String system, String user, HtmlPolicy policy) {
         List<Trace> traces = new ArrayList<>();
         String nextUser = user;
 
@@ -112,11 +99,11 @@ public class RetryService {
             // ★ 시간은 LlmClient 가 이미 재서 Response.wallMs 로 준다. 여기서 또 재지 않는다.
             LlmClient.Response res = llm.chat(LlmClient.Request.html(system, nextUser));
 
-            // ★ 순서: extract → sanitize → validate
+            // ★ 순서: clean → validate
             //   정화를 검증보다 먼저 건다. 최종 산출물이 검증을 통과했음을 보장해야 하기 때문이다.
             //   반대로 하면 "검증은 통과했는데 정화가 깨뜨린 HTML" 이 나간다.
-            String html = BlockValidator.sanitize(BlockValidator.extract(res.content()));
-            List<Failure> fails = new ArrayList<>(validator.validate(html));
+            String html = policy.clean(res.content());
+            List<Failure> fails = new ArrayList<>(policy.validate(html));
 
             // ★ 잘림은 검증으로 안 잡힌다.
             //   중간에 끊겨도 Jsoup 이 태그를 자동으로 닫아버려서 검증은 통과할 수 있다.

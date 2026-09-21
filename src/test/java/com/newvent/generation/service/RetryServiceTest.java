@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import com.newvent.infra.llm.LlmCallException;
 import com.newvent.infra.llm.LlmClient;
 import com.newvent.infra.llm.MockLlmClient;
-import com.newvent.registry.BlockValidator;
 import com.newvent.registry.PromptBuilder;
 
 /**
@@ -20,6 +19,9 @@ import com.newvent.registry.PromptBuilder;
  * ★ 정상/비정상 HTML 을 여기에 직접 적지 않는다.
  *   MockLlmClient 가 이미 둘 다 만들 줄 안다. 블록 모양이 바뀌면 그쪽이 따라가고,
  *   여기에 적어두면 레지스트리를 고칠 때마다 이 파일도 같이 고쳐야 한다.
+ *
+ * ★ 슬롯 보존은 여기서 안 본다 — registry/SlotPreservationTest 담당.
+ *   여기는 "루프가 도는가", 거기는 "무엇을 합격으로 보는가" 다.
  */
 class RetryServiceTest {
 
@@ -95,7 +97,7 @@ class RetryServiceTest {
     private static final String GOOD = ask("여름 데이터 이벤트");
     private static final String BAD = ask("FAIL");
 
-    private static final RetryService.HtmlValidator GENERATED = BlockValidator::validateGenerated;
+    private static final HtmlPolicy GENERATION = HtmlPolicy.generation();
 
     // ── 테스트 ────────────────────────────────────────────
 
@@ -103,7 +105,7 @@ class RetryServiceTest {
     @DisplayName("한 번에 통과하면 한 번만 부른다")
     void 성공하면_재시도_안_한다() {
         ScriptedLlm llm = new ScriptedLlm(GOOD);
-        RetryService.Result r = new RetryService(llm, 3).run("system", "여름 이벤트", GENERATED);
+        RetryService.Result r = new RetryService(llm, 3).run("system", "여름 이벤트", GENERATION);
 
         assertTrue(r.ok());
         assertEquals(1, r.attempts(), "통과했는데 더 불렀습니다.");
@@ -115,7 +117,7 @@ class RetryServiceTest {
     @DisplayName("실패하면 다시 부르고, 두 번째에 통과한다")
     void 실패하면_다시_부른다() {
         ScriptedLlm llm = new ScriptedLlm(BAD, GOOD);
-        RetryService.Result r = new RetryService(llm, 3).run("system", "여름 이벤트", GENERATED);
+        RetryService.Result r = new RetryService(llm, 3).run("system", "여름 이벤트", GENERATION);
 
         assertTrue(r.ok());
         assertEquals(2, r.attempts());
@@ -127,7 +129,7 @@ class RetryServiceTest {
     @DisplayName("재시도 프롬프트에 실패 '의미' 메시지가 들어간다")
     void 되먹임이_의미_메시지다() {
         ScriptedLlm llm = new ScriptedLlm(BAD, GOOD);
-        new RetryService(llm, 3).run("system", "여름 이벤트", GENERATED);
+        new RetryService(llm, 3).run("system", "여름 이벤트", GENERATION);
 
         String second = llm.received.get(1);
         assertTrue(second.contains("benefits"),
@@ -143,7 +145,7 @@ class RetryServiceTest {
         String bad1 = BAD.replace("</section>", "<!--첫번째시도흔적--></section>");
         ScriptedLlm llm = new ScriptedLlm(bad1, BAD, GOOD);
 
-        RetryService.Result r = new RetryService(llm, 3).run("system", "여름 이벤트", GENERATED);
+        RetryService.Result r = new RetryService(llm, 3).run("system", "여름 이벤트", GENERATION);
 
         assertTrue(r.ok());
         String third = llm.received.get(2);
@@ -155,13 +157,13 @@ class RetryServiceTest {
     @DisplayName("계속 실패하면 최초 1회 + 재시도 3회 = 4회에서 멈춘다")
     void 네_번에서_멈춘다() {
         ScriptedLlm llm = new ScriptedLlm(BAD);
-        RetryService.Result r = new RetryService(llm, 3).run("system", "여름 이벤트", GENERATED);
+        RetryService.Result r = new RetryService(llm, 3).run("system", "여름 이벤트", GENERATION);
 
         assertFalse(r.ok());
-        assertNull(r.html(), "실패인데 html 이 들어 있습니다.");
+        assertNull(r.html(), "실패인데 html 이 들어 있습니다. 실패를 완료로 포장하면 안 됩니다.");
         assertEquals(4, r.attempts());
         assertEquals(4, llm.received.size());
-        assertFalse(r.lastFailures().isEmpty(), "왜 실패했는지가 비었습니다. 폴백 안내를 못 만듭니다.");
+        assertFalse(r.lastFailures().isEmpty(), "왜 실패했는지가 비었습니다. 안내를 못 만듭니다.");
     }
 
     @Test
@@ -170,7 +172,7 @@ class RetryServiceTest {
         DeadLlm llm = new DeadLlm();
 
         assertThrows(LlmCallException.class,
-                () -> new RetryService(llm, 3).run("system", "여름 이벤트", GENERATED));
+                () -> new RetryService(llm, 3).run("system", "여름 이벤트", GENERATION));
         assertEquals(1, llm.calls,
                 "Ollama 가 죽었는데 " + llm.calls + "번 불렀습니다. 프롬프트를 고쳐도 안 고쳐집니다.");
     }
@@ -179,7 +181,7 @@ class RetryServiceTest {
     @DisplayName("잘린 출력(done_reason=length)은 통과시키지 않는다")
     void 잘린_출력은_재시도한다() {
         RetryService.Result r =
-                new RetryService(new CutOffLlm(GOOD), 3).run("system", "여름 이벤트", GENERATED);
+                new RetryService(new CutOffLlm(GOOD), 3).run("system", "여름 이벤트", GENERATION);
 
         assertTrue(r.ok());
         assertEquals(2, r.attempts(), "잘린 출력을 그대로 통과시켰습니다.");
@@ -194,7 +196,7 @@ class RetryServiceTest {
         String withScript = GOOD.replace("</section>", "<script>alert(1)</script></section>");
         ScriptedLlm llm = new ScriptedLlm(withScript);
 
-        RetryService.Result r = new RetryService(llm, 3).run("system", "여름 이벤트", GENERATED);
+        RetryService.Result r = new RetryService(llm, 3).run("system", "여름 이벤트", GENERATION);
 
         assertTrue(r.ok());
         assertFalse(r.html().contains("<script"), "정화를 안 거친 HTML 이 나왔습니다: " + r.html());
@@ -206,9 +208,32 @@ class RetryServiceTest {
     @DisplayName("호출 시간은 LlmClient 가 준 값을 그대로 쓴다")
     void 시간을_두_번_재지_않는다() {
         RetryService.Result r =
-                new RetryService(new ScriptedLlm(GOOD), 3).run("system", "여름 이벤트", GENERATED);
+                new RetryService(new ScriptedLlm(GOOD), 3).run("system", "여름 이벤트", GENERATION);
 
         assertEquals(10L, r.traces().get(0).wallMs(),
                 "Response.wallMs 가 아니라 서비스가 따로 잰 값이 들어갔습니다.");
+    }
+
+    @Test
+    @DisplayName("RetryService 는 규칙을 모른다 — 정책이 정하는 대로 따른다")
+    void 정책이_합격을_정한다() {
+        // 뭐가 와도 통과시키는 정책. 루프가 정책만 보고 도는지 확인한다.
+        HtmlPolicy 무조건통과 = new HtmlPolicy() {
+            @Override
+            public String clean(String raw) {
+                return raw;
+            }
+
+            @Override
+            public List<com.newvent.registry.BlockValidator.Failure> validate(String html) {
+                return List.of();
+            }
+        };
+
+        ScriptedLlm llm = new ScriptedLlm(BAD);
+        RetryService.Result r = new RetryService(llm, 3).run("system", "요청", 무조건통과);
+
+        assertTrue(r.ok(), "정책이 통과시켰는데 서비스가 자체 판단으로 막았습니다.");
+        assertEquals(1, r.attempts());
     }
 }
