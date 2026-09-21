@@ -90,6 +90,11 @@ public class LlmCallLog {
 		if (success && (failureType != null || failCodes != null)) {
 			throw new IllegalArgumentException("성공 호출에 실패 정보가 있을 수 없습니다.");
 		}
+		
+		if (!success && failureType == null) {
+			throw new IllegalArgumentException("실패 호출은 failureType 이 있어야 합니다.");
+		}
+		
 		this.eventId = eventId;
 		this.versionId = versionId;
 		this.attemptNo = attemptNo;
