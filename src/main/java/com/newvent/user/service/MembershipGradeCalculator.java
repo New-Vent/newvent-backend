@@ -1,8 +1,9 @@
 package com.newvent.user.service;
 
-import com.newvent.user.domain.MembershipGrade;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+
+import com.newvent.user.domain.MembershipGrade;
 
 /**
  * 멤버십 등급 산정 로직.

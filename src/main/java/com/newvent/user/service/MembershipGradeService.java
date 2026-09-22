@@ -1,7 +1,8 @@
 package com.newvent.user.service;
 
-import com.newvent.user.domain.MembershipGrade;
 import java.time.LocalDate;
+
+import com.newvent.user.domain.MembershipGrade;
 
 /**
  * membership_grade 재계산 시점은 3곳으로 제한
