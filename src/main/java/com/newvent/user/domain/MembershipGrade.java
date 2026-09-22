@@ -1,4 +1,4 @@
-package com.newvent.user;
+package com.newvent.user.domain;
 
 public enum MembershipGrade {
     NORMAL("일반"),

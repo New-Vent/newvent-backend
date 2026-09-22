@@ -1,8 +1,9 @@
-package com.newvent.user;
+package com.newvent.user.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.newvent.user.domain.MembershipGrade;
 import java.time.LocalDate;
 import java.util.stream.Stream;
 
@@ -47,6 +48,20 @@ class MembershipGradeCalculatorTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> MembershipGradeCalculator.calculate(-1, LocalDate.of(2023, 1, 1), REFERENCE_DATE));
+    }
+
+    @Test
+    @DisplayName("joinedAt이 referenceDate보다 미래면 예외를 던진다 (음수 monthsElapsed로 정상 등급이 나오면 안 됨)")
+    void joinedAt이_미래면_예외() {
+        LocalDate oneDayAfter = REFERENCE_DATE.plusDays(1);
+        LocalDate oneYearAfter = REFERENCE_DATE.plusYears(1);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> MembershipGradeCalculator.calculate(50_000, oneDayAfter, REFERENCE_DATE));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> MembershipGradeCalculator.calculate(50_000, oneYearAfter, REFERENCE_DATE));
     }
 
     static Stream<Arguments> matrixAndBoundaryFixtures() {

@@ -1,7 +1,8 @@
-package com.newvent.user;
+package com.newvent.user.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.newvent.user.domain.MembershipGrade;
 import java.time.LocalDate;
 
 import org.junit.jupiter.api.DisplayName;

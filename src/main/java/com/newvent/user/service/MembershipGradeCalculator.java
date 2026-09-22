@@ -1,5 +1,6 @@
-package com.newvent.user;
+package com.newvent.user.service;
 
+import com.newvent.user.domain.MembershipGrade;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 
@@ -23,6 +24,11 @@ public final class MembershipGradeCalculator {
     public static MembershipGrade calculate(int plan, LocalDate joinedAt, LocalDate referenceDate) {
         if (plan <= 0) {
             throw new IllegalArgumentException("plan은 0보다 커야 합니다: " + plan);
+        }
+        if (joinedAt.isAfter(referenceDate)) {
+            throw new IllegalArgumentException(
+                    "joinedAt은 referenceDate보다 미래일 수 없습니다: joinedAt=" + joinedAt
+                            + ", referenceDate=" + referenceDate);
         }
         int score = feeScore(plan) + periodScore(monthsElapsed(joinedAt, referenceDate));
         return gradeOf(score);

@@ -1,5 +1,6 @@
-package com.newvent.user;
+package com.newvent.user.service;
 
+import com.newvent.user.domain.MembershipGrade;
 import java.time.LocalDate;
 
 /**
