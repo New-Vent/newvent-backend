@@ -23,7 +23,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class LlmCallLog {
 
-	// 호출 실패 분류. DB CHECK 4 값과 1:1 대응. 값 추가 시 마이그레이션도 함께
+	// 시도 결과 분류. DB CHECK 5 값과 1:1 대응. 값 추가 시 마이그레이션도 함께
 	public enum FailureType{
 		VALIDATION_FAIL, TIMEOUT, LLM_ERROR, STOPPED, TRUNCATED
 	}
@@ -45,7 +45,7 @@ public class LlmCallLog {
 	private int attemptNo;
 	
 	// 호출 자체의 성패. 검증 통과 여부와 다름 주의
-	// (검증 실패도 "호출은 성공"이라 success = true, failureType=VALIDATOIN_FAIL이 될 수 있음)
+	// (검증 실패도 "호출은 성공"이라 success = true, failureType=VALIDATION_FAIL이 될 수 있음)
 	@Column(nullable = false)
 	private boolean success;
 	
@@ -71,7 +71,7 @@ public class LlmCallLog {
 	@Column(name = "input_tokens", nullable = false)
 	private int inputTokens;
 	
-	// 주갑 합계 출력분. LlmClient outputTokens 매핑. total 은 SUM 으로 계산 (컬럼으로 두지 않음)
+	// 주간 합계 출력분. LlmClient outputTokens 매핑. total 은 SUM 으로 계산 (컬럼으로 두지 않음)
 	@Column(name = "output_tokens", nullable = false)
 	private int outputTokens;
 	

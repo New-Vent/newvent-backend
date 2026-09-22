@@ -11,7 +11,7 @@ import org.springframework.data.repository.query.Param;
 import com.newvent.generation.domain.LlmCallLog;
 
 /** 로그 조회 전담 - 쓰기는 save() 기본 제공분으로 충분해서 추가 메서드 없음
- *  - countToday() -> 아래 범위 카운트 (일일 상환 체크용, 매 호출 실행이라 인덱스 필수)
+ *  - countToday() -> 아래 범위 카운트 (일일 상한 체크용, 매 호출 실행이라 인덱스 필수)
  *  - weeklyUsage() -> 아래 주간 합계 (관리자 사용량 화면용)
  */
 public interface LlmCallLogRepository extends JpaRepository<LlmCallLog, Long>{
