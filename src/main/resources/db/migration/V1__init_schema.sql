@@ -2,7 +2,8 @@
 -- PostgreSQL / Flyway
 --
 -- Notes
--- 1. ERD의 ENUM 컬럼은 값 목록이 확정되지 않아 VARCHAR로 저장한다.
+-- 1. ENUM 컬럼은 VARCHAR로 저장한다.
+--    값이 확정된 컬럼은 CHECK 제약조건으로 허용값을 제한하고,
 --    애플리케이션에서는 @Enumerated(EnumType.STRING)을 사용한다.
 -- 2. 외래 키 컬럼은 독립 시퀀스가 필요한 BIGSERIAL이 아니라 BIGINT를 사용한다.
 -- 3. events.published_version_id와 event_versions.event_id가 서로 참조하므로
@@ -29,13 +30,17 @@ CREATE TABLE users
     name             VARCHAR(50)  NOT NULL,
     email            VARCHAR(100) NOT NULL,
     phone            VARCHAR(20),
-    plan             INTEGER      NOT NULL CHECK (plan > 0),
+    plan             INTEGER      NOT NULL,
     membership_grade VARCHAR(20)  NOT NULL,
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT uk_users_login_id UNIQUE (login_id),
-    CONSTRAINT uk_users_email UNIQUE (email)
+    CONSTRAINT uk_users_email UNIQUE (email),
+    CONSTRAINT ck_users_plan
+        CHECK (plan > 0),
+    CONSTRAINT ck_users_membership_grade
+        CHECK (membership_grade IN ('NORMAL', 'EXCELLENT', 'BEST'))
 );
 
 CREATE TABLE event_templates
@@ -44,7 +49,9 @@ CREATE TABLE event_templates
     code         VARCHAR(50)  NOT NULL,
     name         VARCHAR(100) NOT NULL,
     description  VARCHAR(255),
-    base_content JSONB        NOT NULL DEFAULT '{}'::JSONB,
+    html_content   TEXT         NOT NULL,
+    is_builtin     BOOLEAN      NOT NULL DEFAULT FALSE,
+    thumbnail_path VARCHAR(255),
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT uk_event_templates_code UNIQUE (code)
@@ -66,7 +73,7 @@ CREATE TABLE events
 (
     id                   BIGSERIAL PRIMARY KEY,
     owner_admin_id       BIGINT       NOT NULL,
-    template_id          BIGINT       NOT NULL,
+    template_id          BIGINT,
     title                VARCHAR(100) NOT NULL,
     start_date           TIMESTAMPTZ,
     end_date             TIMESTAMPTZ,
@@ -87,7 +94,13 @@ CREATE TABLE events
             ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT ck_events_period
         CHECK (start_date IS NULL OR end_date IS NULL OR start_date <= end_date),
-    CONSTRAINT uk_events_published_version_id UNIQUE (published_version_id)
+    CONSTRAINT uk_events_published_version_id UNIQUE (published_version_id),
+    CONSTRAINT ck_events_status
+        CHECK (status IN ('DRAFT', 'PUBLISHED', 'ENDED')),
+    CONSTRAINT ck_events_review_status
+        CHECK (review_status IN ('PENDING', 'APPROVED', 'REJECTED')),
+    CONSTRAINT ck_events_grade
+        CHECK (grade IN ('NORMAL', 'EXCELLENT', 'BEST'))
 );
 
 CREATE TABLE chat_messages
@@ -102,7 +115,11 @@ CREATE TABLE chat_messages
 
     CONSTRAINT fk_chat_messages_event
         FOREIGN KEY (event_id) REFERENCES events (id)
-            ON UPDATE RESTRICT ON DELETE CASCADE
+            ON UPDATE RESTRICT ON DELETE CASCADE,
+    CONSTRAINT ck_chat_messages_role
+        CHECK (role IN ('ADMIN', 'ASSISTANT')),
+    CONSTRAINT ck_chat_messages_status
+        CHECK (status IN ('PENDING', 'COMPLETED', 'FAILED', 'CANCELLED'))
 );
 
 CREATE INDEX idx_chat_messages_event_created_id
@@ -155,13 +172,15 @@ CREATE TABLE llm_call_logs
     version_id       BIGINT,
     request_id       UUID        NOT NULL,
     attempt_no       INTEGER     NOT NULL,
-    model_name       VARCHAR(50) NOT NULL,
+    model_name       VARCHAR(100) NOT NULL,
     success          BOOLEAN     NOT NULL,
     failure_type     VARCHAR(50),
     failure_message  TEXT,
     response_time_ms INTEGER,
     input_tokens     INTEGER,
     output_tokens    INTEGER,
+    truncated        BOOLEAN NOT NULL DEFAULT FALSE,
+    provider         VARCHAR(20) NOT NULL,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_llm_call_logs_event
