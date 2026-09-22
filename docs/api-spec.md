@@ -32,7 +32,8 @@
 ## 아직 안 한 것
 
 - 인증/인가 (Security 미사용. `/api/admin/**` 도 토큰 없이 호출됨)
-- JPA/Flyway — 지금은 메모리 더미 6건
+- JPA/Flyway — 지금은 메모리 더미 (이벤트 6건 · 템플릿 5종)
+- 템플릿 `baseContent`(HTML 조각) — 메타데이터만 제공
 - 생성·수정·삭제·상태변경·게시
 - 공개 조회 `/api/public/events`
 
@@ -138,4 +139,50 @@ http://localhost:8080/api/admin/events?status=PUBLISHED&name=쿠폰
 
 ```text
 http://localhost:8080/api/admin/events/3
+```
+
+---
+
+## `GET /api/admin/templates`
+
+이헌진 추천 템플릿 5종 목록. `active=true` 만. HTML 본문은 아직 없음.
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "templateKey": "sports_cheer",
+      "name": "스포츠 응원",
+      "description": "월드컵 승부예측 투표와 스코어 맞추기. template_1_sports_cheer.html",
+      "theme": "theme-sports",
+      "active": true
+    }
+  ],
+  "message": null
+}
+```
+
+| templateKey | name | theme | 파일 |
+| --- | --- | --- | --- |
+| `sports_cheer` | 스포츠 응원 | `theme-sports` | template_1_sports_cheer.html |
+| `holiday_gift` | 한가위 선물 | `theme-holiday` | template_2_holiday_gift.html |
+| `member_appreciation` | 회원 감사 | `theme-vip` | template_3_member_appreciation.html |
+| `flash_sale` | 72h 특가 | `theme-sale` | template_4_flash_sale.html |
+| `pre_registration` | 사전예약 | `theme-launch` | template_5_pre_registration.html |
+
+```text
+http://localhost:8080/api/admin/templates
+```
+
+---
+
+## `GET /api/admin/templates/{templateKey}`
+
+단건 조회. 없으면 `404` + `EVENT404-1`.
+
+```text
+http://localhost:8080/api/admin/templates/sports_cheer
 ```
