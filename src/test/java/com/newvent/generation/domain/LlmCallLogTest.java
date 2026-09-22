@@ -1,5 +1,7 @@
 package com.newvent.generation.domain;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -18,10 +20,10 @@ public class LlmCallLogTest {
 	@DisplayName("성공 호출에 실패 정보 (failureType/failCodes)를 섞으면 거부한다.")
 	void 성공_실패정보_못섞음() {
 		assertThrows(IllegalArgumentException.class, () -> 
-			LlmCallLog.create(1L, null, 1, "qwen2.5:7b", 100, 200, 10, true,
+			LlmCallLog.create(1L, null, 1, "qwen2.5:7b", "mock", 100, 200, 10, false, true,
 				LlmCallLog.FailureType.VALIDATION_FAIL, null, AT));
 		assertThrows(IllegalArgumentException.class, () ->
-			LlmCallLog.create(1L, null, 1, "qwen2.5:7b", 100, 200, 10, true,
+			LlmCallLog.create(1L, null, 1, "qwen2.5:7b", "mock", 100, 200, 10, false, true,
 				null, "lost_benefits", AT));
 	}
 	
@@ -29,18 +31,22 @@ public class LlmCallLogTest {
 	@DisplayName("실패 호출은 분류(failureType)가 없으면 거부한다.")
 	void 실패_분류없으면_거부() {
 		assertThrows(IllegalArgumentException.class, () -> 
-			LlmCallLog.create(1L, null, 1, "qwen2.5:7b", 100, 200, 10, false,
+			LlmCallLog.create(1L, null, 1, "qwen2.5:7b", "mock", 100, 200, 10, false, false,
 					null, "lost_benefits", AT));
 		assertThrows(IllegalArgumentException.class, () ->
-			LlmCallLog.create(1L, null, 1, "qwen2.5:7b", 100, 200, 10, false,
+			LlmCallLog.create(1L, null, 1, "qwen2.5:7b", "mock", 100, 200, 10, false, false,
 					null, null, AT));
 	}
 	
 	@Test
 	@DisplayName("성공 행은 실패 정보가 null로 유지된다.")
 	void 성공_행_기본값() {
-		LlmCallLog row = LlmCallLog.create(1L, 9L, 1, "qwen2.5:7b", 100, 200, 10, true,
+		LlmCallLog row = LlmCallLog.create(1L, 9L, 1, "qwen2.5:7b", "mock", 100, 200, 10, false, true,
 				null, null, AT);
+		
+		// 신규 2건 : 새 컬럼 기본 값 확인
+		assertFalse(row.isTruncated());
+		assertEquals("mock", row.getProvider());
 		
 		assertTrue(row.isSuccess());
 		assertNull(row.getFailureType());
