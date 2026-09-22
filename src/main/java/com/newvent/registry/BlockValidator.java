@@ -2,6 +2,7 @@ package com.newvent.registry;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.jsoup.Jsoup;
@@ -154,6 +155,7 @@ public class BlockValidator {
      *   data-slot  서버가 값을 쓰는 자리. 없어지면 그 이벤트는 영영 못 채운다
      *   id         getElementById 로 직접 찾는다 (#demoTimer · #regCount · #pouchSection)
      *              없어지면 타이머가 멈추고, 복제하면 id 중복으로 첫 번째만 잡힌다
+     *   class      단, **이름표 붙은 요소의 것만.** 아래 diffClasses 참고
      */
     private static void checkPreserved(String before, String after, List<Failure> f) {
         diff(Slots.keysOf(before), Slots.keysOf(after), f,
@@ -167,6 +169,35 @@ public class BlockValidator {
                         + "원래 있던 id 를 그대로 두세요.",
                 "id_invented_", "id=\"%s\" 를 새로 만들었습니다. "
                         + "id 는 화면 기능이 쓰는 이름이라 임의로 추가하면 안 됩니다.");
+
+        diffClasses(Slots.classMap(before), Slots.classMap(after), f);
+    }
+
+    /**
+     * 이름표 붙은 요소(root · slot · id)의 class 가 그대로인가.
+     *
+     * ★ 왜 이것만 보는가는 Slots.classMap() 의 주석에 있습니다.
+     *   한 줄로: 전체를 묶으면 "카드 하나 지워줘" 가 영원히 실패합니다.
+     *
+     * ★ 없어진 요소는 여기서 말하지 않는다
+     *   요소 자체가 사라진 경우는 바로 위 slot_lost_ / id_lost_ 가 이미 잡았습니다.
+     *   여기서 또 말하면 재시도 프롬프트에 같은 사고가 두 줄로 들어가고,
+     *   모델이 뭘 고쳐야 하는지 흐려집니다.
+     *
+     * ★ 새로 생긴 이름표도 여기서 말하지 않는다 (slot_invented_ / id_invented_ 담당)
+     */
+    private static void diffClasses(Map<String, String> was, Map<String, String> now,
+                                    List<Failure> f) {
+        for (Map.Entry<String, String> e : was.entrySet()) {
+            String at = e.getKey();
+            String after = now.get(at);
+            if (after == null) continue;              // 요소가 없어진 건 위에서 잡았다
+            if (e.getValue().equals(after)) continue;
+
+            f.add(new Failure("class_changed_" + at,
+                    at + " 의 class 를 바꿨습니다. 디자인과 버튼 동작이 이 class 에 걸려 있습니다. "
+                            + "원래대로 두세요: class=\"" + e.getValue() + "\""));
+        }
     }
 
     private static void diff(Set<String> was, Set<String> now, List<Failure> f,

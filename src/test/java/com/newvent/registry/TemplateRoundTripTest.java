@@ -98,6 +98,10 @@ class TemplateRoundTripTest {
                 assertEquals(Slots.keysOf(before), Slots.keysOf(after), where + " data-slot 유실");
                 assertEquals(Slots.idsOf(before),  Slots.idsOf(after),  where + " id 유실");
 
+                assertEquals(Slots.classMap(before), Slots.classMap(after),
+                        where + " class 유실 — ev-block 이 떨어지면 event.css 의 "
+                        + ":not(.ev-block) 폴백이 템플릿에 걸립니다");
+
                 for (String sel : List.of("button", "input", "a[href]", "img[src]",
                                           "[data-demo-msg]", "[data-state]", "[data-vote]")) {
                     assertEquals(count(before, sel), count(after, sel),
@@ -168,6 +172,62 @@ class TemplateRoundTripTest {
                 BlockValidator.validateEdited(Block.CTA, cta, d.body().html());
         assertTrue(fails.stream().anyMatch(f -> f.code().equals("id_invented_내가만든버튼")),
                 "없던 id 를 만들었는데 통과했습니다: " + fails);
+    }
+
+    // ── ③-2 class 보존 ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("★ ev-block 을 떼면 걸린다 — 제일 조용한 고장")
+    void ev_block을_떼면_걸린다() {
+        String hero = BlockValidator.blockOf(
+                LOADER.find("template_1_sports_cheer").orElseThrow().html(), Block.HERO);
+        assertTrue(hero.contains("ev-block"), "이 템플릿에 ev-block 이 없습니다. 대상을 바꾸세요.");
+
+        Document d = Jsoup.parseBodyFragment(hero);
+        d.body().selectFirst("section[data-block]").removeClass("ev-block");
+
+        List<BlockValidator.Failure> fails =
+                BlockValidator.validateEdited(Block.HERO, hero, d.body().html());
+        assertTrue(fails.stream().anyMatch(f -> f.code().equals("class_changed_root")),
+                "ev-block 이 떨어졌는데 통과했습니다. "
+                + "event.css 의 :not(.ev-block) 폴백이 템플릿에 걸려 디자인이 바뀝니다: " + fails);
+    }
+
+    @Test
+    @DisplayName("★ 슬롯 요소의 class 를 지우면 걸린다 — 버튼이 안 눌린다")
+    void 슬롯의_class를_지우면_걸린다() {
+        String cta = BlockValidator.blockOf(
+                LOADER.find("template_1_sports_cheer").orElseThrow().html(), Block.CTA);
+
+        Document d = Jsoup.parseBodyFragment(cta);
+        var slot = d.body().selectFirst(Slot.CTA_LINK.selector());
+        assertNotNull(slot, "cta-link 슬롯이 없습니다. 대상을 바꾸세요.");
+        assertFalse(slot.className().isBlank(), "이 슬롯에 class 가 없습니다. 대상을 바꾸세요.");
+        slot.removeAttr("class");   // cta-btn / btn 이 날아간다
+
+        List<BlockValidator.Failure> fails =
+                BlockValidator.validateEdited(Block.CTA, cta, d.body().html());
+        assertTrue(fails.stream().anyMatch(f -> f.code().equals("class_changed_slot:cta-link")),
+                "CTA 버튼의 class 가 사라졌는데 통과했습니다. "
+                + "스크립트가 closest('.cta-btn, .btn') 으로 잡으므로 버튼이 죽습니다: " + fails);
+    }
+
+    @Test
+    @DisplayName("class 순서만 바꾸는 건 통과한다")
+    void class_순서는_상관없다() {
+        String hero = BlockValidator.blockOf(
+                LOADER.find("template_3_member_appreciation").orElseThrow().html(), Block.HERO);
+
+        Document d = Jsoup.parseBodyFragment(hero);
+        var root = d.body().selectFirst("section[data-block]");
+        List<String> reversed = new java.util.ArrayList<>(root.classNames());
+        java.util.Collections.reverse(reversed);
+        root.attr("class", String.join("  ", reversed));   // 순서 뒤집기 + 공백 두 칸
+
+        List<BlockValidator.Failure> fails =
+                BlockValidator.validateEdited(Block.HERO, hero, d.body().html());
+        assertTrue(fails.isEmpty(),
+                "순서만 바꿨는데 걸렸습니다. 재시도 4번이 전부 같은 이유로 터집니다: " + fails);
     }
 
     // ── ④ 초기 HTML — 슬롯 비우기 ───────────────────────────────────

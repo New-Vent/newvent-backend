@@ -2,8 +2,11 @@ package com.newvent.registry;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -46,6 +49,59 @@ public final class Slots {
             if (!v.isEmpty()) ids.add(v);
         }
         return ids;
+    }
+
+    /**
+     * **이름표 붙은 요소**의 class 를 뽑는다. 수정 전후를 대조하는 데 쓴다.
+     *
+     * ★ 왜 전체 class 를 대조하지 않는가
+     *   계약이 허용하는 수정이 class 집합을 **정당하게** 바꾼다.
+     *     · 복주머니 카드 하나 삭제 → hl-pouch-blue 가 사라진다
+     *     · "이 문구 강조해줘"      → span.highlight 가 늘어난다
+     *   전체를 묶으면 이 둘이 영원히 실패한다.
+     *
+     * ★ 그래서 세 군데만 고정한다
+     *     root        블록 루트 <section> — ev-block 이 여기 붙어 있다
+     *     slot:키     서버가 값을 쓰는 자리
+     *     id:이름     스크립트가 getElementById 로 잡는 요소
+     *   전부 "지워지면 조용히 망가지는데 검증기가 달리 알 길이 없는" 것들이다.
+     *
+     * ★ ev-block 이 제일 위험하다
+     *   event.css 가 ul/li 기본 스타일을 :not(.ev-block) 으로 건다.
+     *   백지 생성 결과에 폴백 스타일을 주려고 만든 장치인데,
+     *   템플릿에서 ev-block 이 떨어지면 그 폴백이 템플릿에 **걸린다.**
+     *   태그도 슬롯도 id 도 멀쩡한데 디자인만 달라져서 아무 검사에도 안 걸린다.
+     *
+     * @return 키는 root / slot:period / id:demoTimer 형태, 값은 정규화한 class 문자열
+     */
+    public static Map<String, String> classMap(String html) {
+        Map<String, String> out = new LinkedHashMap<>();
+        Document doc = parse(html);
+
+        Element root = doc.body().selectFirst("section[data-block]");
+        if (root != null) out.put("root", normalize(root.className()));
+
+        for (Element el : doc.body().select("[data-slot]")) {
+            String k = el.attr("data-slot").trim();
+            if (!k.isEmpty()) out.put("slot:" + k, normalize(el.className()));
+        }
+        for (Element el : doc.body().select("[id]")) {
+            String v = el.id().trim();
+            if (!v.isEmpty()) out.put("id:" + v, normalize(el.className()));
+        }
+        return out;
+    }
+
+    /**
+     * 순서·중복·공백 차이는 무시한다. class 는 순서에 의미가 없다.
+     *
+     * 이게 없으면 모델이 "ev-block block-hero" 를 "block-hero ev-block" 으로
+     * 돌려주기만 해도 실패로 잡히고, 재시도 4번이 전부 같은 이유로 터진다.
+     */
+    private static String normalize(String className) {
+        return new TreeSet<>(List.of(className.trim().split("\\s+"))).stream()
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.joining(" "));
     }
 
     // ── 비우기 ────────────────────────────────────────────────────
