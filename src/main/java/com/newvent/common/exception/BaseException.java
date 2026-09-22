@@ -1,6 +1,7 @@
 package com.newvent.common.exception;
 
 import com.newvent.common.exception.code.ErrorCode;
+
 import lombok.Getter;
 
 @Getter
