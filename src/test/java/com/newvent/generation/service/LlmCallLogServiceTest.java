@@ -1,6 +1,5 @@
 package com.newvent.generation.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -39,6 +38,7 @@ public class LlmCallLogServiceTest {
 	private static final Instant NOW = Instant.parse("2026-09-21T03:00:00Z");
 	private static final Clock CLOCK = Clock.fixed(NOW, KST);
 	private static final int LIMIT = 3;
+	private static final String PROVIDER = "mock";
 	
 	@Mock
 	private LlmCallLogRepository logs;
@@ -53,11 +53,13 @@ public class LlmCallLogServiceTest {
 	void 통과_시도_success로_기록() {
 		RetryService.Trace t = new RetryService.Trace(1, "raw", List.of(), 100, 200, 10L, false);
 		
-		LlmCallLog row = LlmCallLogService.recordToEntity(t, 5L, 11L, "qwen2.5:7b", NOW);
+		LlmCallLog row = LlmCallLogService.recordToEntity(t, 5L, 11L, "qwen2.5:7b", PROVIDER, NOW);
 		
-		assertThat(row.isSuccess());
-		assertThat(row.getFailureType());
-		assertThat(row.getFailCodes());
+		assertTrue(row.isSuccess());
+		assertNull(row.getFailureType());
+		assertNull(row.getFailCodes());
+		assertFalse(row.isTruncated());
+		assertEquals(PROVIDER, row.getProvider());
 		assertEquals(10, row.getResponseTimeMs());
 		assertEquals(1, row.getAttemptNo());
 		assertEquals(5L, row.getEventId());
@@ -73,9 +75,10 @@ public class LlmCallLogServiceTest {
 						new Failure("few_benefits", "benefits 항목이 1개 입니다. 2개 이상 필요")),
 				100, 200, 10L, false);
 		
-		LlmCallLog row = LlmCallLogService.recordToEntity(t, 5L, null, "qwen2.5:7b", NOW);
+		LlmCallLog row = LlmCallLogService.recordToEntity(t, 5L, null, "qwen2.5:7b", PROVIDER, NOW);
 		
 		assertFalse(row.isSuccess());
+		assertFalse(row.isTruncated());
 		assertEquals(LlmCallLog.FailureType.VALIDATION_FAIL, row.getFailureType());
 		assertEquals("lost_benefits|few_benefits", row.getFailCodes());
 		assertNull(row.getVersionId());
@@ -91,9 +94,10 @@ public class LlmCallLogServiceTest {
 						new Failure("lost_benefits", "benefits 영역이 없음")),
 				100, 200, 10L, true);
 		
-		LlmCallLog row = LlmCallLogService.recordToEntity(t, 5L, null, "qwen2.5:7b", NOW);
+		LlmCallLog row = LlmCallLogService.recordToEntity(t, 5L, null, "qwen2.5:7b", PROVIDER, NOW);
 		
 		assertFalse(row.isSuccess());
+		assertTrue(row.isTruncated());
 		assertEquals(LlmCallLog.FailureType.TRUNCATED, row.getFailureType());
 		assertEquals("truncated|lost_benefits", row.getFailCodes(),
 				"잘림이 코드 목록을 덮어쓰면 RAG facet 재료가 사라짐");
@@ -108,8 +112,9 @@ public class LlmCallLogServiceTest {
 						new Failure("truncated", "출력이 너무 길어 중간에 잘림. 항목 수와 문장을 줄여 더 짧게 만드세요.")),
 				100, 200, 10L, false);
 		
-		LlmCallLog row = LlmCallLogService.recordToEntity(t, 5L, null, "qwen2.5:7b", NOW);
+		LlmCallLog row = LlmCallLogService.recordToEntity(t, 5L, null, "qwen2.5:7b", PROVIDER, NOW);
 		
+		assertTrue(row.isTruncated());
 		assertEquals(LlmCallLog.FailureType.TRUNCATED, row.getFailureType());
 		assertEquals(2, row.getFailCodes().split(Pattern.quote("|")).length);
 	}
@@ -123,7 +128,7 @@ public class LlmCallLogServiceTest {
 		RetryService.Trace pass = new RetryService.Trace(2, "raw", List.of(), 100, 200, 10L, false);
 		RetryService.Result r = new RetryService.Result(true, "<section>", List.of(fail, pass));
 		
-		List<LlmCallLog> rows = newService().record(r, 5L, 11L, "qwen2.5:7b");
+		List<LlmCallLog> rows = newService().record(r, 5L, 11L, "qwen2.5:7b", PROVIDER);
 		
 		assertEquals(2, rows.size());
 		assertFalse(rows.get(0).isSuccess());
@@ -146,7 +151,7 @@ public class LlmCallLogServiceTest {
 				List.of(new Failure("lost_benefits", "benefits 영역이 없음.")), 100, 200, 10L, false);
 		RetryService.Result r = new RetryService.Result(false, null, List.of(fail1, fail2));
 		
-		List<LlmCallLog> rows = newService().record(r, 5L, 11L, "qwen2.5:7b");
+		List<LlmCallLog> rows = newService().record(r, 5L, 11L, "qwen2.5:7b", PROVIDER);
 		
 		assertEquals(2, rows.size());
 		assertTrue(rows.stream().allMatch(row -> row.getVersionId() == null),
@@ -158,9 +163,12 @@ public class LlmCallLogServiceTest {
 	void 호출_실패_한_행으로_기록() {
 		when(logs.save(any(LlmCallLog.class))).thenAnswer(inv -> inv.getArgument(0));
 		
-		LlmCallLog row = newService().recordCallFailure(5L, null, "qwen2.5:7b", LlmCallLog.FailureType.LLM_ERROR);
+		LlmCallLog row = newService().recordCallFailure(5L, null, "qwen2.5:7b", PROVIDER, 
+				LlmCallLog.FailureType.LLM_ERROR);
 		
 		assertFalse(row.isSuccess());
+		assertFalse(row.isTruncated());
+		assertEquals(PROVIDER, row.getProvider());
 		assertEquals(LlmCallLog.FailureType.LLM_ERROR, row.getFailureType());
 		assertNull(row.getResponseTimeMs());
 		assertNull(row.getFailCodes());
