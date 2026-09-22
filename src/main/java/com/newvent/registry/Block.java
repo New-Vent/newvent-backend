@@ -10,6 +10,18 @@ import java.util.stream.Collectors;
  *
  * ★ 고칠 때는 shape 와 must 를 반드시 같이 고친다.
  *   shape 는 "모델에게 시키는 말", must 는 "그게 지켜졌는지 보는 선택자"다.
+ *
+ * ★ shape 와 must 는 짝이지만 같지는 않다
+ *   shape 는 **백지 생성**에서 모델에게 시키는 한 가지 모양이고,
+ *   must 는 **그 블록이 성립하는 모든 모양**을 받는다.
+ *
+ *     shape   "<ul> 안에 <li> 로 항목을 나열한다"     ← 모델에게 시키는 말
+ *     must    "ul li, .benefit-card"                  ← 백지도 템플릿도 받는 선택자
+ *
+ *   템플릿 5종은 benefits 를 <div class="benefit-card"> 로 만든다. <li> 가 하나도 없다.
+ *   must 를 "ul li" 로만 두면 템플릿 블록이 전부 empty_benefits 로 떨어진다.
+ *   그렇다고 shape 에 "둘 중 아무거나" 라고 쓰면 모델이 헷갈린다 —
+ *   **시키는 말은 하나, 받아주는 모양은 여럿**이 맞다.
  */
 public enum Block {
 
@@ -24,12 +36,13 @@ public enum Block {
     BENEFITS("benefits", true, Source.MIXED,
             "혜택 — 항목은 폼 값, 문장만 다듬는다",
             "<ul> 안에 <li> 로 항목을 나열한다. 2개 이상",
-            "ul li", 2),
+            // 백지: ul li · 템플릿: .benefit-card (계약 EVENT_STRUCTURE_CONTRACT §3)
+            "ul li, .benefit-card", 2),
 
     STEPS("steps", false, Source.LLM,
             "참여 방법 2~4단계",
             "<ol> 안에 <li> 로 순서대로 나열한다",
-            "ol li", 2),
+            "ol li, .step-card", 2),
 
     NOTICES("notices", true, Source.SERVER,
             "유의사항 — 승인된 문구만 서버가 삽입",
@@ -38,7 +51,9 @@ public enum Block {
     CTA("cta", true, Source.MIXED,
             "참여 버튼. 문구만 생성, 링크는 폼 값",
             "<a href=\"#\" class=\"btn\"> 안에 버튼 문구를 넣는다",
-            "a", 0);
+            // 템플릿 5종은 전부 <button>. <a> 는 5종 통틀어 0개다.
+            // 호스트가 이벤트 위임으로 클릭을 받으므로 button 이 맞는 선택이다.
+            "a, button", 0);
 
     /** 누가 내용을 만드는가. 프롬프트·클릭 가능 여부·덮어쓰기가 여기서 갈린다. */
     public enum Source {
