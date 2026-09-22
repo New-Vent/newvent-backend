@@ -1,7 +1,9 @@
 package com.newvent.user.domain;
 
-import com.newvent.common.domain.BaseTimeEntity;
 import jakarta.persistence.*;
+
+import com.newvent.common.domain.BaseTimeEntity;
+
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;

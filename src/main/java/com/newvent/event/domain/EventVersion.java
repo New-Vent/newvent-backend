@@ -1,14 +1,17 @@
 package com.newvent.event.domain;
 
-import com.newvent.generation.domain.ChatMessage;
+import java.time.OffsetDateTime;
+
 import jakarta.persistence.*;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.time.OffsetDateTime;
+import com.newvent.generation.domain.ChatMessage;
+
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 @Getter
 @Entity
