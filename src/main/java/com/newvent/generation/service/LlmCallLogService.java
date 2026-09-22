@@ -43,22 +43,26 @@ public class LlmCallLogService {
 
     /** Trace 한 건 -> 로그 한 행 */
     static LlmCallLog recordToEntity(RetryService.Trace t, long eventId, Long versionId,
-            String modelName, Instant createdAt) {
+            String modelName, String provider, Instant createdAt) {
         boolean success = t.passed();
+        boolean truncated = isTruncated(t);
         LlmCallLog.FailureType type = success ? null : failureTypeOf(t);
         String codes = success ? null : t.failures().stream()
                 .map(Failure::code)
                 .collect(Collectors.joining("|"));
-        return LlmCallLog.create(eventId, versionId, t.attempt(), modelName,
+        return LlmCallLog.create(eventId, versionId, t.attempt(), modelName, provider,
                 t.inputTokens(), t.outputTokens(), (int) t.wallMs(),
-                success, type, codes, createdAt);
+                truncated, success, type, codes, createdAt);
+    }
+    
+    // 잘림 판정 - 플래그와 코드 중 하나라도 있으면 잘림. boolean과 enum 이 어긋나지 않게 단일 계산
+    static boolean isTruncated(RetryService.Trace t) {
+    	return t.truncated() || t.failures().stream().anyMatch(f -> f.code().equals("truncated"));
     }
 
     /** TRUNCATED 우선 — 잘림은 done_reason 이라는 별개 사실이라 검증 실패보다 위 */
     static LlmCallLog.FailureType failureTypeOf(RetryService.Trace t) {
-        boolean truncated = t.truncated()
-                || t.failures().stream().anyMatch(f -> f.code().equals("truncated"));
-        return truncated ? LlmCallLog.FailureType.TRUNCATED
+        return isTruncated(t) ? LlmCallLog.FailureType.TRUNCATED
                          : LlmCallLog.FailureType.VALIDATION_FAIL;
     }
 
@@ -66,7 +70,7 @@ public class LlmCallLogService {
 
     /** 재시도 전체 결과를 행으로 떨군다. 호출 전에 checkDailyLimit 를 먼저 부른다. */
     public List<LlmCallLog> record(RetryService.Result result, long eventId,
-            Long versionId, String modelName) {
+            Long versionId, String modelName, String provider) {
         List<LlmCallLog> rows = new ArrayList<>();
         Instant at = clock.instant();
         int last = result.traces().size();
@@ -76,7 +80,7 @@ public class LlmCallLogService {
             // versionId 는 "저장까지 이어진" 마지막 성공 시도에만.
             // 선행 실패 시도·실패 결과는 무조건 null
             Long vid = (result.ok() && i == last) ? versionId : null;
-            rows.add(recordToEntity(t, eventId, vid, modelName, at));
+            rows.add(recordToEntity(t, eventId, vid, modelName, provider, at));
         }
         return logs.saveAll(rows);
     }
@@ -87,9 +91,9 @@ public class LlmCallLogService {
      * 토큰은 0(측정 못 함), 응답시간은 null.
      */
     public LlmCallLog recordCallFailure(long eventId, Long versionId, String modelName,
-            LlmCallLog.FailureType type) {
-        LlmCallLog row = LlmCallLog.create(eventId, versionId, 1, modelName,
-                0, 0, null, false, type, null, clock.instant());
+            String provider, LlmCallLog.FailureType type) {
+        LlmCallLog row = LlmCallLog.create(eventId, versionId, 1, modelName, provider,
+                0, 0, null, false, false, type, null, clock.instant());
         return logs.save(row);
     }
 
