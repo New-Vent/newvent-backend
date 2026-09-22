@@ -1,7 +1,9 @@
 package com.newvent.event.controller;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -20,6 +23,7 @@ import com.newvent.common.error.GlobalExceptionHandler;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.MembershipGrade;
+import com.newvent.event.dto.EventCreateRequest;
 import com.newvent.event.dto.EventDetailResponse;
 import com.newvent.event.dto.EventSummaryResponse;
 import com.newvent.event.exception.EventErrorCode;
@@ -86,5 +90,51 @@ class AdminEventControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("EVENT404-0"))
                 .andExpect(jsonPath("$.message").value("이벤트를 찾을 수 없습니다."));
+    }
+
+    @Test
+    @DisplayName("생성 API 는 201 과 DRAFT 를 반환한다")
+    void 이벤트_생성에_성공한다() throws Exception {
+        EventDetailResponse created = new EventDetailResponse(
+                100L, "테스트 이벤트", EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
+                OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
+                "sports_cheer", null, List.of(MembershipGrade.NORMAL),
+                null, false);
+        given(eventService.create(any(EventCreateRequest.class))).willReturn(created);
+
+        mockMvc.perform(post("/api/admin/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "테스트 이벤트",
+                                  "startAt": "2026-10-01T00:00:00+09:00",
+                                  "endAt": "2026-10-15T23:59:59+09:00",
+                                  "templateKey": "sports_cheer",
+                                  "targetGrades": ["NORMAL"]
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(100))
+                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.completedHtml").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("이벤트명 누락은 400 과 COMMON400-0 을 반환한다")
+    void 이벤트명_없으면_400을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/admin/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "",
+                                  "startAt": "2026-10-01T00:00:00+09:00",
+                                  "endAt": "2026-10-15T23:59:59+09:00"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400-0"));
     }
 }

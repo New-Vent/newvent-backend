@@ -11,11 +11,14 @@ import org.springframework.stereotype.Service;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
+import com.newvent.event.domain.MembershipGrade;
+import com.newvent.event.dto.EventCreateRequest;
 import com.newvent.event.dto.EventDetailResponse;
 import com.newvent.event.dto.EventSummaryResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
+import com.newvent.event.repository.EventTemplateRepository;
 
 @Service
 public class EventService {
@@ -23,10 +26,15 @@ public class EventService {
     static final Duration CLOSING_SOON_WINDOW = Duration.ofDays(3);
 
     private final EventRepository eventRepository;
+    private final EventTemplateRepository eventTemplateRepository;
     private final Clock clock;
 
-    public EventService(EventRepository eventRepository, Clock clock) {
+    public EventService(
+            EventRepository eventRepository,
+            EventTemplateRepository eventTemplateRepository,
+            Clock clock) {
         this.eventRepository = eventRepository;
+        this.eventTemplateRepository = eventTemplateRepository;
         this.clock = clock;
     }
 
@@ -60,6 +68,32 @@ public class EventService {
         return EventDetailResponse.from(event, closingSoon(event));
     }
 
+    public EventDetailResponse create(EventCreateRequest request) {
+        if (!request.endAt().isAfter(request.startAt())) {
+            throw new EventException(EventErrorCode.INVALID_PERIOD);
+        }
+        validateTemplateKey(request.templateKey());
+
+        List<MembershipGrade> grades = request.targetGrades() == null
+                ? List.of()
+                : request.targetGrades();
+        String templateKey = blankToNull(request.templateKey());
+
+        Event saved = eventRepository.save(new Event(
+                null,
+                request.name().trim(),
+                EventStatus.DRAFT,
+                request.startAt(),
+                request.endAt(),
+                OffsetDateTime.now(clock),
+                null,
+                templateKey,
+                null,
+                grades,
+                null));
+        return EventDetailResponse.from(saved, closingSoon(saved));
+    }
+
     boolean closingSoon(Event event) {
         if (event.status() != EventStatus.PUBLISHED || event.deleted()) {
             return false;
@@ -69,6 +103,22 @@ public class EventService {
             return false;
         }
         return !now.isBefore(event.endAt().minus(CLOSING_SOON_WINDOW));
+    }
+
+    private void validateTemplateKey(String templateKey) {
+        if (templateKey == null || templateKey.isBlank()) {
+            return;
+        }
+        eventTemplateRepository.findByKey(templateKey.trim())
+                .filter(template -> template.active())
+                .orElseThrow(() -> new EventException(EventErrorCode.TEMPLATE_NOT_FOUND));
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private static boolean nameMatches(Event event, String name) {

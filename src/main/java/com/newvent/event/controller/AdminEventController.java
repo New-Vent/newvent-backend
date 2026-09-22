@@ -2,12 +2,17 @@ package com.newvent.event.controller;
 
 import java.time.OffsetDateTime;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.newvent.common.response.ApiResponse;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.EventStatus;
+import com.newvent.event.dto.EventCreateRequest;
 import com.newvent.event.dto.EventDetailResponse;
 import com.newvent.event.dto.EventSummaryResponse;
 import com.newvent.event.service.EventService;
@@ -45,5 +51,12 @@ public class AdminEventController {
     @GetMapping("/{id}")
     public ApiResponse<EventDetailResponse> detail(@PathVariable Long id) {
         return ApiResponse.success(eventService.findAdminEvent(id));
+    }
+
+    @PostMapping
+    public ResponseEntity<ApiResponse<EventDetailResponse>> create(
+            @Valid @RequestBody EventCreateRequest request) {
+        EventDetailResponse created = eventService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(created));
     }
 }

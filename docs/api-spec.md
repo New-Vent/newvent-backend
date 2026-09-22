@@ -32,10 +32,11 @@
 ## 아직 안 한 것
 
 - 인증/인가 (Security 미사용. `/api/admin/**` 도 토큰 없이 호출됨)
-- JPA/Flyway — 지금은 메모리 더미 (이벤트 6건 · 템플릿 5종)
+- JPA/Flyway — 지금은 메모리 더미 (이벤트 시드 6건 · 템플릿 5종)
 - 템플릿 `baseContent`(HTML 조각) — 메타데이터만 제공
-- 생성·수정·삭제·상태변경·게시
+- 수정·삭제·상태변경·게시
 - 공개 조회 `/api/public/events`
+- LLM HTML 생성 (생성 API 는 DRAFT 메타만 저장)
 
 ## 이벤트 상태
 
@@ -139,6 +140,58 @@ http://localhost:8080/api/admin/events?status=PUBLISHED&name=쿠폰
 
 ```text
 http://localhost:8080/api/admin/events/3
+```
+
+---
+
+## `POST /api/admin/events`
+
+관리자 이벤트 생성. 상태는 항상 `DRAFT`. `completedHtml` 은 null.
+인증 없음 (아직).
+
+### Request body
+
+| 필드 | 필수 | 설명 |
+| --- | --- | --- |
+| `name` | O | 이벤트명 (1~100자) |
+| `startAt` | O | 시작일시 |
+| `endAt` | O | 종료일시 (`startAt` 보다 이후) |
+| `templateKey` | X | 헌진 템플릿 키. 있으면 활성 템플릿이어야 함 |
+| `targetGrades` | X | 게시 전엔 비어도 됨 |
+
+### 201 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 100,
+    "name": "테스트 이벤트",
+    "status": "DRAFT",
+    "startAt": "2026-10-01T00:00:00+09:00",
+    "endAt": "2026-10-15T23:59:59+09:00",
+    "updatedAt": "2026-09-16T01:00:00+09:00",
+    "template": "sports_cheer",
+    "thumbnailUrl": null,
+    "targetGrades": ["NORMAL"],
+    "completedHtml": null,
+    "closingSoon": false
+  },
+  "message": null
+}
+```
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| 필수값 누락·검증 실패 | 400 | `COMMON400-0` |
+| `endAt` ≤ `startAt` | 400 | `EVENT400-0` |
+| 없는·비활성 `templateKey` | 404 | `EVENT404-1` |
+
+```text
+POST http://localhost:8080/api/admin/events
+Content-Type: application/json
 ```
 
 ---

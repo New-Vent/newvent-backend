@@ -7,6 +7,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,11 +15,14 @@ import org.junit.jupiter.api.Test;
 
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.EventStatus;
+import com.newvent.event.domain.MembershipGrade;
+import com.newvent.event.dto.EventCreateRequest;
 import com.newvent.event.dto.EventDetailResponse;
 import com.newvent.event.dto.EventSummaryResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.InMemoryEventRepository;
+import com.newvent.event.repository.InMemoryEventTemplateRepository;
 
 class EventServiceTest {
 
@@ -29,7 +33,10 @@ class EventServiceTest {
     @BeforeEach
     void setUp() {
         Clock clock = Clock.fixed(Instant.parse("2026-09-16T01:00:00+09:00"), SEOUL);
-        eventService = new EventService(new InMemoryEventRepository(), clock);
+        eventService = new EventService(
+                new InMemoryEventRepository(),
+                new InMemoryEventTemplateRepository(),
+                clock);
     }
 
     @Test
@@ -110,5 +117,57 @@ class EventServiceTest {
 
         assertThat(detail.status()).isEqualTo(EventStatus.PUBLISHED);
         assertThat(detail.closingSoon()).isFalse();
+    }
+
+    @Test
+    @DisplayName("생성은 DRAFT 로 저장되고 조회된다")
+    void 이벤트_생성에_성공한다() {
+        EventCreateRequest request = new EventCreateRequest(
+                "테스트 이벤트",
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
+                "sports_cheer",
+                List.of(MembershipGrade.NORMAL));
+
+        EventDetailResponse created = eventService.create(request);
+
+        assertThat(created.id()).isEqualTo(100L);
+        assertThat(created.status()).isEqualTo(EventStatus.DRAFT);
+        assertThat(created.template()).isEqualTo("sports_cheer");
+        assertThat(created.completedHtml()).isNull();
+        assertThat(created.closingSoon()).isFalse();
+        assertThat(eventService.findAdminEvent(created.id()).name()).isEqualTo("테스트 이벤트");
+    }
+
+    @Test
+    @DisplayName("종료일시가 시작일시 이전이면 EVENT400-0 이다")
+    void 잘못된_기간은_400을_던진다() {
+        EventCreateRequest request = new EventCreateRequest(
+                "잘못된 기간",
+                OffsetDateTime.parse("2026-10-15T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                null,
+                null);
+
+        assertThatThrownBy(() -> eventService.create(request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.INVALID_PERIOD.getCode());
+    }
+
+    @Test
+    @DisplayName("없는 템플릿 키는 EVENT404-1 이다")
+    void 없는_템플릿은_404를_던진다() {
+        EventCreateRequest request = new EventCreateRequest(
+                "템플릿 없음",
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
+                "없는키",
+                null);
+
+        assertThatThrownBy(() -> eventService.create(request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.TEMPLATE_NOT_FOUND.getCode());
     }
 }

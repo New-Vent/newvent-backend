@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.springframework.stereotype.Repository;
 
@@ -14,28 +15,56 @@ import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.MembershipGrade;
 
 /**
- * JPA/Flyway 켜기 전 조회 API 용 저장소.
+ * JPA/Flyway 켜기 전 조회·생성 API 용 저장소.
  * 시드는 이수현 이벤트 더미(events.json)와 같은 id·상태·기간을 쓴다.
  */
 @Repository
 public class InMemoryEventRepository implements EventRepository {
 
     private final Map<Long, Event> events = new ConcurrentHashMap<>();
+    private final AtomicLong sequence = new AtomicLong(0);
 
     public InMemoryEventRepository() {
         seed();
+        long maxId = events.keySet().stream().mapToLong(Long::longValue).max().orElse(0L);
+        sequence.set(maxId);
     }
 
     @Override
     public List<Event> findAll() {
         return events.values().stream()
-                .sorted(Comparator.comparing(Event::updatedAt).reversed().thenComparing(Event::id, Comparator.reverseOrder()))
+                .sorted(Comparator.comparing(Event::updatedAt).reversed()
+                        .thenComparing(Event::id, Comparator.reverseOrder()))
                 .toList();
     }
 
     @Override
     public Optional<Event> findById(Long id) {
         return Optional.ofNullable(events.get(id));
+    }
+
+    @Override
+    public Event save(Event event) {
+        Long id = event.id();
+        if (id == null) {
+            id = sequence.incrementAndGet();
+            event = new Event(
+                    id,
+                    event.name(),
+                    event.status(),
+                    event.startAt(),
+                    event.endAt(),
+                    event.updatedAt(),
+                    event.deletedAt(),
+                    event.template(),
+                    event.thumbnailUrl(),
+                    event.targetGrades(),
+                    event.completedHtml());
+        } else {
+            sequence.accumulateAndGet(id, Math::max);
+        }
+        events.put(id, event);
+        return event;
     }
 
     private void seed() {
@@ -73,10 +102,6 @@ public class InMemoryEventRepository implements EventRepository {
                 at("2026-01-01T00:00:00+09:00"), at("2026-01-10T23:59:59+09:00"),
                 at("2026-01-11T00:00:00+09:00"), at("2026-01-11T00:00:00+09:00"),
                 "signup", null, List.of(), null));
-    }
-
-    private void save(Event event) {
-        events.put(event.id(), event);
     }
 
     private static OffsetDateTime at(String iso) {
