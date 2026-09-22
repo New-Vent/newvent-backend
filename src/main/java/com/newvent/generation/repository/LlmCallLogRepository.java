@@ -24,10 +24,10 @@ public interface LlmCallLogRepository extends JpaRepository<LlmCallLog, Long>{
 	// - date_trunc('week') 는 월요일 시작이라 월~일 KST 주간과 일치
 	// - AT TIME ZONE 을 빼먹으면 UTC 주간으로 어긋나니 삭제 금지
 	@Query(value = """
-			select		date_trunc('week', created_at at time zone 'Asia/Seoul')::date as weekStart,
-						model_name as modelName,
-						coalesce(sum(input_tokens), 0) as inputTokens,
-						coalesce(sum(output_tokens), 0) as outputTokens
+			select		date_trunc('week', created_at at time zone 'Asia/Seoul')::date as "weekStart",
+						model_name as "modelName",
+						coalesce(sum(input_tokens), 0) as "inputTokens",
+						coalesce(sum(output_tokens), 0) as "outputTokens"
 			  from		llm_call_logs
 			 where		created_at >= :from
 			 group by	1, 2
