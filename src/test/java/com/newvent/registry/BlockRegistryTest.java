@@ -18,6 +18,8 @@ import com.newvent.infra.llm.MockLlmClient;
  * 이 테스트가 지키는 것:
  *   블록을 추가·수정했는데 프롬프트나 검증기 한쪽만 고치면 여기서 빨간불이 납니다.
  *   그게 레지스트리를 만든 이유입니다.
+ *
+ * ★ 슬롯 관련은 SlotPreservationTest 로 옮겼습니다.
  */
 class BlockRegistryTest {
 
@@ -74,14 +76,14 @@ class BlockRegistryTest {
     }
 
     @Test
-    @DisplayName("sanitize 가 script 를 지우고 style 은 남긴다")
+    @DisplayName("정화가 script 를 지우고 style 은 남긴다")
     void 정화가_스크립트를_지운다() {
         String dirty = """
                 <section data-block="hero" style="color:red">
                   <h1>제목</h1>
                   <script>alert(1)</script>
                 </section>""";
-        String clean = BlockValidator.sanitize(dirty);
+        String clean = BlockValidator.sanitizeGenerated(dirty);
 
         assertFalse(clean.contains("<script"), "script 가 남았습니다: " + clean);
         assertFalse(clean.contains("alert"),   "script 내용이 남았습니다: " + clean);
@@ -122,7 +124,7 @@ class BlockRegistryTest {
                 <section data-block="hero" style="color:red; position:fixed; z-index:9999; background-image:url(javascript:alert(1))">
                   <h1>제목</h1>
                 </section>""";
-        String clean = BlockValidator.sanitize(dirty);
+        String clean = BlockValidator.sanitizeGenerated(dirty);
 
         assertTrue(clean.contains("color:red"),   "허용 속성 color 가 지워졌습니다: " + clean);
         assertFalse(clean.contains("position"),   "position 이 남았습니다. 화면을 덮을 수 있습니다: " + clean);
@@ -131,14 +133,14 @@ class BlockRegistryTest {
     }
 
     @Test
-    @DisplayName("모델이 data-slot 을 만들어도 제거된다")
-    void 슬롯은_모델이_못_만든다() {
-        String dirty = "<section data-block=\"hero\"><span data-slot=\"period\">가짜 기간</span></section>";
+    @DisplayName("CSS 정화는 수정 쪽에도 똑같이 걸린다")
+    void CSS_정화가_수정에도_걸린다() {
+        String dirty = "<section data-block=\"hero\" style=\"color:red; position:fixed\"><h1>제목</h1></section>";
+        String clean = BlockValidator.sanitizeEdited(dirty);
 
-        String clean = BlockValidator.sanitize(dirty);
-
-        assertFalse(clean.contains("data-slot"),
-                "data-slot 이 남았습니다. 슬롯은 서버만 심어야 합니다: " + clean);
+        assertTrue(clean.contains("color:red"), "허용 속성이 지워졌습니다: " + clean);
+        assertFalse(clean.contains("position"),
+                "수정 경로에서 position 이 통과했습니다. 정화는 양쪽에 같아야 합니다: " + clean);
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.newvent.registry;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.jsoup.Jsoup;
@@ -59,7 +60,7 @@ public class BlockValidator {
                 }
                 continue;
             }
-            checkShape(b, el, f);
+            checkShape(b, el, f, false);
         }
 
         // 서버 소유 블록을 모델이 만들었나
@@ -76,8 +77,17 @@ public class BlockValidator {
         return f;
     }
 
-    /** 수정 결과 검증 — 그 블록만 왔는가 */
-    public static List<Failure> validateEdited(Block target, String html) {
+    /**
+     * 수정 결과 검증 — 그 블록만 왔는가, 그리고 건드리면 안 되는 게 그대로인가.
+     *
+     * ★ before 가 필요한 이유
+     *   수정은 "원본 대비" 로만 판정할 수 있는 항목이 있습니다.
+     *   원본에 있던 [data-slot] 이나 id 가 없어졌는지는 원본을 봐야 압니다.
+     *
+     * @param before 수정 전 그 블록의 HTML (서버가 갖고 있는 것)
+     * @param html   모델이 돌려준 것 (sanitizeEdited 를 먼저 거친 것)
+     */
+    public static List<Failure> validateEdited(Block target, String before, String html) {
         List<Failure> f = new ArrayList<>();
         Document doc = Jsoup.parseBodyFragment(html == null ? "" : html);
 
@@ -92,7 +102,8 @@ public class BlockValidator {
                         b.key() + " 영역은 만들지 마세요. 요청한 영역만 출력하세요."));
             }
         }
-        checkShape(target, el, f);
+        checkShape(target, el, f, true);
+        checkPreserved(before, html, f);
         return f;
     }
 
@@ -102,22 +113,101 @@ public class BlockValidator {
      * ★ 생성·수정이 같은 규칙을 쓰게 하는 지점입니다.
      *   두 곳에 따로 적으면 어긋납니다 — 실제로 minItems 가 수정 쪽에만 빠져 있었고,
      *   그래서 "생성으로는 못 만드는 상태를 수정으로는 만들 수 있는" 구멍이 있었습니다.
+     *
+     * ★ 메시지는 생성과 수정이 다릅니다.
+     *   shape 는 **백지 생성**에서 시키는 말입니다("<ul> 안에 <li> 로").
+     *   템플릿 블록을 수정하다 걸렸을 때 그 문장을 주면
+     *   모델이 .benefit-card 구조를 <ul><li> 로 갈아엎습니다. 디자인이 망가집니다.
      */
-    private static void checkShape(Block b, Element el, List<Failure> f) {
+    private static void checkShape(Block b, Element el, List<Failure> f, boolean editing) {
         if (b.must() == null) return;
 
         if (el.selectFirst(b.must()) == null) {
-            f.add(new Failure("empty_" + b.key(),
-                    b.key() + " 안에 " + b.shape() + " — 맨 텍스트만 두면 안 됩니다."));
+            f.add(new Failure("empty_" + b.key(), editing
+                    ? b.key() + " 안에 내용이 없습니다. 원래 구조를 그대로 두고 문구만 고치세요."
+                    : b.key() + " 안에 " + b.shape() + " — 맨 텍스트만 두면 안 됩니다."));
             return;
         }
         if (b.minItems() > 0) {
             // ★ li 를 하드코딩하지 않는다. must() 가 곧 세는 기준이다.
+            //   must 가 "ul li, .benefit-card" 라 백지도 템플릿도 같은 코드로 센다.
             int n = el.select(b.must()).size();
             if (n < b.minItems()) {
                 f.add(new Failure("few_" + b.key(),
                         b.key() + " 항목이 " + n + "개입니다. " + b.minItems() + "개 이상 필요합니다."));
             }
+        }
+    }
+
+    // ── 보존 검사 ──────────────────────────────────────────────────
+
+    /**
+     * 건드리면 안 되는 "이름표" 가 그대로인가. **개수가 아니라 집합을 본다.**
+     *
+     * ★ 왜 개수가 아닌가
+     *   템플릿 스크립트는 5종 전부 이벤트 위임이다 —
+     *   document 에 리스너 하나 걸고 closest('.cta-btn, .btn') 으로 판정한다.
+     *   그래서 **버튼을 복제해도 그대로 동작한다.**
+     *   개수를 묶으면 "복주머니를 2개만 보여줘"(= 카드 삭제)가 영원히 실패한다.
+     *   계약 3표의 "혜택/단계 카드 추가·삭제" 도 막힌다.
+     *
+     * ★ 대신 이 둘은 고정이다
+     *   data-slot  서버가 값을 쓰는 자리. 없어지면 그 이벤트는 영영 못 채운다
+     *   id         getElementById 로 직접 찾는다 (#demoTimer · #regCount · #pouchSection)
+     *              없어지면 타이머가 멈추고, 복제하면 id 중복으로 첫 번째만 잡힌다
+     *   class      단, **이름표 붙은 요소의 것만.** 아래 diffClasses 참고
+     */
+    private static void checkPreserved(String before, String after, List<Failure> f) {
+        diff(Slots.keysOf(before), Slots.keysOf(after), f,
+                "slot_lost_", "data-slot=\"%s\" 가 붙은 태그를 지웠습니다. "
+                        + "그 자리는 서버가 채우는 곳입니다. 태그와 속성을 원래대로 두세요.",
+                "slot_invented_", "data-slot=\"%s\" 를 새로 만들었습니다. "
+                        + "data-slot 은 서버만 심습니다. 원래 있던 것만 그대로 두세요.");
+
+        diff(Slots.idsOf(before), Slots.idsOf(after), f,
+                "id_lost_", "id=\"%s\" 를 지웠습니다. 화면 기능이 그 id 로 요소를 찾습니다. "
+                        + "원래 있던 id 를 그대로 두세요.",
+                "id_invented_", "id=\"%s\" 를 새로 만들었습니다. "
+                        + "id 는 화면 기능이 쓰는 이름이라 임의로 추가하면 안 됩니다.");
+
+        diffClasses(Slots.classMap(before), Slots.classMap(after), f);
+    }
+
+    /**
+     * 이름표 붙은 요소(root · slot · id)의 class 가 그대로인가.
+     *
+     * ★ 왜 이것만 보는가는 Slots.classMap() 의 주석에 있습니다.
+     *   한 줄로: 전체를 묶으면 "카드 하나 지워줘" 가 영원히 실패합니다.
+     *
+     * ★ 없어진 요소는 여기서 말하지 않는다
+     *   요소 자체가 사라진 경우는 바로 위 slot_lost_ / id_lost_ 가 이미 잡았습니다.
+     *   여기서 또 말하면 재시도 프롬프트에 같은 사고가 두 줄로 들어가고,
+     *   모델이 뭘 고쳐야 하는지 흐려집니다.
+     *
+     * ★ 새로 생긴 이름표도 여기서 말하지 않는다 (slot_invented_ / id_invented_ 담당)
+     */
+    private static void diffClasses(Map<String, String> was, Map<String, String> now,
+                                    List<Failure> f) {
+        for (Map.Entry<String, String> e : was.entrySet()) {
+            String at = e.getKey();
+            String after = now.get(at);
+            if (after == null) continue;              // 요소가 없어진 건 위에서 잡았다
+            if (e.getValue().equals(after)) continue;
+
+            f.add(new Failure("class_changed_" + at,
+                    at + " 의 class 를 바꿨습니다. 디자인과 버튼 동작이 이 class 에 걸려 있습니다. "
+                            + "원래대로 두세요: class=\"" + e.getValue() + "\""));
+        }
+    }
+
+    private static void diff(Set<String> was, Set<String> now, List<Failure> f,
+                             String lostCode, String lostMsg,
+                             String newCode, String newMsg) {
+        for (String k : was) {
+            if (!now.contains(k)) f.add(new Failure(lostCode + k, String.format(lostMsg, k)));
+        }
+        for (String k : now) {
+            if (!was.contains(k)) f.add(new Failure(newCode + k, String.format(newMsg, k)));
         }
     }
 
@@ -139,20 +229,64 @@ public class BlockValidator {
             "border", "border-color", "border-width", "border-style", "border-radius");
 
     /**
-     * 정화 — 명세 REQ-LLM-45. <script> 제거 + style 값 검사.
-     * 모델이 JS 를 잘 쓰더라도(qwen2.5 30/30) 검토 안 된 코드는 실행시키지 않는다.
+     * 생성 결과 정화 — 모델이 만든 문서에 건다.
      *
-     * ★ 이 함수는 "모델이 준 조각" 에만 건다.
-     *   서버가 조립한 최종 문서나 템플릿에 걸면 템플릿의 button·script 가 다 죽는다.
-     *   순서:  sanitize(모델 출력) → merge   (반대로 하지 말 것)
+     * 지우는 것: data-slot · button · input · id · 인터랙션 data-* 속성
      *
-     * ★ data-slot 은 일부러 허용하지 않는다.
-     *   슬롯은 서버가 템플릿에 심는 것이고, 모델이 만들어낼 수 있으면 안 된다.
+     * ★ 왜 지우나
+     *   백지 생성 결과에는 그걸 물고 동작할 템플릿 스크립트가 없다.
+     *   모델이 버튼을 만들어도 눌리지 않는 껍데기가 생길 뿐이고,
+     *   data-slot 을 만들면 서버의 쓰기 지점을 모델이 만드는 셈이 된다 (REQ-LLM-46).
      */
-    public static String sanitize(String html) {
+    public static String sanitizeGenerated(String html) {
+        return clean(html, false);
+    }
+
+    /**
+     * 수정 결과 정화 — 템플릿에서 온 블록에 건다.
+     *
+     * 남기는 것: data-slot · button · input · id · 인터랙션 data-* 속성
+     *
+     * ★ 생성과 반대다. 원본에 이미 있던 것을 보존해야 하기 때문이다.
+     *   계약 EVENT_STRUCTURE_CONTRACT §4-4 가 명시적으로 요구한다 —
+     *   "data-demo-msg, data-state 를 반드시 보존", "#demoTimer, #regCount, #pouchSection 유지".
+     *
+     *   대신 모델이 지어낸 것은 validateEdited 의 checkPreserved 가 잡는다.
+     *   **"보존" 과 "대조" 는 한 쌍이다.** 하나만 있으면 뚫린다.
+     *
+     * ★ on* 핸들러는 걱정하지 않아도 된다
+     *   Safelist 는 명시 허용만 하므로 onclick 은 애초에 못 들어온다.
+     *   계약 4-⑤ 도 "CTA 버튼에 onclick 인라인 핸들러를 넣지 않습니다" 로 같은 방향이다.
+     */
+    public static String sanitizeEdited(String html) {
+        return clean(html, true);
+    }
+
+    /**
+     * ★ 이 함수는 "모델이 준 조각" 에만 건다.
+     *   서버가 조립한 최종 문서에 걸면 문서 밖 script 가 다 죽는다.
+     *   순서:  sanitize(모델 출력) → merge   (반대로 하지 말 것)
+     */
+    private static String clean(String html, boolean keepInteractive) {
         Safelist s = Safelist.relaxed()
                 .addAttributes(":all", "style", "data-block", "class")
-                .addTags("section");
+                .addTags("section")
+                // ★ href="#" 를 살리는 줄. 빼면 CTA 버튼의 링크가 통째로 사라진다.
+                //   Safelist.relaxed() 는 a[href] 에 ftp/http/https/mailto 만 허용하고,
+                //   상대 URL 은 절대 URL 로 바꾼 뒤 검사한다. baseUri 가 비어 있으면
+                //   "#" 은 빈 문자열이 되어 어느 프로토콜에도 안 맞고 속성째 제거된다.
+                .addProtocols("a", "href", "#");
+
+        if (keepInteractive) {
+            s = s.addTags("button", "input")
+                 .addAttributes(":all",
+                         "data-slot",      // 서버가 값을 쓰는 자리
+                         "id",             // getElementById 로 찾는 것들
+                         "type",           // <button type="button">
+                         "value", "placeholder",
+                         "data-href",      // <button> 일 때 서버가 넣는 링크
+                         "data-demo-msg", "data-state", "data-vote");
+        }
         String cleaned = Jsoup.clean(html, "", s, new Document.OutputSettings().prettyPrint(false));
 
         // ★ Jsoup 은 style 속성이 "있는지"만 보고 "값"은 보지 않는다. 값은 여기서 거른다.
@@ -205,5 +339,11 @@ public class BlockValidator {
         else old.replaceWith(incoming);
 
         return cur.body().html();
+    }
+
+    /** 문서에서 블록 하나만 떼어낸다 — 수정 요청과 validateEdited 의 before 로 쓴다 */
+    public static String blockOf(String doc, Block target) {
+        Element el = Jsoup.parseBodyFragment(doc).body().selectFirst(target.selector());
+        return el == null ? "" : el.outerHtml();
     }
 }

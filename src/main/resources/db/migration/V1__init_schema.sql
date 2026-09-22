@@ -53,6 +53,8 @@ CREATE TABLE event_templates
     is_builtin     BOOLEAN      NOT NULL DEFAULT FALSE,
     thumbnail_path VARCHAR(255),
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active  BOOLEAN     NOT NULL DEFAULT TRUE,
 
     CONSTRAINT uk_event_templates_code UNIQUE (code)
 );
@@ -77,8 +79,8 @@ CREATE TABLE events
     title                VARCHAR(100) NOT NULL,
     start_date           TIMESTAMPTZ,
     end_date             TIMESTAMPTZ,
-    status               VARCHAR(30)  NOT NULL,
-    review_status        VARCHAR(30)  NOT NULL,
+    status               VARCHAR(30)  NOT NULL DEFAULT 'DRAFT',
+    review_status        VARCHAR(30)  NOT NULL DEFAULT 'PENDING',
     grade                VARCHAR(20)  NOT NULL,
     url                  TEXT,
     created_at           TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -173,7 +175,8 @@ CREATE TABLE llm_call_logs
     request_id       UUID        NOT NULL,
     attempt_no       INTEGER     NOT NULL,
     model_name       VARCHAR(100) NOT NULL,
-    success          BOOLEAN     NOT NULL,
+    call_ok          BOOLEAN NOT NULL,
+    valid_ok         BOOLEAN NOT NULL,
     failure_type     VARCHAR(50),
     failure_message  TEXT,
     response_time_ms INTEGER,
@@ -199,12 +202,33 @@ CREATE TABLE llm_call_logs
         CHECK (input_tokens IS NULL OR input_tokens >= 0),
     CONSTRAINT ck_llm_call_logs_output_tokens
         CHECK (output_tokens IS NULL OR output_tokens >= 0),
+
+    CONSTRAINT ck_llm_call_logs_valid_requires_call
+        CHECK (valid_ok = FALSE OR call_ok = TRUE),
+
+    CONSTRAINT ck_llm_call_logs_truncated_state
+        CHECK (
+            truncated = FALSE
+                OR (call_ok = TRUE AND valid_ok = FALSE)
+            ),
+
     CONSTRAINT ck_llm_call_logs_failure_fields
         CHECK (
-            (success = TRUE AND failure_type IS NULL AND failure_message IS NULL)
-                OR success = FALSE
+            (
+                valid_ok = TRUE
+                    AND failure_type IS NULL
+                    AND failure_message IS NULL
+                )
+                OR
+            (
+                valid_ok = FALSE
+                    AND failure_type IS NOT NULL
+                )
             )
 );
+
+CREATE INDEX idx_llm_call_logs_created_at
+    ON llm_call_logs (created_at);
 
 CREATE INDEX idx_llm_call_logs_event_created_at
     ON llm_call_logs (event_id, created_at);
