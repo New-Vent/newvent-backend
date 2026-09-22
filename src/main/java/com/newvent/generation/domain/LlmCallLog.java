@@ -36,13 +36,17 @@ public class LlmCallLog {
 	@Column(name = "event_id", nullable = false)
 	private Long eventId;
 	
-	// 연결된 버전. 저장까지 이어진 호출만 backfill로 채움. -> 저장 전 호출·실패 시도는 null 유지
+	// 연결된 버전. 결과가 저장까지 이어졌을 때 '마지막 성공 시도'에만 붙는다.
 	@Column(name = "version_id")
 	private Long versionId;
 	
 	// 1-based 시도 회차. 1 = 최초 호출
 	@Column(name = "attempt_no", nullable = false)
 	private int attemptNo;
+	
+	// 잘림 여부. done_reason == length 로 잘린 출력
+	@Column(nullable = false)
+	private boolean truncated;
 	
 	// 호출 자체의 성패. 검증 통과 여부와 다름 주의
 	// (검증 실패도 "호출은 성공"이라 success = true, failureType=VALIDATION_FAIL이 될 수 있음)
@@ -63,9 +67,14 @@ public class LlmCallLog {
 	@Column(name = "response_time_ms")
 	private Integer responseTimeMs;
 	
-	// providerName 형식.
+	// 실제 모델명
 	@Column(name = "model_name", nullable = false, length = 50)
 	private String modelName;
+	
+	// 실제 호출을 수행한 프로바이더 (LlmClient.providerName())
+	// model_name(무엇으로 돌렸나)과 분리 - Ollama -> Bedrock 전환 전후 비교용
+	@Column(nullable = false, length = 20)
+	private String provider;
 	
 	// 주간 합계 입력분. LlmClient inputTokens 매핑
 	@Column(name = "input_tokens", nullable = false)
@@ -84,8 +93,8 @@ public class LlmCallLog {
 	private Instant createdAt;
 	
 	private LlmCallLog(Long eventId, Long versionId, int attemptNo, String modelName,
-			int inputTokens, int outputTokens, Integer responseTimeMs,
-			boolean success, FailureType failureType, String failCodes, Instant createdAt) {
+			String provider, int inputTokens, int outputTokens, Integer responseTimeMs,
+			boolean truncated, boolean success, FailureType failureType, String failCodes, Instant createdAt) {
 		// 불변식 : 성공 호출에 실패 정보가 섞이면 데이터 오염이라 생성 단계에서 차단
 		if (success && (failureType != null || failCodes != null)) {
 			throw new IllegalArgumentException("성공 호출에 실패 정보가 있을 수 없습니다.");
@@ -95,23 +104,34 @@ public class LlmCallLog {
 			throw new IllegalArgumentException("실패 호출은 failureType 이 있어야 합니다.");
 		}
 		
+		if (truncated && failureType != FailureType.TRUNCATED) {
+			throw new IllegalArgumentException("truncated=true 인데 failureType이 TRUNCATED 가 아닙니다.");
+		}
+		
+		if (!truncated && failureType == FailureType.TRUNCATED) {
+			throw new IllegalArgumentException("failureType이 TRUNCATED 인데 truncated = false 입니다.");
+		}
+		
 		this.eventId = eventId;
 		this.versionId = versionId;
 		this.attemptNo = attemptNo;
 		this.modelName = modelName;
+		this.provider = provider;
 		this.inputTokens = inputTokens;
 		this.outputTokens = outputTokens;
 		this.responseTimeMs = responseTimeMs;
 		this.success = success;
+		this.truncated = truncated;
 		this.failureType = failureType;
 		this.failCodes = failCodes;
 		this.createdAt = createdAt;
 	}
 	
 	public static LlmCallLog create(Long eventId, Long versionId, int attemptNo, String modelName,
-			int inputTokens, int outputTokens, Integer responseTimeMs,
-			boolean success, FailureType failureType, String failCodes, Instant createdAt) {
+			String provider, int inputTokens, int outputTokens, Integer responseTimeMs,
+			boolean truncated, boolean success, FailureType failureType, String failCodes, Instant createdAt) {
 		return new LlmCallLog(eventId, versionId, attemptNo, modelName,
-				inputTokens, outputTokens, responseTimeMs, success, failureType, failCodes, createdAt);
+				provider, inputTokens, outputTokens, responseTimeMs, 
+				truncated, success, failureType, failCodes, createdAt);
 	}
 }
