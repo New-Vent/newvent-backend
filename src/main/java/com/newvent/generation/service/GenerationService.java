@@ -31,12 +31,8 @@ import com.newvent.registry.Slots;
  *   진행률을 한 벌로 만들면 템플릿 경로가 어색해지므로, 단계만 같이 쓰고 내용은 다르다.
  *
  * ★ 실패는 실패로 끝난다
- *   4회 다 실패해도 기본 템플릿을 끼워 넣지 않는다.
- *   관리자가 요청하지 않은 페이지가 조용히 저장되는 게 더 나쁘다.
  *
  * ★ 내부 오류 원문을 관리자에게 보여주지 않는다
- *   "Connection refused: localhost:11434" 는 로그에만 남기고,
- *   화면에는 "생성 서버에 연결하지 못했습니다" 가 간다.
  */
 @Service
 public class GenerationService {
