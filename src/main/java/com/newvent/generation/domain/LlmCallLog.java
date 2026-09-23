@@ -3,12 +3,6 @@ package com.newvent.generation.domain;
 import java.time.Instant;
 import java.util.UUID;
 
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-
-import com.newvent.event.domain.Event;
-import com.newvent.event.domain.EventVersion;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -23,6 +17,13 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import com.newvent.event.domain.Event;
+import com.newvent.event.domain.EventVersion;
+
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -99,7 +100,7 @@ public class LlmCallLog {
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
-    
+
     private LlmCallLog(Event event, EventVersion version, UUID requestId, int attemptNo,
             String modelName, String provider, Integer inputTokens, Integer outputTokens,
             Integer responseTimeMs, boolean truncated, boolean callOk, boolean validOk,
