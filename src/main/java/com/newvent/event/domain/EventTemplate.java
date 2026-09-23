@@ -38,4 +38,21 @@ public class EventTemplate extends BaseTimeEntity {
 
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
+
+    /** 인메모리 시드·테스트용. */
+    public static EventTemplate seed(
+            String code,
+            String name,
+            String description,
+            String htmlContent,
+            boolean active) {
+        EventTemplate template = new EventTemplate();
+        template.code = code;
+        template.name = name;
+        template.description = description;
+        template.htmlContent = htmlContent;
+        template.builtin = true;
+        template.active = active;
+        return template;
+    }
 }

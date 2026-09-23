@@ -29,4 +29,15 @@ public class Admin extends BaseTimeEntity {
 
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
+
+    /** 인증 연동 전 인메모리·생성 API 용 스텁. */
+    public static Admin systemStub() {
+        Admin admin = new Admin();
+        admin.id = 1L;
+        admin.loginId = "system";
+        admin.passwordHash = "n/a";
+        admin.name = "system";
+        admin.active = true;
+        return admin;
+    }
 }

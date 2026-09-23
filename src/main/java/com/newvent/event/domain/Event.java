@@ -1,11 +1,13 @@
 package com.newvent.event.domain;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 import jakarta.persistence.*;
 
 import com.newvent.admin.domain.Admin;
 import com.newvent.common.domain.BaseTimeEntity;
+import com.newvent.event.support.EntityTimestamps;
 import com.newvent.user.domain.MembershipGrade;
 
 import lombok.AccessLevel;
@@ -71,4 +73,82 @@ public class Event extends BaseTimeEntity {
             foreignKey = @ForeignKey(name = "fk_events_published_version")
     )
     private EventVersion publishedVersion;
+
+    public boolean deleted() {
+        return deletedAt != null;
+    }
+
+    public String templateCode() {
+        return template == null ? null : template.getCode();
+    }
+
+    public String thumbnailPath() {
+        return template == null ? null : template.getThumbnailPath();
+    }
+
+    public String completedHtml() {
+        return publishedVersion == null ? null : publishedVersion.getHtmlContent();
+    }
+
+    public List<MembershipGrade> targetGrades() {
+        return grade == null ? List.of() : List.of(grade);
+    }
+
+    /** 관리자 생성 API — 항상 DRAFT. */
+    public static Event createDraft(
+            Admin ownerAdmin,
+            EventTemplate template,
+            String title,
+            OffsetDateTime startDate,
+            OffsetDateTime endDate,
+            MembershipGrade grade) {
+        Event event = new Event();
+        event.ownerAdmin = ownerAdmin;
+        event.template = template;
+        event.title = title;
+        event.startDate = startDate;
+        event.endDate = endDate;
+        event.status = EventStatus.DRAFT;
+        event.reviewStatus = ReviewStatus.PENDING;
+        event.grade = grade == null ? MembershipGrade.NORMAL : grade;
+        return event;
+    }
+
+    /** 인메모리 시드·테스트용. */
+    public static Event reconstitute(
+            Long id,
+            Admin ownerAdmin,
+            EventTemplate template,
+            String title,
+            OffsetDateTime startDate,
+            OffsetDateTime endDate,
+            EventStatus status,
+            MembershipGrade grade,
+            OffsetDateTime deletedAt,
+            EventVersion publishedVersion,
+            OffsetDateTime updatedAt) {
+        Event event = new Event();
+        event.id = id;
+        event.ownerAdmin = ownerAdmin;
+        event.template = template;
+        event.title = title;
+        event.startDate = startDate;
+        event.endDate = endDate;
+        event.status = status;
+        event.reviewStatus = ReviewStatus.PENDING;
+        event.grade = grade == null ? MembershipGrade.NORMAL : grade;
+        event.deletedAt = deletedAt;
+        event.publishedVersion = publishedVersion;
+        EntityTimestamps.set(event, updatedAt, updatedAt);
+        return event;
+    }
+
+    public void assignId(Long id) {
+        this.id = id;
+    }
+
+    public void touchUpdatedAt(OffsetDateTime updatedAt) {
+        OffsetDateTime createdAt = getCreatedAt() != null ? getCreatedAt() : updatedAt;
+        EntityTimestamps.set(this, createdAt, updatedAt);
+    }
 }

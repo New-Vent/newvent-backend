@@ -74,4 +74,12 @@ public class EventVersion {
             foreignKey = @ForeignKey(name = "fk_event_versions_request_message")
     )
     private ChatMessage requestMessage;
+
+    /** 인메모리 시드용. DB 저장 전 단계에서는 event 연관 없이 HTML 만 둔다. */
+    public static EventVersion htmlOnly(String htmlContent) {
+        EventVersion version = new EventVersion();
+        version.versionNo = 1;
+        version.htmlContent = htmlContent;
+        return version;
+    }
 }
