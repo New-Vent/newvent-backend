@@ -1,8 +1,14 @@
-package com.newvent.common.error;
+package com.newvent.common.exception.code;
 
 import org.springframework.http.HttpStatus;
 
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+
+@Getter
+@RequiredArgsConstructor
 public enum CommonErrorCode implements ErrorCode {
+
     INVALID_INPUT_VALUE(HttpStatus.BAD_REQUEST, "COMMON400-0", "잘못된 입력값입니다."),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "COMMON401-0", "인증이 필요합니다."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "COMMON403-0", "접근 권한이 없습니다."),
@@ -11,25 +17,4 @@ public enum CommonErrorCode implements ErrorCode {
     private final HttpStatus httpStatus;
     private final String code;
     private final String message;
-
-    CommonErrorCode(HttpStatus httpStatus, String code, String message) {
-        this.httpStatus = httpStatus;
-        this.code = code;
-        this.message = message;
-    }
-
-    @Override
-    public HttpStatus getHttpStatus() {
-        return httpStatus;
-    }
-
-    @Override
-    public String getCode() {
-        return code;
-    }
-
-    @Override
-    public String getMessage() {
-        return message;
-    }
 }

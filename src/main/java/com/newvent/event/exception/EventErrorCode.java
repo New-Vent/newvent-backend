@@ -2,7 +2,7 @@ package com.newvent.event.exception;
 
 import org.springframework.http.HttpStatus;
 
-import com.newvent.common.error.ErrorCode;
+import com.newvent.common.exception.code.ErrorCode;
 
 public enum EventErrorCode implements ErrorCode {
     INVALID_PERIOD(HttpStatus.BAD_REQUEST, "EVENT400-0", "종료일시는 시작일시보다 이후여야 합니다."),
