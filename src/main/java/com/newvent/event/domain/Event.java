@@ -7,6 +7,7 @@ import jakarta.persistence.*;
 
 import com.newvent.admin.domain.Admin;
 import com.newvent.common.domain.BaseTimeEntity;
+import com.newvent.event.support.EntityTimestamps;
 import com.newvent.user.domain.MembershipGrade;
 
 import lombok.AccessLevel;
@@ -138,7 +139,7 @@ public class Event extends BaseTimeEntity {
         event.grade = grade == null ? MembershipGrade.NORMAL : grade;
         event.deletedAt = deletedAt;
         event.publishedVersion = publishedVersion;
-        event.markTimestamps(updatedAt, updatedAt);
+        EntityTimestamps.set(event, updatedAt, updatedAt);
         return event;
     }
 
@@ -147,6 +148,7 @@ public class Event extends BaseTimeEntity {
     }
 
     public void touchUpdatedAt(OffsetDateTime updatedAt) {
-        markTimestamps(getCreatedAt() != null ? getCreatedAt() : updatedAt, updatedAt);
+        OffsetDateTime createdAt = getCreatedAt() != null ? getCreatedAt() : updatedAt;
+        EntityTimestamps.set(this, createdAt, updatedAt);
     }
 }

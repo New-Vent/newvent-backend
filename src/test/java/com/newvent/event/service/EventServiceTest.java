@@ -13,7 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import com.newvent.common.response.PageResponse;
+import com.newvent.event.dto.PageResponse;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.EventCreateRequest;
 import com.newvent.event.dto.EventDetailResponse;

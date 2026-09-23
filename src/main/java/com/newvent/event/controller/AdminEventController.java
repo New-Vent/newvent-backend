@@ -18,11 +18,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.newvent.common.response.ApiResponse;
-import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.EventCreateRequest;
 import com.newvent.event.dto.EventDetailResponse;
 import com.newvent.event.dto.EventSummaryResponse;
+import com.newvent.event.dto.PageResponse;
 import com.newvent.event.service.EventService;
 
 @Validated
