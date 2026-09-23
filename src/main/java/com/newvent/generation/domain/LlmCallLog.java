@@ -5,7 +5,6 @@ import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
@@ -17,9 +16,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventVersion;
@@ -37,7 +33,6 @@ import lombok.NoArgsConstructor;
                 columnNames = {"request_id", "attempt_no"}
         )
 )
-@EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class LlmCallLog {
 
@@ -97,7 +92,6 @@ public class LlmCallLog {
     @Column(nullable = false, length = 20)
     private String provider;
 
-    @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -142,7 +136,7 @@ public class LlmCallLog {
         this.validOk = validOk;
         this.failureType = failureType;
         this.failureMessage = failureMessage;
-        this.createdAt = createdAt;
+        this.createdAt = createdAt != null ? createdAt : Instant.now();
     }
 
     public static LlmCallLog create(Event event, EventVersion version, UUID requestId, int attemptNo,
