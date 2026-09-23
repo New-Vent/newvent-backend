@@ -1,6 +1,6 @@
 package com.newvent.generation.domain;
 
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 import org.springframework.data.annotation.CreatedDate;
@@ -98,12 +98,12 @@ public class LlmCallLog {
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
-    private OffsetDateTime createdAt;
+    private Instant createdAt;
     
     private LlmCallLog(Event event, EventVersion version, UUID requestId, int attemptNo,
             String modelName, String provider, Integer inputTokens, Integer outputTokens,
             Integer responseTimeMs, boolean truncated, boolean callOk, boolean validOk,
-            FailureType failureType, String failureMessage, OffsetDateTime createdAt) {
+            FailureType failureType, String failureMessage, Instant createdAt) {
         // 불변식 0: event_id NOT NULL (V1 FK)
         if (event == null) {
             throw new IllegalArgumentException("event는 필수입니다.");
@@ -147,7 +147,7 @@ public class LlmCallLog {
     public static LlmCallLog create(Event event, EventVersion version, UUID requestId, int attemptNo,
             String modelName, String provider, Integer inputTokens, Integer outputTokens,
             Integer responseTimeMs, boolean truncated, boolean callOk, boolean validOk,
-            FailureType failureType, String failureMessage, OffsetDateTime createdAt) {
+            FailureType failureType, String failureMessage, Instant createdAt) {
         return new LlmCallLog(event, version, requestId, attemptNo, modelName, provider,
                 inputTokens, outputTokens, responseTimeMs, truncated, callOk, validOk,
                 failureType, failureMessage, createdAt);
