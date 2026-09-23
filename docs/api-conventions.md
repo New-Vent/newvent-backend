@@ -198,8 +198,11 @@ public abstract class BaseException extends RuntimeException {
 | 예외 | 처리 방식 |
 | --- | --- |
 | `BaseException` | 해당 `ErrorCode`의 HTTP 상태, 코드, 메시지를 반환 |
-| `MethodArgumentNotValidException` | `COMMON400-0`을 반환하며 첫 번째 필드 검증 메시지를 우선 사용 |
-| `Exception` | 내부 정보를 노출하지 않고 `COMMON500-0`을 반환하며 상세 예외를 서버 로그에 기록 |
+| `MethodArgumentNotValidException` | 필드 오류 메시지를 우선 사용하고, 없으면 클래스 레벨 오류 메시지를 사용 |
+| `ConstraintViolationException` | 요청 파라미터 및 경로 변수의 제약조건 위반 메시지를 반환 |
+| `HandlerMethodValidationException` | Spring MVC 메서드 파라미터 검증 오류 메시지를 반환 |
+| `HttpMessageNotReadableException` | 잘못된 JSON 요청을 `COMMON400-0`으로 반환 |
+| `Exception` | 내부 정보를 노출하지 않고 `COMMON500-0`으로 반환하며 서버 로그에 기록 |
 
 ## 6. Validation
 
