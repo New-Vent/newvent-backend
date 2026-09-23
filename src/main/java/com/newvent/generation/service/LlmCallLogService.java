@@ -46,7 +46,7 @@ public class LlmCallLogService {
 
     /** Trace 한 건 -> 로그 한 행. requestId 는 호출자가 묶음 단위로 준다 (GenerationJob 의 jobId). */
     static LlmCallLog recordToEntity(RetryService.Trace t, Event event, EventVersion version,
-            UUID requestId, String modelName, String provider, OffsetDateTime createdAt) {
+            UUID requestId, String modelName, String provider, Instant createdAt) {
         boolean truncated = isTruncated(t);
         boolean validOk = t.passed();
         // Trace 가 존재한다는 것 자체가 응답을 받았다는 뜻이라 callOk 는 항상 true.
@@ -76,7 +76,7 @@ public class LlmCallLogService {
      */
     public List<LlmCallLog> record(RetryService.Result result, Event event, EventVersion version,
             UUID requestId, String modelName, String provider) {
-        OffsetDateTime at = OffsetDateTime.now(clock);
+    	Instant at = clock.instant();
         List<LlmCallLog> rows = new ArrayList<>();
         int last = result.traces().size();
         int i = 0;
@@ -97,7 +97,7 @@ public class LlmCallLogService {
     public LlmCallLog recordCallFailure(Event event, EventVersion version, UUID requestId,
             String modelName, String provider, FailureType type) {
         LlmCallLog row = LlmCallLog.create(event, version, requestId, 1, modelName, provider,
-                null, null, null, false, false, false, type, null, OffsetDateTime.now(clock));
+                null, null, null, false, false, false, type, null, clock.instant());
         return logs.save(row);
     }
 
