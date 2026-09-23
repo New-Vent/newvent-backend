@@ -8,7 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * 모델이 지어낸 날짜를 찾는다. 
+ * 모델이 지어낸 날짜를 찾는다.
  *
  */
 class FormValueCheckTest {

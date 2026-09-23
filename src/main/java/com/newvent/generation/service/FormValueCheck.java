@@ -9,7 +9,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 
 /**
- * 생성 결과가 **폼 값과 어긋나지 않는가**. 
+ * 생성 결과가 **폼 값과 어긋나지 않는가**.
  *
  * ★ 지금은 날짜 하나만 본다. 그리고 그게 유일하게 확실히 잴 수 있는 것이다.
  *
