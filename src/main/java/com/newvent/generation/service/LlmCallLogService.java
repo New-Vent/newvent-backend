@@ -112,10 +112,15 @@ public class LlmCallLogService {
     }
 
     /** 호출 전 방어선 — used >= dailyLimit 이면 거부 (상한 직전까지 허용) */
-    public void checkDailyLimit() {
+    public void checkDailyLimit(int expectedCalls) {
         long used = usedToday();
-        if (used >= dailyLimit) {
+        if (used + expectedCalls > dailyLimit) {
             throw new LlmDailyLimitExceededException(dailyLimit, used);
         }
+    }
+    
+    /** 기존 동작 유지 - 최소 1건 분만 확인 (기존 테스트 호환) */
+    public void checkDailyLimit() {
+    	checkDailyLimit(1);
     }
 }
