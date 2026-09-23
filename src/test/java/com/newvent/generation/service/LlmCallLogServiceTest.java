@@ -8,14 +8,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.regex.Pattern;
+import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,11 +27,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.newvent.common.error.LlmDailyLimitExceededException;
+import com.newvent.event.domain.Event;
+import com.newvent.event.domain.EventVersion;
+import com.newvent.generation.domain.FailureType;
 import com.newvent.generation.domain.LlmCallLog;
 import com.newvent.generation.repository.LlmCallLogRepository;
 import com.newvent.registry.BlockValidator.Failure;
 
 // LlmCallLogService 단위 테스트 - 스프링 컨텍스트 · DB 를 띄우지 않는다.
+// Event/EventVersion 은 생성 수단이 없어 mock 으로 대체 - 서비스가 내부 값을 읽지 않아 안전.
 @ExtendWith(MockitoExtension.class)
 public class LlmCallLogServiceTest {
 
@@ -37,8 +43,10 @@ public class LlmCallLogServiceTest {
 	// 2026-09-21 12:00 KST - 자정 경계로부터 멀어 재현이 일정
 	private static final Instant NOW = Instant.parse("2026-09-21T03:00:00Z");
 	private static final Clock CLOCK = Clock.fixed(NOW, KST);
+	private static final OffsetDateTime AT = NOW.atZone(KST).toOffsetDateTime();
 	private static final int LIMIT = 3;
 	private static final String PROVIDER = "mock";
+	private static final UUID REQ = UUID.randomUUID();
 	
 	@Mock
 	private LlmCallLogRepository logs;
@@ -49,39 +57,45 @@ public class LlmCallLogServiceTest {
 	
 	// ---------------- 매핑 규칙 ------------------
 	@Test
-	@DisplayName("통과 시도는 success=true, 실패 정보 없이 기록된다.")
+	@DisplayName("통과 시도는 callOk·validOk true, 실패 정보 없이 기록된다.")
 	void 통과_시도_success로_기록() {
 		RetryService.Trace t = new RetryService.Trace(1, "raw", List.of(), 100, 200, 10L, false);
+		Event event = mock(Event.class);
+		EventVersion version = mock(EventVersion.class);
 		
-		LlmCallLog row = LlmCallLogService.recordToEntity(t, 5L, 11L, "qwen2.5:7b", PROVIDER, NOW);
+		LlmCallLog row = LlmCallLogService.recordToEntity(t, event, version, REQ, "qwen2.5:7b", PROVIDER, AT);
 		
-		assertTrue(row.isSuccess());
+		assertTrue(row.isCallOk());
+		assertTrue(row.isValidOk());
 		assertNull(row.getFailureType());
-		assertNull(row.getFailCodes());
+		assertNull(row.getFailureMessage());
 		assertFalse(row.isTruncated());
 		assertEquals(PROVIDER, row.getProvider());
 		assertEquals(10, row.getResponseTimeMs());
 		assertEquals(1, row.getAttemptNo());
-		assertEquals(5L, row.getEventId());
-		assertEquals(11L, row.getVersionId());
-		assertEquals(NOW, row.getCreatedAt());
+		assertEquals(event, row.getEvent());
+		assertEquals(version, row.getVersion());
+		assertEquals(REQ, row.getRequestId());
+		assertEquals(AT, row.getCreatedAt());
 	}
 	
 	@Test
-	@DisplayName("검증 실패 시도는 VALIDATION_FAIL, 코드는 파이프로 붙는다")
+	@DisplayName("검증 실패 시도는 callOk=true·validOk=false + VALIDATION_FAIL 로 기록된다")
 	void 검증_실패_VALIDATION_FAIL_기록() {
 		RetryService.Trace t = new RetryService.Trace(1, "raw",
 				List.of(new Failure("lost_benefits", "benefits 영역 없음"),
 						new Failure("few_benefits", "benefits 항목이 1개 입니다. 2개 이상 필요")),
 				100, 200, 10L, false);
+		Event event = mock(Event.class);
 		
-		LlmCallLog row = LlmCallLogService.recordToEntity(t, 5L, null, "qwen2.5:7b", PROVIDER, NOW);
+		LlmCallLog row = LlmCallLogService.recordToEntity(t, event, null, REQ, "qwen2.5:7b", PROVIDER, AT);
 		
-		assertFalse(row.isSuccess());
+		assertTrue(row.isCallOk());
+		assertFalse(row.isValidOk());
 		assertFalse(row.isTruncated());
-		assertEquals(LlmCallLog.FailureType.VALIDATION_FAIL, row.getFailureType());
-		assertEquals("lost_benefits|few_benefits", row.getFailCodes());
-		assertNull(row.getVersionId());
+		assertEquals(FailureType.VALIDATION_FAIL, row.getFailureType());
+		assertNull(row.getFailureMessage());
+		assertNull(row.getVersion());
 	}
 	
 	@Test
@@ -93,86 +107,100 @@ public class LlmCallLogServiceTest {
 				List.of(new Failure("truncated", "출력이 너무 길어 중간에 잘림. 항목 수와 문장을 줄여 더 짧게 만드세요."),
 						new Failure("lost_benefits", "benefits 영역이 없음")),
 				100, 200, 10L, true);
+		Event event = mock(Event.class);
 		
-		LlmCallLog row = LlmCallLogService.recordToEntity(t, 5L, null, "qwen2.5:7b", PROVIDER, NOW);
+		LlmCallLog row = LlmCallLogService.recordToEntity(t, event, null, REQ, "qwen2.5:7b", PROVIDER, AT);
 		
-		assertFalse(row.isSuccess());
+		assertTrue(row.isCallOk());
+		assertFalse(row.isValidOk());
 		assertTrue(row.isTruncated());
-		assertEquals(LlmCallLog.FailureType.TRUNCATED, row.getFailureType());
-		assertEquals("truncated|lost_benefits", row.getFailCodes(),
-				"잘림이 코드 목록을 덮어쓰면 RAG facet 재료가 사라짐");
+		assertEquals(FailureType.TRUNCATED, row.getFailureType());
 	}
 	
 	@Test
 	@DisplayName("truncated 플래그가 없어도 코드 'truncated' 가 있으면 TRUNCATED")
 	void 잘림_코드만_있어도_TRUNCATED() {
-		// 방어 변형 - 기록 경로가 바뀌어 플래그가 유실되어도 코드 기준으로 판정
+		// 방어 변형 - 기록 경로가 바뀌어 플래그가 유실되어도 코드 기준으로 판정.
+		// 정규화로 플래그도 true 가 되므로 boolean·enum 어긋남 없음.
 		RetryService.Trace t = new RetryService.Trace(1, "raw",
 				List.of(new Failure("lost_benefits", "benefits 영역이 없습니다."),
 						new Failure("truncated", "출력이 너무 길어 중간에 잘림. 항목 수와 문장을 줄여 더 짧게 만드세요.")),
 				100, 200, 10L, false);
+		Event event = mock(Event.class);
 		
-		LlmCallLog row = LlmCallLogService.recordToEntity(t, 5L, null, "qwen2.5:7b", PROVIDER, NOW);
+		LlmCallLog row = LlmCallLogService.recordToEntity(t, event, null, REQ, "qwen2.5:7b", PROVIDER, AT);
 		
 		assertTrue(row.isTruncated());
-		assertEquals(LlmCallLog.FailureType.TRUNCATED, row.getFailureType());
-		assertEquals(2, row.getFailCodes().split(Pattern.quote("|")).length);
+		assertEquals(FailureType.TRUNCATED, row.getFailureType());
 	}
 	
 	@Test
-	@DisplayName("전체 결과는 시도 수 만큼 행으로 남고, versionId 는 마지막 성공에만 붙는다.")
+	@DisplayName("전체 결과는 시도 수 만큼 행으로 남고, version 은 마지막 성공에만 붙는다.")
 	void 전체_시도_행으로_기록() {
 		when(logs.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+		Event event = mock(Event.class);
+		EventVersion version = mock(EventVersion.class);
 		RetryService.Trace fail = new RetryService.Trace(1, "raw", 
 				List.of(new Failure("lost_benefits", "benefits 영역이 없음")), 100, 200, 10L, false);
 		RetryService.Trace pass = new RetryService.Trace(2, "raw", List.of(), 100, 200, 10L, false);
 		RetryService.Result r = new RetryService.Result(true, "<section>", List.of(fail, pass));
 		
-		List<LlmCallLog> rows = newService().record(r, 5L, 11L, "qwen2.5:7b", PROVIDER);
+		List<LlmCallLog> rows = newService().record(r, event, version, REQ, "qwen2.5:7b", PROVIDER);
 		
 		assertEquals(2, rows.size());
-		assertFalse(rows.get(0).isSuccess());
+		assertFalse(rows.get(0).isValidOk());
+		assertTrue(rows.get(0).isCallOk());
 		assertEquals(1, rows.get(0).getAttemptNo());
-		assertNull(rows.get(0).getVersionId(),
-				"선행 실패 시도에 versionId 가 붙으면 '저장까지 이어진 호출만' 정책이 깨집니다.");
-		assertTrue(rows.get(1).isSuccess());
+		assertNull(rows.get(0).getVersion(),
+				"선행 실패 시도에 version 이 붙으면 '저장까지 이어진 호출만' 정책이 깨집니다.");
+		assertTrue(rows.get(1).isValidOk());
 		assertEquals(2, rows.get(1).getAttemptNo());
-		assertEquals(11L, rows.get(1).getVersionId());
+		assertEquals(version, rows.get(1).getVersion());
 		assertNull(rows.get(1).getFailureType());
+		// 묶음 검증 - 같은 requestId 여야 재시도 행이 한 job 으로 조회된다
+		assertEquals(REQ, rows.get(0).getRequestId());
+		assertEquals(REQ, rows.get(1).getRequestId());
 	}
 	
 	@Test
-	@DisplayName("실패로 끝난 결과는 어떤 행에도 versionId 가 붙지 않는다.")
-	void 실패_결과_versionId_없음() {
+	@DisplayName("실패로 끝난 결과는 어떤 행에도 version 이 붙지 않는다.")
+	void 실패_결과_version_없음() {
 		when(logs.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+		Event event = mock(Event.class);
+		EventVersion version = mock(EventVersion.class);
 		RetryService.Trace fail1 = new RetryService.Trace(1, "raw",
 				List.of(new Failure("lost_benefits", "benefits 영역이 없음.")), 100, 200, 10L, false);
 		RetryService.Trace fail2 = new RetryService.Trace(2, "raw",
 				List.of(new Failure("lost_benefits", "benefits 영역이 없음.")), 100, 200, 10L, false);
 		RetryService.Result r = new RetryService.Result(false, null, List.of(fail1, fail2));
 		
-		List<LlmCallLog> rows = newService().record(r, 5L, 11L, "qwen2.5:7b", PROVIDER);
+		List<LlmCallLog> rows = newService().record(r, event, version, REQ, "qwen2.5:7b", PROVIDER);
 		
 		assertEquals(2, rows.size());
-		assertTrue(rows.stream().allMatch(row -> row.getVersionId() == null),
-				"실패 결과에 versionId 가 붙으면 저장 전 호출인데 버전이 연결된 것처럼 보임");
+		assertTrue(rows.stream().allMatch(row -> row.getVersion() == null),
+				"실패 결과에 version 이 붙으면 저장 전 호출인데 버전이 연결된 것처럼 보임");
 	}
 	
 	@Test
-	@DisplayName("호출 자체 실패는 한 행, 토큰 0 - 응답 시간 null 로 남는다.")
+	@DisplayName("호출 자체 실패는 한 행, callOk·validOk false - 토큰 null 로 남는다.")
 	void 호출_실패_한_행으로_기록() {
 		when(logs.save(any(LlmCallLog.class))).thenAnswer(inv -> inv.getArgument(0));
+		Event event = mock(Event.class);
 		
-		LlmCallLog row = newService().recordCallFailure(5L, null, "qwen2.5:7b", PROVIDER, 
-				LlmCallLog.FailureType.LLM_ERROR);
+		LlmCallLog row = newService().recordCallFailure(event, null, REQ, "qwen2.5:7b", PROVIDER,
+				FailureType.LLM_ERROR);
 		
-		assertFalse(row.isSuccess());
+		assertFalse(row.isCallOk());
+		assertFalse(row.isValidOk());
 		assertFalse(row.isTruncated());
 		assertEquals(PROVIDER, row.getProvider());
-		assertEquals(LlmCallLog.FailureType.LLM_ERROR, row.getFailureType());
+		assertEquals(FailureType.LLM_ERROR, row.getFailureType());
 		assertNull(row.getResponseTimeMs());
-		assertNull(row.getFailCodes());
-		assertEquals(0, row.getInputTokens());
+		assertNull(row.getFailureMessage());
+		assertNull(row.getInputTokens());
+		assertNull(row.getOutputTokens());
+		assertEquals(REQ, row.getRequestId());
+		assertEquals(1, row.getAttemptNo());
 	}
 	
 	// ---------------- 일일 상한 ------------------
