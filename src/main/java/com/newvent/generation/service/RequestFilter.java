@@ -5,7 +5,7 @@ import java.util.Optional;
 import com.newvent.generation.exception.GenerationErrorCode;
 
 /**
- * 모델에 보내기 전에 관리자 입력을 거른다. 
+ * 모델에 보내기 전에 관리자 입력을 거른다.
  *
  * ★ 여기서 거르는 건 **우리 비용을 아끼는 것**이지 보안이 아니다.
  *   프롬프트 주입을 글자 검사로 막을 수 없다. 그건 출력 쪽에서 막는다 —
