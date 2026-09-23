@@ -21,11 +21,17 @@ public class LlmCallLogTest {
 
 	private static final Instant AT = Instant.parse("2026-09-21T03:00:00Z");
 
-	// 15인자 중 고정분을 숨긴 헬퍼 - 검증 대상 5개만 드러낸다
+	// 16인자 중 고정분을 숨긴 헬퍼 - 검증 대상 5개만 드러낸다
+	private static LlmCallLog 행(boolean truncated, boolean callOk, boolean validOk,
+			FailureType type, String message, String failCodes) {
+		return LlmCallLog.create(mock(Event.class), null, UUID.randomUUID(), 1,
+				"qwen2.5:7b", "mock", 100, 200, 10, truncated, callOk, validOk,
+				type, message, failCodes, AT);
+	}
+
 	private static LlmCallLog 행(boolean truncated, boolean callOk, boolean validOk,
 			FailureType type, String message) {
-		return LlmCallLog.create(mock(Event.class), null, UUID.randomUUID(), 1,
-				"qwen2.5:7b", "mock", 100, 200, 10, truncated, callOk, validOk, type, message, AT);
+		return 행(truncated, callOk, validOk, type, message, null);
 	}
 
 	@Test
@@ -35,6 +41,18 @@ public class LlmCallLogTest {
 			행(false, true, true, FailureType.VALIDATION_FAIL, null));
 		assertThrows(IllegalArgumentException.class, () ->
 			행(false, true, true, null, "benefits 영역이 없습니다."));
+		assertThrows(IllegalArgumentException.class, () ->
+			행(false, true, true, null, null, "lost_benefits"));
+	}
+
+	@Test
+	@DisplayName("invalid 행은 fail_codes 를 실패 정보로 담을 수 있다.")
+	void 실패_행_failCodes_보존() {
+		LlmCallLog row = 행(false, true, false, FailureType.VALIDATION_FAIL, null,
+				"lost_benefits,few_benefits");
+
+		assertEquals("lost_benefits,few_benefits", row.getFailCodes());
+		assertEquals(FailureType.VALIDATION_FAIL, row.getFailureType());
 	}
 
 	@Test
@@ -73,13 +91,14 @@ public class LlmCallLogTest {
 		UUID req = UUID.randomUUID();
 		Event event = mock(Event.class);
 		LlmCallLog row = LlmCallLog.create(event, null, req, 1,
-				"qwen2.5:7b", "mock", 100, 200, 10, false, true, true, null, null, AT);
+				"qwen2.5:7b", "mock", 100, 200, 10, false, true, true, null, null, null, AT);
 
 		assertTrue(row.isCallOk());
 		assertTrue(row.isValidOk());
 		assertFalse(row.isTruncated());
 		assertNull(row.getFailureType());
 		assertNull(row.getFailureMessage());
+		assertNull(row.getFailCodes());
 		assertEquals("mock", row.getProvider());
 		assertEquals(event, row.getEvent());
 		assertEquals(req, row.getRequestId());

@@ -57,7 +57,7 @@ class LlmCallLogRepositoryTest {
 
     private static LlmCallLog row(Event event, UUID req, int attempt, Instant at) {
         return LlmCallLog.create(event, null, req, attempt, "qwen2.5:7b", "mock",
-                100, 10, 20, false, true, true, null, null, at);
+                100, 10, 20, false, true, true, null, null, null, at);
     }
 
     @Test
@@ -81,14 +81,14 @@ class LlmCallLogRepositoryTest {
         UUID req = UUID.randomUUID();
         // 같은 주(2026-09-21 월요일 시작) 모델 두 개. 같은 req·다른 attempt = 재시도 묶음 재현
         repo.save(LlmCallLog.create(event, null, req, 1, "model-a", "mock",
-                100, 10, 20, false, true, true, null, null,
+                100, 10, 20, false, true, true, null, null, null,
                 Instant.parse("2026-09-21T03:00:00Z"))); // 월 12:00 KST
         repo.save(LlmCallLog.create(event, null, req, 2, "model-b", "mock",
-                50, 5, 20, false, true, true, null, null,
+                50, 5, 20, false, true, true, null, null, null,
                 Instant.parse("2026-09-21T00:00:00Z"))); // 월 09:00 KST
         // 지난주 행 — from 기준으로 제외되어야 한다 (attempt 1이라 별도 UUID)
         repo.save(LlmCallLog.create(event, null, UUID.randomUUID(), 1, "model-a", "mock",
-                999, 999, 20, false, true, true, null, null,
+                999, 999, 20, false, true, true, null, null, null,
                 Instant.parse("2026-09-13T15:00:00Z"))); // 전주 월 09:00 KST
 
         List<LlmCallLogRepository.WeeklyUsageRow> rows =
@@ -108,7 +108,7 @@ class LlmCallLogRepositoryTest {
         LlmCallLog row = LlmCallLog.create(event, null, UUID.randomUUID(), 1,
                 "qwen2.5:7b", "mock", 100, 1536, 30,
                 true, true, false, // truncated, call_ok=TRUE, valid_ok=FALSE
-                FailureType.TRUNCATED, null,
+                FailureType.TRUNCATED, null, "truncated",
                 Instant.parse("2026-09-21T03:00:00Z"));
 
         LlmCallLog saved = repo.saveAndFlush(row); // CHECK는 flush 시점에 평가
@@ -117,6 +117,10 @@ class LlmCallLogRepositoryTest {
         assertTrue(saved.isCallOk());
         assertFalse(saved.isValidOk());
         assertEquals(FailureType.TRUNCATED, saved.getFailureType());
+
+        tem.clear();
+        LlmCallLog found = repo.findById(saved.getId()).orElseThrow();
+        assertEquals("truncated", found.getFailCodes());
     }
 
     @Test

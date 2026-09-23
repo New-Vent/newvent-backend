@@ -77,6 +77,9 @@ public class LlmCallLog {
     @Column(name = "failure_message", columnDefinition = "text")
     private String failureMessage;
 
+    @Column(name = "fail_codes", length = 500)
+    private String failCodes;
+
     @Column(name = "response_time_ms")
     private Integer responseTimeMs;
 
@@ -98,13 +101,13 @@ public class LlmCallLog {
     private LlmCallLog(Event event, EventVersion version, UUID requestId, int attemptNo,
             String modelName, String provider, Integer inputTokens, Integer outputTokens,
             Integer responseTimeMs, boolean truncated, boolean callOk, boolean validOk,
-            FailureType failureType, String failureMessage, Instant createdAt) {
+            FailureType failureType, String failureMessage, String failCodes, Instant createdAt) {
         // 불변식 0: event_id NOT NULL (V1 FK)
         if (event == null) {
             throw new IllegalArgumentException("event는 필수입니다.");
         }
         // 불변식 1 (ck_failure_fields 정방향): valid면 실패 정보 금지
-        if (validOk && (failureType != null || failureMessage != null)) {
+        if (validOk && (failureType != null || failureMessage != null || failCodes != null)) {
             throw new IllegalArgumentException("성공 호출에 실패 정보가 있을 수 없습니다.");
         }
         // 불변식 2 (ck_failure_fields 역방향): invalid면 분류 필수
@@ -136,15 +139,16 @@ public class LlmCallLog {
         this.validOk = validOk;
         this.failureType = failureType;
         this.failureMessage = failureMessage;
+        this.failCodes = failCodes;
         this.createdAt = createdAt != null ? createdAt : Instant.now();
     }
 
     public static LlmCallLog create(Event event, EventVersion version, UUID requestId, int attemptNo,
             String modelName, String provider, Integer inputTokens, Integer outputTokens,
             Integer responseTimeMs, boolean truncated, boolean callOk, boolean validOk,
-            FailureType failureType, String failureMessage, Instant createdAt) {
+            FailureType failureType, String failureMessage, String failCodes, Instant createdAt) {
         return new LlmCallLog(event, version, requestId, attemptNo, modelName, provider,
                 inputTokens, outputTokens, responseTimeMs, truncated, callOk, validOk,
-                failureType, failureMessage, createdAt);
+                failureType, failureMessage, failCodes, createdAt);
     }
 }

@@ -25,11 +25,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.newvent.common.error.LlmDailyLimitExceededException;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventVersion;
 import com.newvent.generation.domain.FailureType;
 import com.newvent.generation.domain.LlmCallLog;
+import com.newvent.generation.exception.LlmDailyLimitExceededException;
 import com.newvent.generation.repository.LlmCallLogRepository;
 import com.newvent.registry.BlockValidator.Failure;
 
@@ -68,6 +68,7 @@ public class LlmCallLogServiceTest {
 		assertTrue(row.isValidOk());
 		assertNull(row.getFailureType());
 		assertNull(row.getFailureMessage());
+		assertNull(row.getFailCodes());
 		assertFalse(row.isTruncated());
 		assertEquals(PROVIDER, row.getProvider());
 		assertEquals(10, row.getResponseTimeMs());
@@ -94,6 +95,7 @@ public class LlmCallLogServiceTest {
 		assertFalse(row.isTruncated());
 		assertEquals(FailureType.VALIDATION_FAIL, row.getFailureType());
 		assertNull(row.getFailureMessage());
+		assertEquals("lost_benefits,few_benefits", row.getFailCodes());
 		assertNull(row.getVersion());
 	}
 
@@ -114,6 +116,7 @@ public class LlmCallLogServiceTest {
 		assertFalse(row.isValidOk());
 		assertTrue(row.isTruncated());
 		assertEquals(FailureType.TRUNCATED, row.getFailureType());
+		assertEquals("truncated,lost_benefits", row.getFailCodes());
 	}
 
 	@Test
@@ -131,6 +134,7 @@ public class LlmCallLogServiceTest {
 
 		assertTrue(row.isTruncated());
 		assertEquals(FailureType.TRUNCATED, row.getFailureType());
+		assertEquals("lost_benefits,truncated", row.getFailCodes());
 	}
 
 	@Test
@@ -187,7 +191,7 @@ public class LlmCallLogServiceTest {
 		Event event = mock(Event.class);
 
 		LlmCallLog row = newService().recordCallFailure(event, null, REQ, "qwen2.5:7b", PROVIDER,
-				FailureType.LLM_ERROR);
+				FailureType.LLM_ERROR, 1);
 
 		assertFalse(row.isCallOk());
 		assertFalse(row.isValidOk());
@@ -200,6 +204,18 @@ public class LlmCallLogServiceTest {
 		assertNull(row.getOutputTokens());
 		assertEquals(REQ, row.getRequestId());
 		assertEquals(1, row.getAttemptNo());
+	}
+
+	@Test
+	@DisplayName("호출 자체 실패의 attempt_no 는 호출자가 준 값 그대로 기록된다 - 3차 연결 실패 재현.")
+	void 호출_실패_attemptNo_전달() {
+		when(logs.save(any(LlmCallLog.class))).thenAnswer(inv -> inv.getArgument(0));
+		Event event = mock(Event.class);
+
+		LlmCallLog row = newService().recordCallFailure(event, null, REQ, "qwen2.5:7b", PROVIDER,
+				FailureType.LLM_ERROR, 3);
+
+		assertEquals(3, row.getAttemptNo());
 	}
 
 	// ---------------- 일일 상한 ------------------
