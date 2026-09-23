@@ -19,10 +19,16 @@ repositories {
 }
 
 dependencies {
-	// TODO: DB 작업 시작 전까지 임시 비활성화
+	// JPA 및 Hibernate
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+	// Flyway 마이그레이션
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+
+	// PostgreSQL용 Flyway 지원 모듈
 	implementation 'org.flywaydb:flyway-database-postgresql'
+
+	// PostgreSQL JDBC 드라이버
 	runtimeOnly 'org.postgresql:postgresql'
 
 	// TODO: 인증/인가 구현 시 활성화
@@ -43,9 +49,9 @@ dependencies {
 
 	// TODO: DB 작업 시작할 때 위 본체(JPA·Flyway·Security)와 같이 살립니다.
 	//       본체가 꺼져 있는데 이것만 켜면 contextLoads() 가 DataSource 를 찾다 죽습니다.
-	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-flyway-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
+	// testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+	// testImplementation 'org.springframework.boot:spring-boot-starter-flyway-test'
+	// testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'

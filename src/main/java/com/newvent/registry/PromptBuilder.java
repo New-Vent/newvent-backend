@@ -1,5 +1,6 @@
 package com.newvent.registry;
 
+import java.util.List;
 import java.util.StringJoiner;
 
 /**
@@ -20,6 +21,31 @@ import java.util.StringJoiner;
 public final class PromptBuilder {
 
     private PromptBuilder() {}
+
+    /**
+     * 생성과 수정에 **둘 다** 들어가야 하는 금지.
+     *
+     * ★ 왜 뽑아냈나
+     *   이 세 줄이 generate() 에만 있고 edit() 에는 없었습니다.
+     *   그런데 "4번째 혜택도 추가해줘" 는 정확히 **수정 경로**입니다.
+     *   생성만 막고 수정은 열어두면 막은 의미가 없습니다.
+     *   복사해 붙이면 다음에 또 한쪽만 고치게 되므로 한 곳에 둡니다.
+     *
+     * ★ 혜택은 실제로 지급해야 하는 약속입니다.
+     *   모델이 "스타벅스 아메리카노 1잔" 을 지어내고 게시되면
+     *   관리자가 모르는 약속이 나간 겁니다. 문구 오류가 아니라 사고입니다.
+     *
+     * ★ 그리고 검증기는 이걸 못 잡습니다.
+     *   자리표시자 검사는 대괄호만 봅니다. 그럴듯하게 쓸수록 안 걸립니다.
+     *   프롬프트 · 되묻기 · 폼 값 대조(REQ-LLM-41) 세 겹이 필요하고
+     *   이건 그중 **첫 겹**입니다. 이걸로 0% 가 되지 않습니다.
+     */
+    private static List<String> 지어내기_금지() {
+        return List.of(
+                "- 날짜를 임의로 만들지 마라. 기간은 주어진 값만 쓴다.",
+                "- 주어지지 않은 혜택이나 수치를 만들어내지 마라.",
+                "- 실존하는 방송 프로그램, 브랜드, 연예인 이름을 쓰지 마라.");
+    }
 
     /** 생성용 — 페이지 전체를 한 번에 만든다 */
     public static String generate() {
@@ -59,10 +85,8 @@ public final class PromptBuilder {
         s.add("</section>");
         s.add("");
         s.add("금지:");
-        s.add("- 날짜를 임의로 만들지 마라. 기간은 주어진 값만 쓴다.");
-        s.add("- 주어지지 않은 혜택이나 수치를 만들어내지 마라.");
+        for (String line : 지어내기_금지()) s.add(line);
         s.add("- 대괄호 자리표시자를 절대 남기지 마라. 값을 모르면 그 문장을 아예 빼라.");
-        s.add("- 실존하는 방송 프로그램, 브랜드, 연예인 이름을 쓰지 마라.");
         // ★ "이모지를 쓰지 마라" 를 뺐다. 템플릿이 이모지를 쓰므로 톤을 맞춘다.
         //   적극적으로 쓰라고 시키지도 않는다 — 금지를 뺀 것과 권장하는 것은
         //   출력에 미치는 영향이 다르고, 후자는 측정 없이 넣을 이유가 없다.
@@ -113,8 +137,13 @@ public final class PromptBuilder {
         s.add("금지:");
         s.add("- 요청받은 것만 바꿔라. href, class 같은 기존 속성은 그대로 둔다.");
         s.add("- href=\"#\" 는 그대로 둬라. 실제 주소를 만들어 넣지 마라.");
-        s.add("- 날짜를 임의로 만들지 마라.");
+        for (String line : 지어내기_금지()) s.add(line);
         s.add("- 대괄호 자리표시자를 남기지 마라.");
+        // ★ "항목을 새로 지어내지 마라" 는 아직 안 넣었다.
+        //   붙일 블록을 고르려면 Block.itemsAreFormValues() 가 필요한데
+        //   (minItems > 0 && source == MIXED — 지금은 benefits 하나),
+        //   그건 수정 경로 작업이라 EditService 와 함께 넣는다.
+        //   여기에 if (b == Block.BENEFITS) 를 쓰지 말 것. 레지스트리를 만든 의미가 없어진다.
         return s.toString();
     }
 

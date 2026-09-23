@@ -63,7 +63,8 @@ public class LlmCallLog {
     private boolean validOk;
 
     @Column(name = "failure_type", length = 50)
-    private String failureType;
+    @Enumerated(EnumType.STRING)
+    private FailureType failureType;
 
     @Column(name = "failure_message", columnDefinition = "text")
     private String failureMessage;
