@@ -1,18 +1,21 @@
 package com.newvent.user.domain;
 
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import com.newvent.common.domain.BaseTimeEntity;
+
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 /**
  * users 테이블 매핑 (ERD v2에서 확정된 스키마, PR #11의 V1__init_schema.sql과 일치).
@@ -20,15 +23,17 @@ import org.hibernate.annotations.UpdateTimestamp;
  *   시점에 MembershipGradeService로 재계산한 결과만 반영하고, 그 외 조회에서는 이 값을
  *   그대로 신뢰한다 (재계산은 이 엔티티가 아니라 호출하는 쪽 책임).
  */
+@Getter
 @Entity
 @Table(name = "users")
-public class User {
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class User extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "login_id", nullable = false, unique = true, length = 50)
+    @Column(name = "login_id", nullable = false, length = 50, unique = true)
     private String loginId;
 
     @Column(name = "password_hash", nullable = false, length = 255)
@@ -37,30 +42,18 @@ public class User {
     @Column(nullable = false, length = 50)
     private String name;
 
-    @Column(nullable = false, unique = true, length = 100)
+    @Column(nullable = false, length = 100, unique = true)
     private String email;
 
     @Column(length = 20)
     private String phone;
 
     @Column(nullable = false)
-    private int plan;
+    private Integer plan;
 
-    @Convert(converter = MembershipGradeConverter.class)
+    @Enumerated(EnumType.STRING)
     @Column(name = "membership_grade", nullable = false, length = 20)
     private MembershipGrade membershipGrade;
-
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private OffsetDateTime createdAt;
-
-    @UpdateTimestamp
-    @Column(name = "updated_at", nullable = false)
-    private OffsetDateTime updatedAt;
-
-    protected User() {
-        // JPA
-    }
 
     public User(String loginId, String passwordHash, String name, String email, String phone,
                 int plan, MembershipGrade membershipGrade) {
@@ -79,52 +72,10 @@ public class User {
         this.membershipGrade = membershipGrade;
     }
 
-    public Long id() {
-        return id;
-    }
-
-    public String loginId() {
-        return loginId;
-    }
-
-    public String passwordHash() {
-        return passwordHash;
-    }
-
-    public String name() {
-        return name;
-    }
-
-    public String email() {
-        return email;
-    }
-
-    public String phone() {
-        return phone;
-    }
-
-    public int plan() {
-        return plan;
-    }
-
-    public MembershipGrade membershipGrade() {
-        return membershipGrade;
-    }
-
-    public OffsetDateTime createdAt() {
-        return createdAt;
-    }
-
-    public OffsetDateTime updatedAt() {
-        return updatedAt;
-    }
-
-    /** created_at은 가입일 겸용이다 — MembershipGradeCalculator가 받는 LocalDate로 변환해 넘긴다 */
     public LocalDate joinedAt() {
-        return createdAt.toLocalDate();
+        return getCreatedAt().toLocalDate();
     }
 
-    /** 요금제 변경 — 새 plan과, 호출자가 MembershipGradeService.onPlanChanged로 재계산한 등급을 함께 반영 */
     public void changePlan(int newPlan, MembershipGrade recalculatedGrade) {
         if (newPlan <= 0) {
             throw new IllegalArgumentException("plan은 0보다 커야 합니다: " + newPlan);
@@ -133,8 +84,20 @@ public class User {
         this.membershipGrade = recalculatedGrade;
     }
 
-    /** 로그인 시점 재계산 결과 반영 — MembershipGradeService.onLogin 결과를 저장 */
     public void refreshMembershipGrade(MembershipGrade recalculatedGrade) {
         this.membershipGrade = recalculatedGrade;
+    }
+
+    // 부분 수정 — null인 필드는 그대로 둔다 (PATCH 의미)
+    public void updateProfile(String name, String email, String phone) {
+        if (name != null) {
+            this.name = name;
+        }
+        if (email != null) {
+            this.email = email;
+        }
+        if (phone != null) {
+            this.phone = phone;
+        }
     }
 }
