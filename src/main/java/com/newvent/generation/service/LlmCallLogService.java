@@ -3,7 +3,6 @@ package com.newvent.generation.service;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,12 +28,12 @@ public class LlmCallLogService {
 	private final LlmCallLogRepository logs;
 	private final Clock clock;
 	private final int dailyLimit;
-	
+
 	@Autowired
 	public LlmCallLogService(LlmCallLogRepository logs, Clock clock, LlmProps props) {
 		this(logs, clock, props.dailyLimit());
 	}
-	
+
 	/** 테스트용 — 일일 상한을 직접 준다 */
     LlmCallLogService(LlmCallLogRepository logs, Clock clock, int dailyLimit) {
     	this.logs = logs;
@@ -56,7 +55,7 @@ public class LlmCallLogService {
                 t.inputTokens(), t.outputTokens(), (int) t.wallMs(),
                 truncated, true, validOk, type, null, createdAt);
     }
-    
+
     // 잘림 판정 - 플래그와 코드 중 하나라도 있으면 잘림. boolean과 enum 이 어긋나지 않게 단일 계산
     static boolean isTruncated(RetryService.Trace t) {
     	return t.truncated() || t.failures().stream().anyMatch(f -> f.code().equals("truncated"));

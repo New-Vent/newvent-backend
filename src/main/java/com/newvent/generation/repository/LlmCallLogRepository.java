@@ -19,7 +19,7 @@ public interface LlmCallLogRepository extends JpaRepository<LlmCallLog, Long>{
 	// (start, end) 구간 행 수. KST 자정 ~ 자정 범위는 서비스가 계산해서 넘김
 	// 레포지토리는 타임존을 모름 ( 시간 정책은 서비스 + Clock 이 소유 )
 	long countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(Instant start, Instant end);
-	
+
 	// 주간 토큰 합계 + 모델별 분해
 	// - date_trunc('week') 는 월요일 시작이라 월~일 KST 주간과 일치
 	// - AT TIME ZONE 을 빼먹으면 UTC 주간으로 어긋나니 삭제 금지
@@ -34,7 +34,7 @@ public interface LlmCallLogRepository extends JpaRepository<LlmCallLog, Long>{
 			 order by	1 desc, 2
 			""", nativeQuery = true)
 	List<WeeklyUsageRow> sumTokensByWeek(@Param("from") Instant from);
-	
+
 	// 주간 합계 1행. record 가 아니라 읽기 전용 투영 (테이블 X)
 	interface WeeklyUsageRow {
 		LocalDate getWeekStart();

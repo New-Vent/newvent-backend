@@ -46,14 +46,14 @@ public class LlmCallLogServiceTest {
 	private static final int LIMIT = 3;
 	private static final String PROVIDER = "mock";
 	private static final UUID REQ = UUID.randomUUID();
-	
+
 	@Mock
 	private LlmCallLogRepository logs;
-	
+
 	private LlmCallLogService newService() {
 		return new LlmCallLogService(logs, CLOCK, LIMIT);
 	}
-	
+
 	// ---------------- 매핑 규칙 ------------------
 	@Test
 	@DisplayName("통과 시도는 callOk·validOk true, 실패 정보 없이 기록된다.")
@@ -61,9 +61,9 @@ public class LlmCallLogServiceTest {
 		RetryService.Trace t = new RetryService.Trace(1, "raw", List.of(), 100, 200, 10L, false);
 		Event event = mock(Event.class);
 		EventVersion version = mock(EventVersion.class);
-		
+
 		LlmCallLog row = LlmCallLogService.recordToEntity(t, event, version, REQ, "qwen2.5:7b", PROVIDER, AT);
-		
+
 		assertTrue(row.isCallOk());
 		assertTrue(row.isValidOk());
 		assertNull(row.getFailureType());
@@ -77,7 +77,7 @@ public class LlmCallLogServiceTest {
 		assertEquals(REQ, row.getRequestId());
 		assertEquals(AT, row.getCreatedAt());
 	}
-	
+
 	@Test
 	@DisplayName("검증 실패 시도는 callOk=true·validOk=false + VALIDATION_FAIL 로 기록된다")
 	void 검증_실패_VALIDATION_FAIL_기록() {
@@ -86,9 +86,9 @@ public class LlmCallLogServiceTest {
 						new Failure("few_benefits", "benefits 항목이 1개 입니다. 2개 이상 필요")),
 				100, 200, 10L, false);
 		Event event = mock(Event.class);
-		
+
 		LlmCallLog row = LlmCallLogService.recordToEntity(t, event, null, REQ, "qwen2.5:7b", PROVIDER, AT);
-		
+
 		assertTrue(row.isCallOk());
 		assertFalse(row.isValidOk());
 		assertFalse(row.isTruncated());
@@ -96,7 +96,7 @@ public class LlmCallLogServiceTest {
 		assertNull(row.getFailureMessage());
 		assertNull(row.getVersion());
 	}
-	
+
 	@Test
 	@DisplayName("잘린 시도는 TRUNCATED - develop RetryService 실물 구조 그대로")
 	void 잘림_시도_TRUNCATED_기록() {
@@ -107,15 +107,15 @@ public class LlmCallLogServiceTest {
 						new Failure("lost_benefits", "benefits 영역이 없음")),
 				100, 200, 10L, true);
 		Event event = mock(Event.class);
-		
+
 		LlmCallLog row = LlmCallLogService.recordToEntity(t, event, null, REQ, "qwen2.5:7b", PROVIDER, AT);
-		
+
 		assertTrue(row.isCallOk());
 		assertFalse(row.isValidOk());
 		assertTrue(row.isTruncated());
 		assertEquals(FailureType.TRUNCATED, row.getFailureType());
 	}
-	
+
 	@Test
 	@DisplayName("truncated 플래그가 없어도 코드 'truncated' 가 있으면 TRUNCATED")
 	void 잘림_코드만_있어도_TRUNCATED() {
@@ -126,26 +126,26 @@ public class LlmCallLogServiceTest {
 						new Failure("truncated", "출력이 너무 길어 중간에 잘림. 항목 수와 문장을 줄여 더 짧게 만드세요.")),
 				100, 200, 10L, false);
 		Event event = mock(Event.class);
-		
+
 		LlmCallLog row = LlmCallLogService.recordToEntity(t, event, null, REQ, "qwen2.5:7b", PROVIDER, AT);
-		
+
 		assertTrue(row.isTruncated());
 		assertEquals(FailureType.TRUNCATED, row.getFailureType());
 	}
-	
+
 	@Test
 	@DisplayName("전체 결과는 시도 수 만큼 행으로 남고, version 은 마지막 성공에만 붙는다.")
 	void 전체_시도_행으로_기록() {
 		when(logs.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
 		Event event = mock(Event.class);
 		EventVersion version = mock(EventVersion.class);
-		RetryService.Trace fail = new RetryService.Trace(1, "raw", 
+		RetryService.Trace fail = new RetryService.Trace(1, "raw",
 				List.of(new Failure("lost_benefits", "benefits 영역이 없음")), 100, 200, 10L, false);
 		RetryService.Trace pass = new RetryService.Trace(2, "raw", List.of(), 100, 200, 10L, false);
 		RetryService.Result r = new RetryService.Result(true, "<section>", List.of(fail, pass));
-		
+
 		List<LlmCallLog> rows = newService().record(r, event, version, REQ, "qwen2.5:7b", PROVIDER);
-		
+
 		assertEquals(2, rows.size());
 		assertFalse(rows.get(0).isValidOk());
 		assertTrue(rows.get(0).isCallOk());
@@ -160,7 +160,7 @@ public class LlmCallLogServiceTest {
 		assertEquals(REQ, rows.get(0).getRequestId());
 		assertEquals(REQ, rows.get(1).getRequestId());
 	}
-	
+
 	@Test
 	@DisplayName("실패로 끝난 결과는 어떤 행에도 version 이 붙지 않는다.")
 	void 실패_결과_version_없음() {
@@ -172,23 +172,23 @@ public class LlmCallLogServiceTest {
 		RetryService.Trace fail2 = new RetryService.Trace(2, "raw",
 				List.of(new Failure("lost_benefits", "benefits 영역이 없음.")), 100, 200, 10L, false);
 		RetryService.Result r = new RetryService.Result(false, null, List.of(fail1, fail2));
-		
+
 		List<LlmCallLog> rows = newService().record(r, event, version, REQ, "qwen2.5:7b", PROVIDER);
-		
+
 		assertEquals(2, rows.size());
 		assertTrue(rows.stream().allMatch(row -> row.getVersion() == null),
 				"실패 결과에 version 이 붙으면 저장 전 호출인데 버전이 연결된 것처럼 보임");
 	}
-	
+
 	@Test
 	@DisplayName("호출 자체 실패는 한 행, callOk·validOk false - 토큰 null 로 남는다.")
 	void 호출_실패_한_행으로_기록() {
 		when(logs.save(any(LlmCallLog.class))).thenAnswer(inv -> inv.getArgument(0));
 		Event event = mock(Event.class);
-		
+
 		LlmCallLog row = newService().recordCallFailure(event, null, REQ, "qwen2.5:7b", PROVIDER,
 				FailureType.LLM_ERROR);
-		
+
 		assertFalse(row.isCallOk());
 		assertFalse(row.isValidOk());
 		assertFalse(row.isTruncated());
@@ -201,7 +201,7 @@ public class LlmCallLogServiceTest {
 		assertEquals(REQ, row.getRequestId());
 		assertEquals(1, row.getAttemptNo());
 	}
-	
+
 	// ---------------- 일일 상한 ------------------
 	@Test
 	@DisplayName("사용량이 상한 직전이면 통과, 상한이면 거부한다.")
@@ -209,26 +209,26 @@ public class LlmCallLogServiceTest {
 		when(logs.countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(any(), any()))
 		.thenReturn((long) LIMIT - 1)
 		.thenReturn((long) LIMIT);
-		
+
 		assertDoesNotThrow(() -> newService().checkDailyLimit());
-		
+
 		LlmDailyLimitExceededException ex = assertThrows(LlmDailyLimitExceededException.class,
 				() -> newService().checkDailyLimit());
 		assertEquals(LIMIT, ex.getDailyLimit());
 		assertEquals(LIMIT, ex.getUsed());
 	}
-	
+
 	@Test
 	@DisplayName("오늘 범위는 KST 자정으로 계산 - 레포에 정확한 경계를 준다.")
 	void 오늘_범위_KST_자정으로_계산(){
 		when(logs.countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(any(), any())).thenReturn(0L);
-		
+
 		newService().checkDailyLimit();
-		
+
 		ArgumentCaptor<Instant> start = ArgumentCaptor.forClass(Instant.class);
 		ArgumentCaptor<Instant> end = ArgumentCaptor.forClass(Instant.class);
 		verify(logs).countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(start.capture(), end.capture());
-		
+
 		assertEquals(Instant.parse("2026-09-20T15:00:00Z"), start.getValue(),
 				"= 2026-09-21 00:00 KST. UTC 자정을 넘기면 일일 상한이 어긋남");
 		assertEquals(Instant.parse("2026-09-21T15:00:00Z"), end.getValue(),
