@@ -10,7 +10,6 @@ public class LlmDailyLimitExceededException extends RuntimeException {
 
 	private final int dailyLimit;
 	private final long used;
-	
 	public LlmDailyLimitExceededException(int dailyLimit, long used) {
 		super("LLM 일일 호출 상한 초과 : " + used + "/" + dailyLimit);
 		this.dailyLimit = dailyLimit;

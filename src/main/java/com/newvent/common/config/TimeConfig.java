@@ -8,7 +8,6 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * 시간 기준점을 하나로 모으는 설정
- * 
  * 필요한 이유
  * 	- countToday()의 "오늘 자정" 계산이 서버 시간대에 흔들리면 안됨.
  * 	  Asia/Seoul 고정 Clock을 빈으로 두면 전역에서 같은 기준 사용
