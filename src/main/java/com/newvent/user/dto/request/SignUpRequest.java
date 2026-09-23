@@ -1,4 +1,4 @@
-package com.newvent.user.web;
+package com.newvent.user.dto.request;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;

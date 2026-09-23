@@ -9,17 +9,17 @@ import org.springframework.transaction.annotation.Transactional;
 import com.newvent.user.domain.MembershipGrade;
 import com.newvent.user.domain.User;
 import com.newvent.user.exception.DuplicateUserException;
-import com.newvent.user.exception.UserErrorCode;
 import com.newvent.user.exception.UserNotFoundException;
+import com.newvent.user.exception.code.UserErrorCode;
 import com.newvent.user.repository.UserRepository;
 
 @Service
-public class MemberService {
+public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
-    public MemberService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
     }

@@ -1,4 +1,4 @@
-package com.newvent.user.exception;
+package com.newvent.user.exception.code;
 
 import org.springframework.http.HttpStatus;
 

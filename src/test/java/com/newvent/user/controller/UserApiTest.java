@@ -1,4 +1,4 @@
-package com.newvent.user.web;
+package com.newvent.user.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -22,9 +22,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.newvent.user.domain.MembershipGrade;
 import com.newvent.user.domain.User;
 import com.newvent.user.exception.DuplicateUserException;
-import com.newvent.user.exception.UserErrorCode;
 import com.newvent.user.exception.UserNotFoundException;
-import com.newvent.user.service.MemberService;
+import com.newvent.user.exception.code.UserErrorCode;
+import com.newvent.user.service.UserService;
 
 @WebMvcTest(UserController.class)
 class UserApiTest {
@@ -33,14 +33,14 @@ class UserApiTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private MemberService memberService;
+    private UserService userService;
 
     @Test
     @DisplayName("회원가입 성공 시 201과 생성된 회원 정보를 반환한다")
     void 회원가입_성공() throws Exception {
         User user = new User(
                 "user01", "hash", "이름", "user01@test.com", "010-0000-0000", 70000, MembershipGrade.EXCELLENT);
-        when(memberService.signUp(anyString(), anyString(), anyString(), anyString(), any(), anyInt()))
+        when(userService.signUp(anyString(), anyString(), anyString(), anyString(), any(), anyInt()))
                 .thenReturn(user);
 
         mockMvc.perform(post("/api/public/users/signup")
@@ -84,7 +84,7 @@ class UserApiTest {
     @Test
     @DisplayName("중복 가입 시도 시 서비스가 던진 예외를 409로 변환한다")
     void 회원가입_중복ID_409() throws Exception {
-        when(memberService.signUp(anyString(), anyString(), anyString(), anyString(), any(), anyInt()))
+        when(userService.signUp(anyString(), anyString(), anyString(), anyString(), any(), anyInt()))
                 .thenThrow(new DuplicateUserException(UserErrorCode.DUPLICATE_LOGIN_ID));
 
         mockMvc.perform(post("/api/public/users/signup")
@@ -102,7 +102,7 @@ class UserApiTest {
     void 조회_성공() throws Exception {
         User user = new User("user01", "hash", "이름", "user01@test.com", "010-0000-0000", 50000,
                 MembershipGrade.NORMAL);
-        when(memberService.getById(1L)).thenReturn(user);
+        when(userService.getById(1L)).thenReturn(user);
 
         mockMvc.perform(get("/api/public/users/1"))
                 .andExpect(status().isOk())
@@ -113,7 +113,7 @@ class UserApiTest {
     @Test
     @DisplayName("존재하지 않는 회원을 조회하면 404를 반환한다")
     void 조회_없는회원_404() throws Exception {
-        when(memberService.getById(anyLong())).thenThrow(new UserNotFoundException());
+        when(userService.getById(anyLong())).thenThrow(new UserNotFoundException());
 
         mockMvc.perform(get("/api/public/users/999")).andExpect(status().isNotFound());
     }
@@ -123,7 +123,7 @@ class UserApiTest {
     void 정보수정_성공() throws Exception {
         User user = new User(
                 "user01", "hash", "새이름", "user01@test.com", "010-9999-9999", 50000, MembershipGrade.NORMAL);
-        when(memberService.updateProfile(anyLong(), any(), any(), any())).thenReturn(user);
+        when(userService.updateProfile(anyLong(), any(), any(), any())).thenReturn(user);
 
         mockMvc.perform(patch("/api/public/users/1")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -135,10 +135,21 @@ class UserApiTest {
     }
 
     @Test
+    @DisplayName("정보 수정 시 공백 문자열을 보내면 400을 반환한다 (필드 생략과는 구분)")
+    void 정보수정_공백값_유효성실패() throws Exception {
+        mockMvc.perform(patch("/api/public/users/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"   "}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     @DisplayName("요금제 변경 성공 시 재계산된 등급을 반환한다")
     void 요금제변경_성공() throws Exception {
         User user = new User("user01", "hash", "이름", "user01@test.com", null, 70000, MembershipGrade.EXCELLENT);
-        when(memberService.changePlan(anyLong(), anyInt())).thenReturn(user);
+        when(userService.changePlan(anyLong(), anyInt())).thenReturn(user);
 
         mockMvc.perform(patch("/api/public/users/1/plan")
                         .contentType(MediaType.APPLICATION_JSON)

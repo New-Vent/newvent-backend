@@ -1,4 +1,4 @@
-package com.newvent.user.web;
+package com.newvent.user.dto.response;
 
 import com.newvent.user.domain.MembershipGrade;
 import com.newvent.user.domain.User;
