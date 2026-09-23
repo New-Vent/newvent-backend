@@ -17,7 +17,7 @@ import org.springframework.context.annotation.Configuration;
 public class TimeConfig {
 
 	public static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
-	
+
 	@Bean
 	public Clock clock() {
 		return Clock.system(SEOUL);
