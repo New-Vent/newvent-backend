@@ -19,7 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.newvent.common.error.GlobalExceptionHandler;
+import com.newvent.common.exception.handler.GlobalExceptionHandler;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.MembershipGrade;
