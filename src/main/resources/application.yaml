@@ -4,8 +4,8 @@ spring:
 
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/newvent}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    username: ${DB_USERNAME:newvent}
+    password: ${DB_PASSWORD:newvent}
   jpa:
     hibernate:
       ddl-auto: validate      # Flyway 가 스키마를 만든다
