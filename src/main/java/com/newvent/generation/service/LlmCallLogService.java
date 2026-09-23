@@ -118,7 +118,7 @@ public class LlmCallLogService {
             throw new LlmDailyLimitExceededException(dailyLimit, used);
         }
     }
-    
+
     /** 기존 동작 유지 - 최소 1건 분만 확인 (기존 테스트 호환) */
     public void checkDailyLimit() {
     	checkDailyLimit(1);
