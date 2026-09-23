@@ -14,7 +14,6 @@ import static org.mockito.Mockito.when;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
@@ -43,7 +42,7 @@ public class LlmCallLogServiceTest {
 	// 2026-09-21 12:00 KST - 자정 경계로부터 멀어 재현이 일정
 	private static final Instant NOW = Instant.parse("2026-09-21T03:00:00Z");
 	private static final Clock CLOCK = Clock.fixed(NOW, KST);
-	private static final OffsetDateTime AT = NOW.atZone(KST).toOffsetDateTime();
+	private static final Instant AT = NOW;
 	private static final int LIMIT = 3;
 	private static final String PROVIDER = "mock";
 	private static final UUID REQ = UUID.randomUUID();

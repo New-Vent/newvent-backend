@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
@@ -19,7 +19,7 @@ import com.newvent.event.domain.Event;
 // 매핑(recordToEntity)이 이 규칙을 지킬지 보장해주는 것.
 public class LlmCallLogTest {
 	
-	private static final OffsetDateTime AT = OffsetDateTime.parse("2026-09-21T12:00:00+09:00");
+	private static final Instant AT = Instant.parse("2026-09-21T03:00:00Z");
 	
 	// 15인자 중 고정분을 숨긴 헬퍼 - 검증 대상 5개만 드러낸다
 	private static LlmCallLog 행(boolean truncated, boolean callOk, boolean validOk,
