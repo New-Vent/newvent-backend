@@ -23,6 +23,8 @@ import lombok.extern.slf4j.Slf4j;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    // 도메인에서 의도적으로 발생시킨 예외를 처리
+    // 예외가 가진 HTTP 상태, 에러 코드, 메시지를 그대로 응답
     @ExceptionHandler(BaseException.class)
     public ResponseEntity<ErrorResponse> handleBaseException(BaseException e) {
         ErrorCode errorCode = e.getErrorCode();
@@ -35,6 +37,7 @@ public class GlobalExceptionHandler {
                 ));
     }
 
+    // @RequestBody에 적용된 @Valid 검증 실패를 처리
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleMethodArgumentNotValidException(
             MethodArgumentNotValidException e
@@ -52,6 +55,7 @@ public class GlobalExceptionHandler {
         return createInvalidInputResponse(message);
     }
 
+    // @Validated를 통한 요청 파라미터 및 경로 변수의 제약조건 위반을 처리
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ErrorResponse> handleConstraintViolationException(
             ConstraintViolationException e
@@ -67,6 +71,8 @@ public class GlobalExceptionHandler {
         return createInvalidInputResponse(message);
     }
 
+    // Spring MVC의 메서드 파라미터 검증 실패를 처리
+    // @RequestParam, @PathVariable 등에 직접 선언한 제약조건이 대상
     @ExceptionHandler(HandlerMethodValidationException.class)
     public ResponseEntity<ErrorResponse> handleHandlerMethodValidationException(
             HandlerMethodValidationException e
@@ -80,6 +86,8 @@ public class GlobalExceptionHandler {
         return createInvalidInputResponse(message);
     }
 
+    // JSON 문법 오류, 필드 타입 불일치 등 요청 본문을 읽을 수 없는 경우를 처리
+    // 내부 역직렬화 오류는 노출하지 않고 공통 메시지를 반환
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleHttpMessageNotReadableException() {
         return createInvalidInputResponse(
@@ -87,6 +95,7 @@ public class GlobalExceptionHandler {
         );
     }
 
+    // 별도로 처리되지 않은 예상하지 못한 예외를 처리
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleException(Exception e) {
         log.error("exception : ", e);

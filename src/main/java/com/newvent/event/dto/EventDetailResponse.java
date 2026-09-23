@@ -5,7 +5,7 @@ import java.util.List;
 
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
-import com.newvent.event.domain.MembershipGrade;
+import com.newvent.user.domain.MembershipGrade;
 
 public record EventDetailResponse(
         Long id,
@@ -22,14 +22,14 @@ public record EventDetailResponse(
 ) {
     public static EventDetailResponse from(Event event, boolean closingSoon) {
         return new EventDetailResponse(
-                event.id(),
-                event.name(),
-                event.status(),
-                event.startAt(),
-                event.endAt(),
-                event.updatedAt(),
-                event.template(),
-                event.thumbnailUrl(),
+                event.getId(),
+                event.getTitle(),
+                event.getStatus(),
+                event.getStartDate(),
+                event.getEndDate(),
+                event.getUpdatedAt(),
+                event.templateCode(),
+                event.thumbnailPath(),
                 event.targetGrades(),
                 event.completedHtml(),
                 closingSoon);

@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.newvent.event.domain.EventTemplate;
 import com.newvent.event.dto.TemplateResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
@@ -26,7 +27,7 @@ public class EventTemplateService {
 
     public TemplateResponse findByKey(String templateKey) {
         return eventTemplateRepository.findByKey(templateKey)
-                .filter(template -> template.active())
+                .filter(EventTemplate::isActive)
                 .map(TemplateResponse::from)
                 .orElseThrow(() -> new EventException(EventErrorCode.TEMPLATE_NOT_FOUND));
     }
