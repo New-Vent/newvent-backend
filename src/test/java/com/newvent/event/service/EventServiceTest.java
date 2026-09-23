@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test;
 
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.EventStatus;
-import com.newvent.user.domain.MembershipGrade;
 import com.newvent.event.dto.EventCreateRequest;
 import com.newvent.event.dto.EventDetailResponse;
 import com.newvent.event.dto.EventSummaryResponse;
@@ -23,6 +22,7 @@ import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.InMemoryEventRepository;
 import com.newvent.event.repository.InMemoryEventTemplateRepository;
+import com.newvent.user.domain.MembershipGrade;
 
 class EventServiceTest {
 

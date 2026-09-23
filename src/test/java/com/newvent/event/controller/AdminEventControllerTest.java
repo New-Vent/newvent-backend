@@ -22,13 +22,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.EventStatus;
-import com.newvent.user.domain.MembershipGrade;
 import com.newvent.event.dto.EventCreateRequest;
 import com.newvent.event.dto.EventDetailResponse;
 import com.newvent.event.dto.EventSummaryResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.service.EventService;
+import com.newvent.user.domain.MembershipGrade;
 
 @WebMvcTest(AdminEventController.class)
 @Import(GlobalExceptionHandler.class)
