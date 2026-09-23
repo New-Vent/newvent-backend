@@ -1,10 +1,11 @@
 package com.newvent.event.repository;
 
-import com.newvent.event.domain.EventVersion;
+import java.util.List;
+
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.util.List;
+import com.newvent.event.domain.EventVersion;
 
 public interface EventVersionRepository extends JpaRepository<EventVersion, Long> {
 

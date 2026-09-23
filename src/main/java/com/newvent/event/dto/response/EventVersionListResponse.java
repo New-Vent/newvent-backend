@@ -1,8 +1,8 @@
 package com.newvent.event.dto.response;
 
-import lombok.Builder;
-
 import java.util.List;
+
+import lombok.Builder;
 
 @Builder
 public record EventVersionListResponse(

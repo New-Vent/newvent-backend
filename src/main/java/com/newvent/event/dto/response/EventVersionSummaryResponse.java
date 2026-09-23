@@ -1,12 +1,13 @@
 package com.newvent.event.dto.response;
 
+import java.time.OffsetDateTime;
+
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventVersion;
 import com.newvent.generation.domain.ChatMessage;
-import lombok.Builder;
 
-import java.time.OffsetDateTime;
+import lombok.Builder;
 
 @Builder
 public record EventVersionSummaryResponse(

@@ -1,9 +1,10 @@
 package com.newvent.event.repository;
 
-import com.newvent.event.domain.Event;
+import java.util.Optional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.util.Optional;
+import com.newvent.event.domain.Event;
 
 public interface EventRepository extends JpaRepository<Event, Long> {
 
