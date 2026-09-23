@@ -1,0 +1,32 @@
+[
+  {
+    "code": "template_1_sports_cheer",
+    "name": "스포츠 응원",
+    "description": "프로야구·축구 등 경기 응원 이벤트. 승부 예측이나 스코어 맞히기로 참여하고 굿즈·경품을 추첨으로 지급합니다. 팬 참여형, 시즌 한정, 응원 투표.",
+    "thumbnailPath": "/templates/thumbs/sports_cheer.png"
+  },
+  {
+    "code": "template_2_holiday_gift",
+    "name": "한가위 선물",
+    "description": "설·추석 등 명절 이벤트. 매일 출석체크하고 복주머니를 뽑아 데이터·상품권을 즉석에서 받습니다. 반복 참여형, 랜덤 당첨, 명절 인사.",
+    "thumbnailPath": "/templates/thumbs/holiday_gift.png"
+  },
+  {
+    "code": "template_3_member_appreciation",
+    "name": "VIP 감사",
+    "description": "회원 등급 대상 감사 이벤트. VIP·FAMILY 등 특정 등급에게 할인 쿠폰팩과 무료배송 혜택을 자동 지급합니다. 등급 한정, 쿠폰 지급, 로열티 보상.",
+    "thumbnailPath": "/templates/thumbs/member_appreciation.png"
+  },
+  {
+    "code": "template_4_flash_sale",
+    "name": "72시간 특가",
+    "description": "짧은 기간 한정 특가 이벤트. 남은 시간 타이머를 보여주고 선착순·재고 소진으로 마감합니다. 긴급성 강조, 타임딜, 할인율 중심.",
+    "thumbnailPath": "/templates/thumbs/flash_sale.png"
+  },
+  {
+    "code": "template_5_pre_registration",
+    "name": "서비스 사전예약",
+    "description": "신규 서비스·상품 출시 전 사전예약 이벤트. 누적 신청자 수에 따라 단계별 보상을 열고 얼리버드 혜택을 줍니다. 런칭, 마일스톤 달성, 대기자 모집.",
+    "thumbnailPath": "/templates/thumbs/pre_registration.png"
+  }
+]

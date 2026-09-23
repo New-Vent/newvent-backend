@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.EventStatus;
-import com.newvent.event.domain.MembershipGrade;
+import com.newvent.user.domain.MembershipGrade;
 import com.newvent.event.dto.EventCreateRequest;
 import com.newvent.event.dto.EventDetailResponse;
 import com.newvent.event.dto.EventSummaryResponse;

@@ -1,14 +1,58 @@
 package com.newvent.event.domain;
 
-/**
- * 기본 템플릿 5종. HTML 본문(baseContent)은 아직 붙이지 않는다.
- * 출처: 이헌진 추천 템플릿 (template_1~5).
- */
-public record EventTemplate(
-        String templateKey,
-        String name,
-        String description,
-        String theme,
-        boolean active
-) {
+import jakarta.persistence.*;
+
+import com.newvent.common.domain.BaseTimeEntity;
+
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+@Getter
+@Entity
+@Table(name = "event_templates")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class EventTemplate extends BaseTimeEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, length = 50, unique = true)
+    private String code;
+
+    @Column(nullable = false, length = 100)
+    private String name;
+
+    @Column(length = 255)
+    private String description;
+
+    @Column(name = "html_content", nullable = false, columnDefinition = "text")
+    private String htmlContent;
+
+    @Column(name = "is_builtin", nullable = false)
+    private boolean builtin = false;
+
+    @Column(name = "thumbnail_path", length = 255)
+    private String thumbnailPath;
+
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;
+
+    /** 인메모리 시드·테스트용. */
+    public static EventTemplate seed(
+            String code,
+            String name,
+            String description,
+            String htmlContent,
+            boolean active) {
+        EventTemplate template = new EventTemplate();
+        template.code = code;
+        template.name = name;
+        template.description = description;
+        template.htmlContent = htmlContent;
+        template.builtin = true;
+        template.active = active;
+        return template;
+    }
 }

@@ -19,11 +19,17 @@ repositories {
 }
 
 dependencies {
-	// TODO: DB 작업 시작 전까지 임시 비활성화
-	// implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-	// implementation 'org.springframework.boot:spring-boot-starter-flyway'
-	// implementation 'org.flywaydb:flyway-database-postgresql'
-	// runtimeOnly 'org.postgresql:postgresql'
+	// JPA 및 Hibernate
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+	// Flyway 마이그레이션
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+
+	// PostgreSQL용 Flyway 지원 모듈
+	implementation 'org.flywaydb:flyway-database-postgresql'
+
+	// PostgreSQL JDBC 드라이버
+	runtimeOnly 'org.postgresql:postgresql'
 
 	// TODO: 인증/인가 구현 시 활성화
 	// implementation 'org.springframework.boot:spring-boot-starter-security'

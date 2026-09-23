@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
-import com.newvent.event.domain.MembershipGrade;
+import com.newvent.event.domain.EventTemplate;
 import com.newvent.event.dto.EventCreateRequest;
 import com.newvent.event.dto.EventDetailResponse;
 import com.newvent.event.dto.EventSummaryResponse;
@@ -19,6 +19,8 @@ import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.event.repository.EventTemplateRepository;
+import com.newvent.event.repository.InMemoryEventRepository;
+import com.newvent.user.domain.MembershipGrade;
 
 @Service
 public class EventService {
@@ -48,7 +50,7 @@ public class EventService {
         List<Event> filtered = eventRepository.findAll().stream()
                 .filter(event -> !event.deleted())
                 .filter(event -> nameMatches(event, name))
-                .filter(event -> status == null || event.status() == status)
+                .filter(event -> status == null || event.getStatus() == status)
                 .filter(event -> periodOverlaps(event, periodFrom, periodTo))
                 .toList();
 
@@ -72,67 +74,67 @@ public class EventService {
         if (!request.endAt().isAfter(request.startAt())) {
             throw new EventException(EventErrorCode.INVALID_PERIOD);
         }
-        validateTemplateKey(request.templateKey());
+        EventTemplate template = resolveTemplate(request.templateKey());
+        MembershipGrade grade = firstGradeOrNormal(request.targetGrades());
 
-        List<MembershipGrade> grades = request.targetGrades() == null
-                ? List.of()
-                : request.targetGrades();
-        String templateKey = blankToNull(request.templateKey());
-
-        Event saved = eventRepository.save(new Event(
-                null,
+        Event draft = Event.createDraft(
+                systemAdmin(),
+                template,
                 request.name().trim(),
-                EventStatus.DRAFT,
                 request.startAt(),
                 request.endAt(),
-                OffsetDateTime.now(clock),
-                null,
-                templateKey,
-                null,
-                grades,
-                null));
+                grade);
+        draft.touchUpdatedAt(OffsetDateTime.now(clock));
+        Event saved = eventRepository.save(draft);
         return EventDetailResponse.from(saved, closingSoon(saved));
     }
 
     boolean closingSoon(Event event) {
-        if (event.status() != EventStatus.PUBLISHED || event.deleted()) {
+        if (event.getStatus() != EventStatus.PUBLISHED || event.deleted()) {
             return false;
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
-        if (now.isBefore(event.startAt()) || !now.isBefore(event.endAt())) {
+        if (now.isBefore(event.getStartDate()) || !now.isBefore(event.getEndDate())) {
             return false;
         }
-        return !now.isBefore(event.endAt().minus(CLOSING_SOON_WINDOW));
+        return !now.isBefore(event.getEndDate().minus(CLOSING_SOON_WINDOW));
     }
 
-    private void validateTemplateKey(String templateKey) {
+    private EventTemplate resolveTemplate(String templateKey) {
         if (templateKey == null || templateKey.isBlank()) {
-            return;
+            return null;
         }
-        eventTemplateRepository.findByKey(templateKey.trim())
-                .filter(template -> template.active())
+        return eventTemplateRepository.findByKey(templateKey.trim())
+                .filter(EventTemplate::isActive)
                 .orElseThrow(() -> new EventException(EventErrorCode.TEMPLATE_NOT_FOUND));
     }
 
-    private static String blankToNull(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
+    private com.newvent.admin.domain.Admin systemAdmin() {
+        if (eventRepository instanceof InMemoryEventRepository memory) {
+            return memory.systemAdmin();
         }
-        return value.trim();
+        return com.newvent.admin.domain.Admin.systemStub();
+    }
+
+    private static MembershipGrade firstGradeOrNormal(List<MembershipGrade> grades) {
+        if (grades == null || grades.isEmpty() || grades.getFirst() == null) {
+            return MembershipGrade.NORMAL;
+        }
+        return grades.getFirst();
     }
 
     private static boolean nameMatches(Event event, String name) {
         if (name == null || name.isBlank()) {
             return true;
         }
-        return event.name().toLowerCase(Locale.ROOT).contains(name.trim().toLowerCase(Locale.ROOT));
+        return event.getTitle().toLowerCase(Locale.ROOT).contains(name.trim().toLowerCase(Locale.ROOT));
     }
 
     private static boolean periodOverlaps(Event event, OffsetDateTime from, OffsetDateTime to) {
-        if (from != null && event.endAt().isBefore(from)) {
+        if (from != null && event.getEndDate().isBefore(from)) {
             return false;
         }
-        if (to != null && event.startAt().isAfter(to)) {
+        if (to != null && event.getStartDate().isAfter(to)) {
             return false;
         }
         return true;
