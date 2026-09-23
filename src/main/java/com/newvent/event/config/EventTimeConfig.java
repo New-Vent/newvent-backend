@@ -1,4 +1,4 @@
-package com.newvent.common.config;
+package com.newvent.event.config;
 
 import java.time.Clock;
 import java.time.ZoneId;
@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-public class TimeConfig {
+public class EventTimeConfig {
 
     public static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 

@@ -8,7 +8,7 @@ import java.util.Locale;
 
 import org.springframework.stereotype.Service;
 
-import com.newvent.common.response.PageResponse;
+import com.newvent.event.dto.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventTemplate;

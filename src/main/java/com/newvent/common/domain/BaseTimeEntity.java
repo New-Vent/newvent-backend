@@ -24,10 +24,4 @@ public abstract class BaseTimeEntity {
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
-
-    /** JPA Auditing 전·인메모리 시드용. */
-    protected void markTimestamps(OffsetDateTime createdAt, OffsetDateTime updatedAt) {
-        this.createdAt = createdAt;
-        this.updatedAt = updatedAt;
-    }
 }
