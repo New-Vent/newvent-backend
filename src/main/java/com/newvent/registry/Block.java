@@ -92,6 +92,17 @@ public enum Block {
     public String must()     { return must; }
     public int minItems()    { return minItems; }
 
+    /**
+     * 이 블록의 **항목이 관리자가 정하는 값인가.** 지금은 benefits 하나다.
+     *
+     * ★ 관문(Gate)이 되묻기를 판정하는 근거다
+     *
+     * ★ if (b == Block.BENEFITS) 로 쓰지 말 것.
+     */
+    public boolean itemsAreFormValues() {
+        return minItems > 0 && source == Source.MIXED;
+    }
+
     /** 모델이 만드는 블록 (SERVER 제외) */
     public static List<Block> llmBlocks() {
         return Arrays.stream(values())
@@ -150,7 +161,8 @@ public enum Block {
     public String denyReason(String op) {
         if (source == Source.SERVER) {
             return switch (op) {
-                case "EDIT", "ADD" ->
+
+                case "EDIT", "ADD", "STYLE" ->
                         desc + " 영역은 시스템이 관리합니다. 채팅으로 바꿀 수 없습니다.";
                 case "DELETE" ->
                         "유의사항은 반드시 표시해야 해서 지울 수 없습니다.";
