@@ -23,9 +23,14 @@ server:
 
 llm:
   provider: mock
+  # provider: ${LLM_PROVIDER:mock}  # 주석을 변경하면 Bedrock 적용
   daily-limit: 200      # 하루 최대 호출 수 — 무한루프 방어
   max-retry: 3          # 재시도 상한
   timeout-seconds: 120
+
+  # provider 별 설정
+  model: ${LLM_MODEL:}
+  region: ${BEDROCK_REGION:}
 
 logging:
   level:
