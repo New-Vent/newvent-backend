@@ -17,17 +17,17 @@ import com.newvent.event.domain.EventVersion;
 import com.newvent.user.domain.MembershipGrade;
 
 /**
- * JPA 연동 전 조회·생성 API 용 저장소.
+ * JPA 연동 전 관리자 조회·생성 API 용 임시 저장소.
  * 도메인은 develop Entity 를 쓰고, 저장만 메모리로 한다.
  *
- * TODO(JPA 전환 PR): Spring Data JpaRepository 로 교체한다. 함께 전환·삭제할 대상:
- *  - EventRepository → {@code JpaRepository<Event, Long>} (+ deletedAt IS NULL 조회, 검색·기간 필터, Pageable)
+ * TODO(JPA 전환 PR): 이 클래스를 삭제하고 기존 {@link EventRepository} 를 사용한다. 새 Repository 는 만들지 않는다.
+ *  - EventRepository 에 관리자 검색(이름·상태)·기간 필터·Pageable 조회 메서드 추가
  *  - InMemoryEventTemplateRepository / EventTemplateRepository → {@code JpaRepository<EventTemplate, Long>} (findByCode)
  *  - EntityTimestamps → JPA Auditing 으로 대체 후 삭제
  *  - Admin.systemStub() → 인증 연동 후 로그인 관리자로 대체
  */
 @Repository
-public class InMemoryEventRepository implements EventRepository {
+public class InMemoryEventRepository {
 
     private final Map<Long, Event> events = new ConcurrentHashMap<>();
     private final AtomicLong sequence = new AtomicLong(0);
@@ -43,7 +43,6 @@ public class InMemoryEventRepository implements EventRepository {
         return systemAdmin;
     }
 
-    @Override
     public List<Event> findAll() {
         return events.values().stream()
                 .sorted(Comparator.comparing(Event::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
@@ -51,12 +50,11 @@ public class InMemoryEventRepository implements EventRepository {
                 .toList();
     }
 
-    @Override
     public Optional<Event> findById(Long id) {
         return Optional.ofNullable(events.get(id));
     }
 
-    @Override
+    /** id 가 null 이면 새 id 를 발급해 저장한다. */
     public Event save(Event event) {
         Long id = event.getId();
         if (id == null) {

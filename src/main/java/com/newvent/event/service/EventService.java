@@ -17,7 +17,6 @@ import com.newvent.event.dto.response.EventSummaryResponse;
 import com.newvent.event.dto.response.PageResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
-import com.newvent.event.repository.EventRepository;
 import com.newvent.event.repository.EventTemplateRepository;
 import com.newvent.event.repository.InMemoryEventRepository;
 
@@ -26,12 +25,12 @@ public class EventService {
 
     static final Duration CLOSING_SOON_WINDOW = Duration.ofDays(3);
 
-    private final EventRepository eventRepository;
+    private final InMemoryEventRepository eventRepository;
     private final EventTemplateRepository eventTemplateRepository;
     private final Clock clock;
 
     public EventService(
-            EventRepository eventRepository,
+            InMemoryEventRepository eventRepository,
             EventTemplateRepository eventTemplateRepository,
             Clock clock) {
         this.eventRepository = eventRepository;
@@ -87,7 +86,7 @@ public class EventService {
         EventTemplate template = resolveTemplate(request.templateKey());
 
         Event draft = Event.createDraft(
-                systemAdmin(),
+                eventRepository.systemAdmin(),
                 template,
                 request.name().trim(),
                 request.startAt(),
@@ -116,13 +115,6 @@ public class EventService {
         return eventTemplateRepository.findByKey(templateKey.trim())
                 .filter(EventTemplate::isActive)
                 .orElseThrow(() -> new EventException(EventErrorCode.TEMPLATE_NOT_FOUND));
-    }
-
-    private com.newvent.admin.domain.Admin systemAdmin() {
-        if (eventRepository instanceof InMemoryEventRepository memory) {
-            return memory.systemAdmin();
-        }
-        return com.newvent.admin.domain.Admin.systemStub();
     }
 
     private static boolean nameMatches(Event event, String name) {

@@ -1,15 +1,12 @@
 package com.newvent.event.repository;
 
-import java.util.List;
 import java.util.Optional;
+
+import org.springframework.data.jpa.repository.JpaRepository;
 
 import com.newvent.event.domain.Event;
 
-public interface EventRepository {
-    List<Event> findAll();
+public interface EventRepository extends JpaRepository<Event, Long> {
 
-    Optional<Event> findById(Long id);
-
-    /** id 가 null 이면 새 id 를 발급해 저장한다. */
-    Event save(Event event);
+    Optional<Event> findByIdAndDeletedAtIsNull(Long eventId);
 }
