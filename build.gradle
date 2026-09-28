@@ -90,6 +90,9 @@ spotless {
 tasks.named('test') {
 	useJUnitPlatform()
 
+	environment 'JWT_SECRET', System.getenv('JWT_SECRET')
+			?: 'test-only-not-a-real-secret-0123456789abcdef'
+			
 	jvmArgs '-Dsun.stdout.encoding=UTF-8', '-Dsun.stderr.encoding=UTF-8'
 
 
