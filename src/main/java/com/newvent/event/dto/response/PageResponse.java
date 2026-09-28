@@ -1,4 +1,4 @@
-package com.newvent.event.dto;
+package com.newvent.event.dto.response;
 
 import java.util.List;
 

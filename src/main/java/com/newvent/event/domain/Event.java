@@ -1,7 +1,6 @@
 package com.newvent.event.domain;
 
 import java.time.OffsetDateTime;
-import java.util.List;
 
 import jakarta.persistence.*;
 
@@ -88,10 +87,6 @@ public class Event extends BaseTimeEntity {
 
     public String completedHtml() {
         return publishedVersion == null ? null : publishedVersion.getHtmlContent();
-    }
-
-    public List<MembershipGrade> targetGrades() {
-        return grade == null ? List.of() : List.of(grade);
     }
 
     /** 관리자 생성 API — 항상 DRAFT. */

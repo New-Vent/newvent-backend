@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.newvent.common.response.ApiResponse;
-import com.newvent.event.dto.TemplateResponse;
+import com.newvent.event.dto.response.TemplateResponse;
 import com.newvent.event.service.EventTemplateService;
 
 @RestController

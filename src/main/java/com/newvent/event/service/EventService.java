@@ -11,16 +11,15 @@ import org.springframework.stereotype.Service;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventTemplate;
-import com.newvent.event.dto.EventCreateRequest;
-import com.newvent.event.dto.EventDetailResponse;
-import com.newvent.event.dto.EventSummaryResponse;
-import com.newvent.event.dto.PageResponse;
+import com.newvent.event.dto.request.EventCreateRequest;
+import com.newvent.event.dto.response.EventDetailResponse;
+import com.newvent.event.dto.response.EventSummaryResponse;
+import com.newvent.event.dto.response.PageResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.event.repository.EventTemplateRepository;
 import com.newvent.event.repository.InMemoryEventRepository;
-import com.newvent.user.domain.MembershipGrade;
 
 @Service
 public class EventService {
@@ -47,6 +46,10 @@ public class EventService {
             OffsetDateTime periodTo,
             int page,
             int size) {
+        if (periodFrom != null && periodTo != null && periodFrom.isAfter(periodTo)) {
+            throw new EventException(EventErrorCode.INVALID_SEARCH_PERIOD);
+        }
+
         List<Event> filtered = eventRepository.findAll().stream()
                 .filter(event -> !event.deleted())
                 .filter(event -> nameMatches(event, name))
@@ -54,13 +57,20 @@ public class EventService {
                 .filter(event -> periodOverlaps(event, periodFrom, periodTo))
                 .toList();
 
-        long total = filtered.size();
-        int fromIndex = Math.min(page * size, filtered.size());
-        int toIndex = Math.min(fromIndex + size, filtered.size());
-        List<EventSummaryResponse> content = filtered.subList(fromIndex, toIndex).stream()
+        List<EventSummaryResponse> content = slice(filtered, page, size).stream()
                 .map(event -> EventSummaryResponse.from(event, closingSoon(event)))
                 .toList();
-        return PageResponse.of(content, page, size, total);
+        return PageResponse.of(content, page, size, filtered.size());
+    }
+
+    private static <T> List<T> slice(List<T> items, int page, int size) {
+        long offset = (long) page * size;
+        if (offset >= items.size()) {
+            return List.of();
+        }
+        int fromIndex = (int) offset;
+        int toIndex = (int) Math.min(offset + size, items.size());
+        return items.subList(fromIndex, toIndex);
     }
 
     public EventDetailResponse findAdminEvent(Long id) {
@@ -75,7 +85,6 @@ public class EventService {
             throw new EventException(EventErrorCode.INVALID_PERIOD);
         }
         EventTemplate template = resolveTemplate(request.templateKey());
-        MembershipGrade grade = firstGradeOrNormal(request.targetGrades());
 
         Event draft = Event.createDraft(
                 systemAdmin(),
@@ -83,7 +92,7 @@ public class EventService {
                 request.name().trim(),
                 request.startAt(),
                 request.endAt(),
-                grade);
+                request.grade());
         draft.touchUpdatedAt(OffsetDateTime.now(clock));
         Event saved = eventRepository.save(draft);
         return EventDetailResponse.from(saved, closingSoon(saved));
@@ -114,13 +123,6 @@ public class EventService {
             return memory.systemAdmin();
         }
         return com.newvent.admin.domain.Admin.systemStub();
-    }
-
-    private static MembershipGrade firstGradeOrNormal(List<MembershipGrade> grades) {
-        if (grades == null || grades.isEmpty() || grades.getFirst() == null) {
-            return MembershipGrade.NORMAL;
-        }
-        return grades.getFirst();
     }
 
     private static boolean nameMatches(Event event, String name) {

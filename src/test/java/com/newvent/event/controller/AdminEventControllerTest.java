@@ -1,6 +1,7 @@
 package com.newvent.event.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -21,10 +22,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
 import com.newvent.event.domain.EventStatus;
-import com.newvent.event.dto.EventCreateRequest;
-import com.newvent.event.dto.EventDetailResponse;
-import com.newvent.event.dto.EventSummaryResponse;
-import com.newvent.event.dto.PageResponse;
+import com.newvent.event.dto.request.EventCreateRequest;
+import com.newvent.event.dto.response.EventDetailResponse;
+import com.newvent.event.dto.response.EventSummaryResponse;
+import com.newvent.event.dto.response.PageResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.service.EventService;
@@ -48,7 +49,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T10:20:00+09:00"),
-                "signup", null, List.of(MembershipGrade.NORMAL), false);
+                "signup", null, MembershipGrade.NORMAL, false);
         given(eventService.findAdminEvents(null, null, null, null, 0, 10))
                 .willReturn(PageResponse.of(List.of(row), 0, 10, 1));
 
@@ -68,7 +69,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-09-18T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-15T09:10:00+09:00"),
-                "instant", null, List.of(MembershipGrade.NORMAL),
+                "instant", null, MembershipGrade.NORMAL,
                 "<h1>지금 긁으면 바로 당첨</h1>", true);
         given(eventService.findAdminEvent(3L)).willReturn(detail);
 
@@ -100,7 +101,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
-                "sports_cheer", null, List.of(MembershipGrade.NORMAL),
+                "sports_cheer", null, MembershipGrade.BEST,
                 null, false);
         given(eventService.create(any(EventCreateRequest.class))).willReturn(created);
 
@@ -112,14 +113,30 @@ class AdminEventControllerTest {
                                   "startAt": "2026-10-01T00:00:00+09:00",
                                   "endAt": "2026-10-15T23:59:59+09:00",
                                   "templateKey": "sports_cheer",
-                                  "targetGrades": ["NORMAL"]
+                                  "grade": "BEST"
                                 }
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(100))
                 .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.grade").value("BEST"))
                 .andExpect(jsonPath("$.data.completedHtml").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("조회 시작일이 종료일보다 늦으면 400 과 EVENT400-1 을 반환한다")
+    void 조회기간이_역전되면_400을_반환한다() throws Exception {
+        given(eventService.findAdminEvents(
+                        any(), any(), any(OffsetDateTime.class), any(OffsetDateTime.class),
+                        anyInt(), anyInt()))
+                .willThrow(new EventException(EventErrorCode.INVALID_SEARCH_PERIOD));
+
+        mockMvc.perform(get("/api/admin/events")
+                        .param("periodFrom", "2026-09-30T00:00:00+09:00")
+                        .param("periodTo", "2026-09-01T00:00:00+09:00"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("EVENT400-1"));
     }
 
     @Test

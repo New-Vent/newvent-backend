@@ -19,6 +19,12 @@ import com.newvent.user.domain.MembershipGrade;
 /**
  * JPA 연동 전 조회·생성 API 용 저장소.
  * 도메인은 develop Entity 를 쓰고, 저장만 메모리로 한다.
+ *
+ * TODO(JPA 전환 PR): Spring Data JpaRepository 로 교체한다. 함께 전환·삭제할 대상:
+ *  - EventRepository → {@code JpaRepository<Event, Long>} (+ deletedAt IS NULL 조회, 검색·기간 필터, Pageable)
+ *  - InMemoryEventTemplateRepository / EventTemplateRepository → {@code JpaRepository<EventTemplate, Long>} (findByCode)
+ *  - EntityTimestamps → JPA Auditing 으로 대체 후 삭제
+ *  - Admin.systemStub() → 인증 연동 후 로그인 관리자로 대체
  */
 @Repository
 public class InMemoryEventRepository implements EventRepository {

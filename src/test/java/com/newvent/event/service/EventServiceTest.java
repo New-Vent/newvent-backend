@@ -7,17 +7,16 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
-import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.newvent.event.domain.EventStatus;
-import com.newvent.event.dto.EventCreateRequest;
-import com.newvent.event.dto.EventDetailResponse;
-import com.newvent.event.dto.EventSummaryResponse;
-import com.newvent.event.dto.PageResponse;
+import com.newvent.event.dto.request.EventCreateRequest;
+import com.newvent.event.dto.response.EventDetailResponse;
+import com.newvent.event.dto.response.EventSummaryResponse;
+import com.newvent.event.dto.response.PageResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.InMemoryEventRepository;
@@ -87,6 +86,47 @@ class EventServiceTest {
     }
 
     @Test
+    @DisplayName("조회 시작일이 종료일보다 늦으면 EVENT400-1 이다")
+    void 조회기간이_역전되면_400을_던진다() {
+        OffsetDateTime from = OffsetDateTime.parse("2026-09-30T00:00:00+09:00");
+        OffsetDateTime to = OffsetDateTime.parse("2026-09-01T00:00:00+09:00");
+
+        assertThatThrownBy(() -> eventService.findAdminEvents(null, null, from, to, 0, 10))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.INVALID_SEARCH_PERIOD.getCode());
+    }
+
+    @Test
+    @DisplayName("조회 시작일과 종료일이 같으면 허용한다")
+    void 조회기간이_같은_날이면_허용한다() {
+        OffsetDateTime same = OffsetDateTime.parse("2026-09-17T00:00:00+09:00");
+
+        PageResponse<EventSummaryResponse> page = eventService.findAdminEvents(null, null, same, same, 0, 10);
+
+        assertThat(page.content()).extracting(EventSummaryResponse::id).contains(1L, 3L, 4L);
+    }
+
+    @Test
+    @DisplayName("page * size 가 int 범위를 넘어도 빈 페이지를 반환한다")
+    void 큰_페이지_번호는_빈_페이지를_반환한다() {
+        PageResponse<EventSummaryResponse> page =
+                eventService.findAdminEvents(null, null, null, null, Integer.MAX_VALUE, 50);
+
+        assertThat(page.content()).isEmpty();
+        assertThat(page.totalElements()).isEqualTo(6);
+    }
+
+    @Test
+    @DisplayName("목록 크기를 넘는 페이지는 빈 페이지를 반환한다")
+    void 범위를_넘는_페이지는_빈_페이지를_반환한다() {
+        PageResponse<EventSummaryResponse> page = eventService.findAdminEvents(null, null, null, null, 1, 10);
+
+        assertThat(page.content()).isEmpty();
+        assertThat(page.totalElements()).isEqualTo(6);
+    }
+
+    @Test
     @DisplayName("상세 조회는 HTML 과 마감임박을 함께 반환한다")
     void 관리자_상세_조회에_성공한다() {
         EventDetailResponse detail = eventService.findAdminEvent(3L);
@@ -127,16 +167,32 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 "sports_cheer",
-                List.of(MembershipGrade.NORMAL));
+                MembershipGrade.BEST);
 
         EventDetailResponse created = eventService.create(request);
 
         assertThat(created.id()).isEqualTo(100L);
         assertThat(created.status()).isEqualTo(EventStatus.DRAFT);
         assertThat(created.template()).isEqualTo("sports_cheer");
+        assertThat(created.grade()).isEqualTo(MembershipGrade.BEST);
         assertThat(created.completedHtml()).isNull();
         assertThat(created.closingSoon()).isFalse();
-        assertThat(eventService.findAdminEvent(created.id()).name()).isEqualTo("테스트 이벤트");
+        assertThat(eventService.findAdminEvent(created.id()).grade()).isEqualTo(MembershipGrade.BEST);
+    }
+
+    @Test
+    @DisplayName("등급을 보내지 않으면 NORMAL 로 저장한다")
+    void 등급_누락시_NORMAL_로_저장한다() {
+        EventCreateRequest request = new EventCreateRequest(
+                "등급 없음",
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
+                null,
+                null);
+
+        EventDetailResponse created = eventService.create(request);
+
+        assertThat(created.grade()).isEqualTo(MembershipGrade.NORMAL);
     }
 
     @Test

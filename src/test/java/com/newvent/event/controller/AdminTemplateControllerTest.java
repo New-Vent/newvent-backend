@@ -16,7 +16,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
-import com.newvent.event.dto.TemplateResponse;
+import com.newvent.event.dto.response.TemplateResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.service.EventTemplateService;

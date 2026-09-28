@@ -63,9 +63,16 @@
 | `name` | X | | 이벤트명 부분 일치 (대소문자 무시) |
 | `status` | X | | `DRAFT` / `PUBLISHED` / `ENDED` |
 | `periodFrom` | X | | 이벤트 기간과 겹치는 구간 시작 |
-| `periodTo` | X | | 이벤트 기간과 겹치는 구간 끝 |
-| `page` | X | `0` | 0부터 |
+| `periodTo` | X | | 이벤트 기간과 겹치는 구간 끝. `periodFrom` 보다 앞서면 400 |
+| `page` | X | `0` | 0부터. 목록을 넘으면 빈 `content` |
 | `size` | X | `10` | 1~50 |
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| `periodFrom` > `periodTo` | 400 | `EVENT400-1` |
+| 잘못된 쿼리 (status, page, size) | 400 | `COMMON400-0` |
 
 ### 200 예시
 
@@ -83,7 +90,7 @@
         "updatedAt": "2026-09-16T10:20:00+09:00",
         "template": "signup",
         "thumbnailUrl": null,
-        "targetGrades": ["NORMAL", "EXCELLENT", "BEST"],
+        "grade": "NORMAL",
         "closingSoon": false
       }
     ],
@@ -123,7 +130,7 @@ http://localhost:8080/api/admin/events?status=PUBLISHED&name=쿠폰
     "updatedAt": "2026-09-15T09:10:00+09:00",
     "template": "instant",
     "thumbnailUrl": null,
-    "targetGrades": ["NORMAL"],
+    "grade": "NORMAL",
     "completedHtml": "<section data-block=\"hero\"><h1>지금 긁으면 바로 당첨</h1></section>",
     "closingSoon": true
   },
@@ -157,7 +164,7 @@ http://localhost:8080/api/admin/events/3
 | `startAt` | O | 시작일시 |
 | `endAt` | O | 종료일시 (`startAt` 보다 이후) |
 | `templateKey` | X | 헌진 템플릿 키. 있으면 활성 템플릿이어야 함 |
-| `targetGrades` | X | 게시 전엔 비어도 됨 |
+| `grade` | X | 노출 대상 등급 1개 (`NORMAL` / `EXCELLENT` / `BEST`). 없으면 `NORMAL`. `events.grade` 단일 컬럼 기준 |
 
 ### 201 예시
 
@@ -173,7 +180,7 @@ http://localhost:8080/api/admin/events/3
     "updatedAt": "2026-09-16T01:00:00+09:00",
     "template": "sports_cheer",
     "thumbnailUrl": null,
-    "targetGrades": ["NORMAL"],
+    "grade": "BEST",
     "completedHtml": null,
     "closingSoon": false
   },

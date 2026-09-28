@@ -5,7 +5,10 @@ import java.time.OffsetDateTime;
 
 import com.newvent.common.domain.BaseTimeEntity;
 
-/** 인메모리 시드용. common BaseTimeEntity 는 수정하지 않는다. */
+/**
+ * 인메모리 시드용. common BaseTimeEntity 는 수정하지 않는다.
+ * TODO(JPA 전환 PR): JPA Auditing 이 채우므로 인메모리 저장소와 함께 삭제한다.
+ */
 public final class EntityTimestamps {
 
     private EntityTimestamps() {

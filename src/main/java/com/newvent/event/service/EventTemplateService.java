@@ -5,7 +5,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 
 import com.newvent.event.domain.EventTemplate;
-import com.newvent.event.dto.TemplateResponse;
+import com.newvent.event.dto.response.TemplateResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventTemplateRepository;

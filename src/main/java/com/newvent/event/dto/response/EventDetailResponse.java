@@ -1,13 +1,12 @@
-package com.newvent.event.dto;
+package com.newvent.event.dto.response;
 
 import java.time.OffsetDateTime;
-import java.util.List;
 
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.user.domain.MembershipGrade;
 
-public record EventSummaryResponse(
+public record EventDetailResponse(
         Long id,
         String name,
         EventStatus status,
@@ -16,11 +15,12 @@ public record EventSummaryResponse(
         OffsetDateTime updatedAt,
         String template,
         String thumbnailUrl,
-        List<MembershipGrade> targetGrades,
+        MembershipGrade grade,
+        String completedHtml,
         boolean closingSoon
 ) {
-    public static EventSummaryResponse from(Event event, boolean closingSoon) {
-        return new EventSummaryResponse(
+    public static EventDetailResponse from(Event event, boolean closingSoon) {
+        return new EventDetailResponse(
                 event.getId(),
                 event.getTitle(),
                 event.getStatus(),
@@ -29,7 +29,8 @@ public record EventSummaryResponse(
                 event.getUpdatedAt(),
                 event.templateCode(),
                 event.thumbnailPath(),
-                event.targetGrades(),
+                event.getGrade(),
+                event.completedHtml(),
                 closingSoon);
     }
 }

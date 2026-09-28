@@ -11,6 +11,9 @@ import com.newvent.event.domain.EventTemplate;
 
 /**
  * 이헌진 추천 템플릿 5종. JPA 연동 전 메모리 고정.
+ *
+ * TODO(JPA 전환 PR): {@code JpaRepository<EventTemplate, Long>} 로 교체하고 이 클래스는 삭제한다.
+ *  InMemoryEventRepository 와 같은 PR 에서 함께 전환한다.
  */
 @Repository
 public class InMemoryEventTemplateRepository implements EventTemplateRepository {
