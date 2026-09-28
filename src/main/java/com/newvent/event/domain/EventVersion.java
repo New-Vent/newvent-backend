@@ -82,4 +82,16 @@ public class EventVersion {
         version.htmlContent = htmlContent;
         return version;
     }
+
+    public void markCheckpoint(OffsetDateTime now) {
+        if (!checkpoint) {
+            checkpoint = true;
+            checkpointedAt = now;
+        }
+    }
+
+    public void unmarkCheckpoint() {
+        checkpoint = false;
+        checkpointedAt = null;
+    }
 }

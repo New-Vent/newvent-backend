@@ -1,9 +1,6 @@
 package com.newvent.event.controller;
 
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import com.newvent.common.response.ApiResponse;
 import com.newvent.event.dto.response.EventVersionDetailResponse;
@@ -23,6 +20,24 @@ public class EventVersionController {
     @GetMapping
     public ApiResponse<EventVersionListResponse> getVersions(@PathVariable Long eventId) {
         return ApiResponse.success(eventVersionService.getVersions(eventId));
+    }
+
+    @PutMapping("/{versionId}/checkpoint")
+    public ApiResponse<Void> markCheckpoint(
+            @PathVariable Long eventId,
+            @PathVariable Long versionId
+    ) {
+        eventVersionService.markCheckpoint(eventId, versionId);
+        return ApiResponse.successNoData();
+    }
+
+    @DeleteMapping("/{versionId}/checkpoint")
+    public ApiResponse<Void> unmarkCheckpoint(
+            @PathVariable Long eventId,
+            @PathVariable Long versionId
+    ) {
+        eventVersionService.unmarkCheckpoint(eventId, versionId);
+        return ApiResponse.successNoData();
     }
 
     @GetMapping("/{versionId}")

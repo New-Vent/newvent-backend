@@ -32,6 +32,8 @@ DB_PASSWORD
 DB_URL
 ```
 
+LLM 관련 환경변수는 선택 사항이며 11번 항목에 정리되어 있습니다.
+
 `DB_URL`을 설정하지 않으면 `application.yaml`의 기본 주소를 사용합니다.
 `.env`의 `DB_NAME`을 기본값과 다르게 설정한 경우에는 `DB_URL`도 동일한 DB 이름으로 설정해야 합니다.
 
@@ -219,3 +221,54 @@ V3__create_new_table.sql
 ```
 
 공유 환경에 적용된 마이그레이션은 수정하지 않습니다. 스키마 변경이 필요하면 새로운 버전의 마이그레이션을 추가합니다.
+
+## 11. LLM 환경변수 (선택)
+
+설정하지 않으면 `mock`으로 동작합니다. **LLM을 쓰지 않는 작업에는 아무것도 필요하지 않습니다.**
+
+```text
+LLM_PROVIDER     mock(기본) | ollama | bedrock
+LLM_MODEL        provider마다 형식이 다릅니다
+BEDROCK_REGION   기본값 us-east-1
+```
+
+### Bedrock으로 실행
+
+```text
+Run → Edit Configurations → Environment variables
+```
+
+```text
+LLM_PROVIDER=bedrock;LLM_MODEL=google.gemma-3-27b-it
+```
+
+`LLM_MODEL`을 설정하지 않으면 기본값 `qwen2.5:7b`가 들어가 **기동 시점에 실패**합니다.
+Bedrock 모델 ID가 아니라는 메시지가 나옵니다.
+
+AWS 자격증명은 **환경변수에 넣지 않습니다.** `aws configure`로 프로파일을 만들면
+AWS SDK가 `~/.aws/credentials`에서 자동으로 읽습니다.
+
+```bash
+aws configure
+```
+
+모델 접근 권한은 AWS 콘솔에서 별도로 신청해야 합니다. 권한이 없으면 호출 시점에
+실패하며, 어떤 관문이 남았는지는 오류 메시지에 나옵니다.
+
+### 실제 모델로 스모크 테스트
+
+애플리케이션을 띄우지 않고 모델만 확인합니다. DB도 필요하지 않습니다.
+
+Windows:
+
+```bash
+set LLM_SMOKE=1 && set LLM_PROVIDER=bedrock && gradlew.bat test --rerun
+```
+
+macOS/Linux:
+
+```bash
+LLM_SMOKE=1 LLM_PROVIDER=bedrock ./gradlew test --rerun
+```
+
+실제 API를 호출하므로 비용이 발생합니다. 5회 호출에 약 1원입니다.

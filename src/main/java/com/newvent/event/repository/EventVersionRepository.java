@@ -13,5 +13,7 @@ public interface EventVersionRepository extends JpaRepository<EventVersion, Long
     @EntityGraph(attributePaths = {"requestMessage", "sourceVersion"})
     List<EventVersion> findByEventIdAndCheckpointTrueOrderByVersionNoDesc(Long eventId);
 
+    Optional<EventVersion> findByIdAndEventId(Long versionId, Long eventId);
+
     Optional<EventVersion> findByIdAndEventIdAndCheckpointTrue(Long versionId, Long eventId);
 }

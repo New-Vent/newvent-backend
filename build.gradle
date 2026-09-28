@@ -43,6 +43,10 @@ dependencies {
 	// 라우터 응답 JSON 파싱 (OllamaClient)
 	implementation 'com.fasterxml.jackson.core:jackson-databind'
 
+	// AWS Bedrock (BedrockClient)
+	implementation platform('software.amazon.awssdk:bom:2.31.78')
+	implementation 'software.amazon.awssdk:bedrockruntime'
+
 	compileOnly 'org.projectlombok:lombok'
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 

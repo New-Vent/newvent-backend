@@ -2,7 +2,7 @@ package com.newvent.event.controller;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -56,6 +56,28 @@ class EventVersionControllerTest {
                 .andExpect(jsonPath("$.data.versions").isEmpty());
 
         verify(eventVersionService).getVersions(eventId);
+    }
+
+    @Test
+    void markCheckpoint_returnsSuccess() throws Exception {
+        mockMvc.perform(put(
+                        "/api/admin/events/{eventId}/versions/{versionId}/checkpoint",
+                        12L, 102L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(eventVersionService).markCheckpoint(12L, 102L);
+    }
+
+    @Test
+    void unmarkCheckpoint_returnsSuccess() throws Exception {
+        mockMvc.perform(delete(
+                        "/api/admin/events/{eventId}/versions/{versionId}/checkpoint",
+                        12L, 102L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(eventVersionService).unmarkCheckpoint(12L, 102L);
     }
 
     @Test

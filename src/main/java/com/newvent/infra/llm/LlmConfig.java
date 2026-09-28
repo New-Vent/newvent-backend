@@ -28,8 +28,21 @@ public class LlmConfig {
             case "mock"   -> new MockLlmClient();
             case "ollama" -> new OllamaClient(p.baseUrl(), p.model(), p.timeoutSeconds());
 
+            //   model 기본값이 "qwen2.5:7b" 라 bedrock 에서는 반드시 덮어써야 한다.
+            //   Bedrock 모델 id 를 안 주고 Ollama 이름으로 부르면
+            //   ValidationException 이 나는데 원인을 찾기 어려워서 미리 체크함
+            case "bedrock" -> {
+                if (!BedrockClient.looksLikeModelId(p.model())) {
+                    throw new IllegalStateException(
+                            "llm.model 이 Bedrock 모델 id 가 아닙니다: " + p.model()
+                            + " (예: google.gemma-3-27b-it). "
+                            + "Anthropic·OpenAI 는 교차 리전 프로파일이라 us. 접두사가 붙습니다.");
+                }
+                yield new BedrockClient(p.region(), p.model(), p.timeoutSeconds());
+            }
+
             default -> throw new IllegalStateException(
-                    "모르는 provider: " + p.provider() + " (mock | ollama)");
+                    "모르는 provider: " + p.provider() + " (mock | ollama | bedrock)");
         };
     }
 }
