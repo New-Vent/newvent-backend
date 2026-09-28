@@ -44,8 +44,9 @@ public class GenerationJobController {
     @DeleteMapping
     public ResponseEntity<ApiResponse<Void>> cancel(@PathVariable Long eventId,
                                                     @PathVariable String jobId) {
+        // ★ 찾은 작업을 그대로 넘긴다. eventId 로 다시 찾으면 그 사이에 다른 작업이
         GenerationJob job = find(eventId, jobId);
-        if (job.done() || !generation.cancel(eventId)) {
+        if (!generation.cancel(job)) {
             throw new GenerationException(GenerationErrorCode.NOTHING_TO_CANCEL);
         }
         return ResponseEntity

@@ -122,10 +122,10 @@ public class GenerationService {
     }
 
     /** 중단 요청 — 즉시 멈추지 않는다. 단계 사이에서 멈춘다 (REQ-LLM-34) */
-    public boolean cancel(Long eventId) {
-        return jobs.ofEvent(eventId)
-                .map(j -> { j.requestCancel(); return true; })
-                .orElse(false);
+    public boolean cancel(GenerationJob job) {
+        if (job.done()) return false;
+        job.requestCancel();
+        return true;
     }
 
     // ── 실행 ──────────────────────────────────────────────────────
