@@ -23,7 +23,16 @@ import org.jsoup.safety.Safelist;
  */
 public class BlockValidator {
 
-    public record Failure(String code, String message) {}
+    public record Failure(String code, String message) {
+        /** 경고는 기록하되 결과를 실패로 만들거나 재시도를 일으키지 않는다. */
+        public boolean isWarning() {
+            return code.startsWith("warning_");
+        }
+
+        public boolean isBlocking() {
+            return !isWarning();
+        }
+    }
 
     /** 모델 출력에서 HTML 만 뽑는다. 코드펜스가 45% 확률로 붙어서 온다. */
     public static String extract(String raw) {
