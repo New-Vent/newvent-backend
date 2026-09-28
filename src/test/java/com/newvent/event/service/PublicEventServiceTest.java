@@ -125,6 +125,15 @@ class PublicEventServiceTest {
     }
 
     @Test
+    @DisplayName("아직 시작 전이면 종료일이 3일 이내라도 마감임박이 아니다 (리뷰 반영: tnqlsqkr)")
+    void 마감임박_시작전이벤트는_false() {
+        OffsetDateTime now = OffsetDateTime.now();
+        Event event = newEvent(1L, EventStatus.PUBLISHED, now.plusDays(1), now.plusDays(2));
+
+        assertFalse(publicEventService.isClosingSoon(event, now));
+    }
+
+    @Test
     @DisplayName("목록 조회 결과를 카테고리·마감임박 정보와 함께 PageResponse로 반환")
     void 목록조회_성공() {
         OffsetDateTime now = OffsetDateTime.now();

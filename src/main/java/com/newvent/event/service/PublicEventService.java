@@ -53,7 +53,12 @@ public class PublicEventService {
         return event.getEndDate() == null || !now.isAfter(event.getEndDate());
     }
 
+    // 마감임박은 이미 시작한(진행중) 이벤트에만 표시한다 — 시작 전 이벤트가 종료일만 가까워서
+    // closingSoon=true로 잘못 뜨는 것을 막는다 (리뷰 반영: tnqlsqkr).
     public boolean isClosingSoon(Event event, OffsetDateTime now) {
+        if (event.getStartDate() != null && now.isBefore(event.getStartDate())) {
+            return false;
+        }
         if (event.getEndDate() == null) {
             return false;
         }
