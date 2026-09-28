@@ -116,7 +116,7 @@ public class GateTest {
 		Decision d = gate.decide(new RawRoute("ADD", "benefits", null));
 
 		Decision.AskBack a = assertInstanceOf(Decision.AskBack.class, d);
-		assertTrue(a.question().contains("관리자가 정하는 값"));
+		assertTrue(a.question().contains("어떤 내용을 추가할까요?"));
 	}
 
 	@Test

@@ -36,7 +36,7 @@ public class Gate {
 
 	// 항목 값은 관리자가 정한다. 모델이 지어내면 게시된 페이지에서 사고
 	private static String askBackQuestion(Block block) {
-		return block.desc() + " 항목은 관리자가 정하는 값입니다. 어떤 항목을 넣을까요?";
+	    return block.desc() + " — 어떤 내용을 추가할까요?";
 	}
 
 	public Decision decide(RawRoute raw) {
@@ -60,9 +60,9 @@ public class Gate {
                     "무엇을 하실지 알아내지 못했습니다. 다시 말씀해 주세요.");
         }
 
-        // 3. ★ 서버 소유 — op 과 무관하게 거부한다.
-        //    Block.denyReason() 의 switch 에 STYLE 이 없어서 null 이 나온다.
-        //    notices 에 스타일 이 오면 조용히 통과해 버린다.
+	    // 3. ★ 서버 소유 — op 과 무관하게 거부한다.
+		//      Block.denyReason() 에도 SERVER 분기가 있지만, 여기서 끊어야
+		//      "String target 이 Block 이 되는 유일한 지점" 이 유지된다.
         if (block.source() == Block.Source.SERVER) {
             return new Decision.Reject(RouterErrorCode.NOT_ALLOWED,
                     block.desc() + " 영역은 시스템이 관리합니다. 채팅으로 바꿀 수 없습니다.");

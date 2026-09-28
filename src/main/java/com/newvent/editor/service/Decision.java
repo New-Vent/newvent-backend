@@ -15,7 +15,7 @@ import com.newvent.registry.Block;
  * ★ AskBack 은 모델을 부르지 않음.
  *   항목 값은 관리자가 정함. 모델이 채우게 두면 지어낼 수 있음.
  */
-public interface Decision {
+public sealed interface Decision permits Decision.Run, Decision.AskBack, Decision.Reject{
 
 	// 그대로 실행
 	record Run(Block block, Op op, String content) implements Decision {}
