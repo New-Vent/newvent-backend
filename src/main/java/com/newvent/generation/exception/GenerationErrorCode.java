@@ -52,15 +52,6 @@ public enum GenerationErrorCode implements ErrorCode {
     NOTHING_TO_CANCEL(HttpStatus.NOT_FOUND, "GEN404-2",
             "중단할 작업이 없습니다. 이미 끝났을 수 있습니다."),
 
-    /**
-     * ★ 이건 원래 **이벤트 도메인 코드다.**
-     *   `EventErrorCode` 가 생기면 그쪽으로 옮기고 여기서 지운다.
-     *   그때까지 생성 경로가 이벤트를 못 찾았을 때 던질 코드가 없어서 임시로 둔다.
-     *   `deleted_at` 이 찍힌 이벤트도 여기로 온다 — "지워진 것" 과 "없는 것" 을
-     *   구분해서 알려주면 지워진 이벤트가 있었다는 사실이 새어 나간다.
-     */
-    EVENT_NOT_FOUND(HttpStatus.NOT_FOUND, "GEN404-3",
-            "이벤트를 찾을 수 없습니다."),
 
     /**
      * `REQ-EVT-10`. **종료 판정 기준은 `status = ENDED` 로 잡았다** —

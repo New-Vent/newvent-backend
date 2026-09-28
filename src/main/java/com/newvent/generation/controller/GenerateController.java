@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.*;
 
 import com.newvent.common.response.ApiResponse;
 import com.newvent.event.domain.Event;
+import com.newvent.event.exception.EventErrorCode;
+import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.generation.dto.GenerateRequest;
 import com.newvent.generation.dto.GenerateStartResponse;
@@ -43,10 +45,9 @@ public class GenerateController {
             @PathVariable Long eventId,
             @Valid @RequestBody GenerateRequest req) {
 
-        Event event = events.findById(eventId)
-                .filter(e -> e.getDeletedAt() == null)   // 지워진 건 없는 것으로 본다
-                .orElseThrow(() -> new GenerationException(GenerationErrorCode.EVENT_NOT_FOUND));
-
+        // ★ 삭제 필터를 쿼리가 한다. 지워진 행을 읽어 온 뒤 버리는 것보다 안 읽는 게 맞다.
+        Event event = events.findByIdAndDeletedAtIsNull(eventId)
+                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
         GenerateCommand cmd = GenerateCommand.of(event, req.templateCode(), req.requestText());
 
         return switch (generation.start(cmd)) {
