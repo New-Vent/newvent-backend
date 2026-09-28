@@ -62,9 +62,14 @@ public class BedrockClient implements LlmClient {
         return "bedrock";
     }
 
-    // 로그·디버깅용 — 어느 모델을 어느 리전에서 부르는지
-    public String describe() {
-        return "bedrock:" + model + "@" + region;
+    @Override
+    public String modelName() {
+        return model;
+    }
+
+    @Override
+    public void close() {
+        bedrock.close();
     }
 
     // ══════════════════════════════════════════════════════════════
