@@ -15,10 +15,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.newvent.auth.jwt.JwtProvider;
+import com.newvent.common.config.SecurityConfig;
 import com.newvent.user.domain.MembershipGrade;
 import com.newvent.user.domain.User;
 import com.newvent.user.exception.DuplicateUserException;
@@ -26,7 +29,10 @@ import com.newvent.user.exception.UserNotFoundException;
 import com.newvent.user.exception.code.UserErrorCode;
 import com.newvent.user.service.UserService;
 
+// @WebMvcTest 는 SecurityConfig 를 스캔하지 않는다 — 안 넣으면 Spring Security 기본 설정(전부 인증 + CSRF)이 걸린다.
+// 실제 인가 규칙(/api/public/** 허용)으로 검증하려고 직접 import 한다.
 @WebMvcTest(UserController.class)
+@Import({SecurityConfig.class, JwtProvider.class})
 class UserApiTest {
 
     @Autowired

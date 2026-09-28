@@ -46,6 +46,7 @@ jobs:
       DB_URL: jdbc:postgresql://localhost:5432/${{ secrets.DB_NAME }}
       DB_USERNAME: ${{ secrets.DB_USERNAME }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      JWT_SECRET: ci-only-jwt-secret-ci-only-jwt-secret-0123456789
 
     steps:
       - uses: actions/checkout@v4
