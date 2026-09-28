@@ -88,6 +88,7 @@ public class GenerationService {
      *
      * ★ 검사 순서가 중요하다 — 자리를 잡기 전에 거를 것을 다 거른다.
      *   자리를 먼저 잡으면 거부된 요청이 그 이벤트의 생성을 잠시 막는다.
+     *   상한(④)은 더 나쁘다 — 예외로 나가서 자리를 **영구히** 붙잡는다. ③ 주석 참고.
      */
     public StartResult start(GenerateCommand cmd) {
         // ① 이벤트를 건드려도 되는가
@@ -113,22 +114,27 @@ public class GenerationService {
             }
         }
 
-        // ③ 하루 상한 — 백지 경로만. 템플릿 경로는 모델을 아예 안 부른다
-        //
-        //   ★ 여기서 본다. 작업 스레드에 넘긴 뒤에 보면 429 가 관리자에게 도달하지 못한다.
-        //     (워커에서 터지면 job.fail() 의 "문제가 생겼습니다" 로 뭉개진다)
-        //   ★ StartResult.Rejected 로 안 돌리고 예외를 던진다.
-        //     LlmDailyLimitExceededException 이 이미 429 를 들고 있고,
-        //     이건 "요청이 잘못됐다" 가 아니라 "오늘은 더 못 쓴다" 라서 결이 다르다.
+        // ③ 이미 돌고 있나 — **자리를 잡지 않고** 먼저 본다
+        Optional<GenerationJob> already = jobs.ofEvent(cmd.eventId());
+        if (already.isPresent()) {
+            return new StartResult.AlreadyRunning(already.get());
+        }
+
+        // ④ 하루 상한 — 백지 경로만. 템플릿 경로는 모델을 아예 안 부른다
+
         if (!cmd.hasTemplate()) {
             retry.reserve();
         }
 
-        // ④ 자리 잡기
+        // ⑤ 자리 잡기
+
         Optional<GenerationJob> slot = jobs.start(cmd.eventId());
         if (slot.isEmpty()) {
-            return new StartResult.AlreadyRunning(
-                    jobs.ofEvent(cmd.eventId()).orElseThrow());
+            // ★ 반대로 그 사이에 **끝났을** 수도 있다. orElseThrow 면 NoSuchElementException → 500 이다
+            return jobs.ofEvent(cmd.eventId())
+                    .<StartResult>map(StartResult.AlreadyRunning::new)
+                    .orElseGet(() -> new StartResult.Rejected(
+                            GenerationErrorCode.ALREADY_GENERATING));
         }
 
         GenerationJob job = slot.get();

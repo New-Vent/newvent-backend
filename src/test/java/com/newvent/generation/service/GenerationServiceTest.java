@@ -12,8 +12,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.newvent.generation.exception.GenerationErrorCode;
+import com.newvent.generation.exception.LlmDailyLimitExceededException;
 import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmCallGateway;
+import com.newvent.infra.llm.LlmClient;
 import com.newvent.registry.Block;
 import com.newvent.registry.BlockValidator;
 import com.newvent.registry.Slot;
@@ -35,8 +37,11 @@ class GenerationServiceTest {
         private RetryService.Result next;
         private final AtomicInteger calls = new AtomicInteger();
 
-        // ★ 문을 Direct 로 준다 — reserve() 가 no-op 이라 상한 검사가 테스트에 끼어들지 않는다
-        FakeRetry() { super(new LlmCallGateway.Direct(null), 0); }
+        // ★ 기본은 Direct — reserve() 가 no-op 이라 상한 검사가 테스트에 끼어들지 않는다
+        FakeRetry() { this(new LlmCallGateway.Direct(null)); }
+
+        /** 상한 경로를 보려면 문을 직접 준다 */
+        FakeRetry(LlmCallGateway gateway) { super(gateway, 0); }
 
         void willReturn(RetryService.Result r) { this.next = r; }
         int calls() { return calls.get(); }
@@ -245,6 +250,60 @@ class GenerationServiceTest {
         assertTrue(jobs.ofEvent(1L).isEmpty(),
                 "거부된 요청이 자리를 잡았습니다. 그 이벤트의 다음 생성이 잠시 막힙니다.");
         assertEquals(0, retry.calls());
+    }
+
+    // ── 하루 상한과 자리 잡기의 순서 ──────────────────────────────
+
+    /** 상한이 꽉 찬 문. 모델을 부르면 테스트가 깨진다 */
+    private static LlmCallGateway full() {
+        return new LlmCallGateway() {
+            @Override
+            public void reserve(int expectedCalls) {
+                throw new LlmDailyLimitExceededException(200, 200);
+            }
+
+            @Override
+            public LlmClient.Response call(LlmCallContext ctx, LlmClient.Request req) {
+                throw new AssertionError("상한에 걸렸는데 모델을 불렀습니다.");
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("★ 하루 상한에 걸려도 자리를 잡지 않는다 — 잡으면 그 이벤트가 영구히 잠긴다")
+    void 상한_초과는_자리를_잡지_않는다() {
+        GenerationService s = new GenerationService(
+                new FakeRetry(full()),
+                new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
+                versions, guard, jobs, LlmCallRecorder.none());
+
+        assertThrows(LlmDailyLimitExceededException.class,
+                () -> s.start(blank(1L, "여름 데이터 이벤트")));
+
+        // ★ 자리를 잡았다면 worker.submit 이 안 됐으니 아무도 finish() 를 안 부른다.
+        //   running 맵에 남아서 이 이벤트는 서버 재시작까지 AlreadyRunning 이 된다.
+        assertTrue(jobs.ofEvent(1L).isEmpty(),
+                "상한에 걸린 요청이 자리를 잡고 있습니다. "
+                + "이 이벤트는 다음 생성을 영원히 못 합니다.");
+    }
+
+    @Test
+    @DisplayName("★ 이미 돌고 있으면 상한을 보지 않는다 — 중복 요청은 모델을 0회 부른다")
+    void 중복_요청은_상한을_보지_않는다() {
+        // 상한이 꽉 차 있고 + 같은 이벤트가 이미 돌고 있다.
+        // 답은 429 가 아니라 409 여야 한다 — 첫 요청은 살아 있다.
+        GenerationJobStore store = new GenerationJobStore();
+        GenerationJob held = store.start(1L).orElseThrow();
+
+        GenerationService s = new GenerationService(
+                new FakeRetry(full()),
+                new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
+                versions, guard, store, LlmCallRecorder.none());
+
+        var r = s.start(blank(1L, "여름 데이터 이벤트"));
+
+        var running = assertInstanceOf(GenerationService.StartResult.AlreadyRunning.class, r);
+        assertEquals(held.jobId(), running.job().jobId());
     }
 
     @Test
