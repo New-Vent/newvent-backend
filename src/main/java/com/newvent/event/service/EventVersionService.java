@@ -1,7 +1,10 @@
 package com.newvent.event.service;
 
+import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.util.List;
 
+import com.newvent.event.domain.EventVersion;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +26,8 @@ public class EventVersionService {
     private final EventRepository eventRepository;
     private final EventVersionRepository eventVersionRepository;
 
+    private final Clock clock;
+
     public EventVersionListResponse getVersions(Long eventId) {
         Event event = eventRepository.findByIdAndDeletedAtIsNull(eventId)
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
@@ -38,5 +43,25 @@ public class EventVersionService {
                 .title(event.getTitle())
                 .versions(versions)
                 .build();
+    }
+
+    @Transactional
+    public void markCheckpoint(Long eventId, Long versionId) {
+        EventVersion version = findVersion(eventId, versionId);
+        version.markCheckpoint(OffsetDateTime.now(clock));
+    }
+
+    @Transactional
+    public void unmarkCheckpoint(Long eventId, Long versionId) {
+        EventVersion version = findVersion(eventId, versionId);
+        version.unmarkCheckpoint();
+    }
+
+    private EventVersion findVersion(Long eventId, Long versionId) {
+        eventRepository.findByIdAndDeletedAtIsNull(eventId)
+                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+
+        return eventVersionRepository.findByIdAndEventId(versionId, eventId)
+                .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
     }
 }

@@ -74,4 +74,16 @@ public class EventVersion {
             foreignKey = @ForeignKey(name = "fk_event_versions_request_message")
     )
     private ChatMessage requestMessage;
+
+    public void markCheckpoint(OffsetDateTime now) {
+        if (!checkpoint) {
+            checkpoint = true;
+            checkpointedAt = now;
+        }
+    }
+
+    public void unmarkCheckpoint() {
+        checkpoint = false;
+        checkpointedAt = null;
+    }
 }

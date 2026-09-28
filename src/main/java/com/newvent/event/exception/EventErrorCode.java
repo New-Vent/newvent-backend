@@ -7,7 +7,8 @@ import com.newvent.common.exception.code.ErrorCode;
 public enum EventErrorCode implements ErrorCode {
     INVALID_PERIOD(HttpStatus.BAD_REQUEST, "EVENT400-0", "종료일시는 시작일시보다 이후여야 합니다."),
     EVENT_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-0", "이벤트를 찾을 수 없습니다."),
-    TEMPLATE_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-1", "템플릿을 찾을 수 없습니다.");
+    TEMPLATE_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-1", "템플릿을 찾을 수 없습니다."),
+    VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-2", "이벤트 버전을 찾을 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;
