@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import com.newvent.common.exception.code.ErrorCode;
 import com.newvent.generation.exception.GenerationErrorCode;
+import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmCallException;
 import com.newvent.registry.Block;
 import com.newvent.registry.PromptBuilder;
@@ -44,6 +45,7 @@ public class GenerationService {
     private final VersionStore versions;
     private final EventGuard guard;
     private final GenerationJobStore jobs;
+    private final LlmCallRecorder recorder;
 
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -53,12 +55,14 @@ public class GenerationService {
     });
 
     public GenerationService(RetryService retry, TemplateService templates,
-                             VersionStore versions, EventGuard guard, GenerationJobStore jobs) {
+                             VersionStore versions, EventGuard guard, GenerationJobStore jobs,
+                             LlmCallRecorder recorder) {
         this.retry = retry;
         this.templates = templates;
         this.versions = versions;
         this.guard = guard;
         this.jobs = jobs;
+        this.recorder = recorder;
     }
 
     @PreDestroy
@@ -84,6 +88,7 @@ public class GenerationService {
      *
      * ★ 검사 순서가 중요하다 — 자리를 잡기 전에 거를 것을 다 거른다.
      *   자리를 먼저 잡으면 거부된 요청이 그 이벤트의 생성을 잠시 막는다.
+     *   상한(④)은 더 나쁘다 — 예외로 나가서 자리를 **영구히** 붙잡는다. ③ 주석 참고.
      */
     public StartResult start(GenerateCommand cmd) {
         // ① 이벤트를 건드려도 되는가
@@ -109,11 +114,27 @@ public class GenerationService {
             }
         }
 
-        // ③ 자리 잡기
+        // ③ 이미 돌고 있나 — **자리를 잡지 않고** 먼저 본다
+        Optional<GenerationJob> already = jobs.ofEvent(cmd.eventId());
+        if (already.isPresent()) {
+            return new StartResult.AlreadyRunning(already.get());
+        }
+
+        // ④ 하루 상한 — 백지 경로만. 템플릿 경로는 모델을 아예 안 부른다
+
+        if (!cmd.hasTemplate()) {
+            retry.reserve();
+        }
+
+        // ⑤ 자리 잡기
+
         Optional<GenerationJob> slot = jobs.start(cmd.eventId());
         if (slot.isEmpty()) {
-            return new StartResult.AlreadyRunning(
-                    jobs.ofEvent(cmd.eventId()).orElseThrow());
+            // ★ 반대로 그 사이에 **끝났을** 수도 있다. orElseThrow 면 NoSuchElementException → 500 이다
+            return jobs.ofEvent(cmd.eventId())
+                    .<StartResult>map(StartResult.AlreadyRunning::new)
+                    .orElseGet(() -> new StartResult.Rejected(
+                            GenerationErrorCode.ALREADY_GENERATING));
         }
 
         GenerationJob job = slot.get();
@@ -136,6 +157,12 @@ public class GenerationService {
     private void runSafely(GenerationJob job, GenerateCommand cmd) {
         try {
             run(job, cmd);
+        } catch (RetryService.Aborted e) {
+            // ★ 터진 시도의 실패 행은 문(LlmCallGateway)이 이미 남겼다.
+            //   그 앞의 시도들은 아직 아무도 안 남겼다 — 여기서 남긴다.
+            log.warn("생성 실패 — {}차 시도에서 모델 호출 (event={})", e.attempt(), cmd.eventId(), e);
+            recorder.recordAttempts(ctxOf(job, cmd), e.partial());
+            job.fail("페이지 생성 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         } catch (LlmCallException e) {
             // 연결 끊김 · 타임아웃 · 모델 서버 down. 프롬프트를 고쳐도 안 고쳐진다
             log.warn("생성 실패 — 모델 호출 (event={})", cmd.eventId(), e);
@@ -188,9 +215,13 @@ public class GenerationService {
         job.to(GenerationJob.Phase.CALLING);
 
         RetryService.Result res = retry.run(
+                ctxOf(job, cmd),
                 PromptBuilder.generate(),
                 userPrompt(cmd),
                 HtmlPolicy.generation());
+
+        // ★ 성공이든 실패든 시도 전부를 남긴다. 저장·취소보다 먼저 — 취소돼도 쓴 토큰은 쓴 것이다
+        recorder.recordAttempts(ctxOf(job, cmd), res);
 
         job.attempt(res.attempts());
         if (job.checkCancelled()) return null;
@@ -244,6 +275,16 @@ public class GenerationService {
         host.appendElement("p").attr("data-slot", Slot.PERIOD.key());
 
         return doc.body().html();
+    }
+
+    /**
+     * 이 작업의 호출 꼬리표.
+     *
+     * ★ requestId = jobId 다. 작업 하나가 로그에서 재시도 묶음 하나가 된다.
+     *   {@code (request_id, attempt_no)} 가 유니크라서 같은 작업을 두 번 기록하면 저장이 터진다.
+     */
+    private static LlmCallContext ctxOf(GenerationJob job, GenerateCommand cmd) {
+        return LlmCallContext.of(cmd.eventId(), job.jobId());
     }
 
     // ── 프롬프트 ──────────────────────────────────────────────────
