@@ -34,14 +34,19 @@ class LlmConfigTest {
     }
 
     @Test
-    @DisplayName("★ providerName 이 llm_call_logs.provider(VARCHAR 20) 에 들어간다")
-    void provider_컬럼_길이() {
+    @DisplayName("★ providerName 에 모델명을 붙이지 않는다 — model_name 이 따로 있다")
+    void provider_에_모델명을_섞지_않는다() {
         LlmClient c = new LlmConfig().llmClient(props("bedrock", "google.gemma-3-27b-it"));
 
-        // ★ 여기서 모델명까지 붙이면 38자가 되어 저장이 터진다.
-        //   모델은 같은 테이블 model_name(VARCHAR 100) 에 따로 들어간다.
-        assertTrue(c.providerName().length() <= 20,
-                "provider 가 20자를 넘습니다: " + c.providerName());
+        //     "model_name(무엇으로 돌렸나)과 분리 — Ollama → Bedrock 전환 전후 비교용"
+        //   provider 에 모델명이 섞이면 그 비교가 깨진다. "ollama:qwen2.5:7b" 와
+        //   "ollama:exaone3.5:7.8b" 가 서로 다른 provider 로 잡히기 때문이다.
+        assertEquals("bedrock", c.providerName());
+        assertEquals("google.gemma-3-27b-it", c.modelName());
+
+        // 길이는 부수적이지만 회귀 방어로 남긴다 — llm_call_logs.provider VARCHAR(40)
+        assertTrue(c.providerName().length() <= 40,
+                "provider 가 40자를 넘습니다: " + c.providerName());
     }
 
     @Test
