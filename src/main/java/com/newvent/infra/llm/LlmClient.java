@@ -8,15 +8,21 @@ package com.newvent.infra.llm;
  * 구현체
  *   MockLlmClient       기본값. 키 불필요. B·C·D조가 씁니다
  *   OllamaClient        로컬 (qwen2.5:7b 등)
- *   AnthropicClient     클라우드-제거
+ *   BedrockClient       AWS Bedrock (google.gemma-3-27b-it)
  */
-public interface LlmClient {
+
+// AutoCloseable : 개발 중 재시작마다 풀이 하나씩 쌓이지 않도록
+public interface LlmClient extends AutoCloseable {
 
     Response chat(Request request);
 
-    /** 어떤 구현체인지 — 로그·화면 표시용 */
+    // 어떤 구현체인지 — `llm_call_logs.provider` 에 그대로 들어갑니다.
     String providerName();
 
+    String modelName();
+
+    @Override
+    default void close() {}
 
     enum Mode {
         /** HTML 생성·수정 — 출력이 길다 */

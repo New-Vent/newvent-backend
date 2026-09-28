@@ -49,6 +49,11 @@ class RetryServiceTest {
         public String providerName() {
             return "scripted";
         }
+
+        @Override
+        public String modelName() {
+            return "scripted";
+        }
     }
 
     /** 부르면 무조건 터지는 모델 */
@@ -63,6 +68,11 @@ class RetryServiceTest {
 
         @Override
         public String providerName() {
+            return "dead";
+        }
+
+        @Override
+        public String modelName() {
             return "dead";
         }
     }
@@ -85,6 +95,11 @@ class RetryServiceTest {
 
         @Override
         public String providerName() {
+            return "cutoff";
+        }
+
+        @Override
+        public String modelName() {
             return "cutoff";
         }
     }

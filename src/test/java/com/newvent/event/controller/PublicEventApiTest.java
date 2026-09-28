@@ -12,10 +12,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.newvent.auth.jwt.JwtProvider;
+import com.newvent.common.config.SecurityConfig;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventVersion;
@@ -23,7 +26,10 @@ import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.exception.EventNotFoundException;
 import com.newvent.event.service.PublicEventService;
 
+// @WebMvcTest 는 SecurityConfig 를 스캔하지 않는다 — 안 넣으면 Spring Security 기본 설정(전부 인증 + CSRF)이 걸린다.
+// 실제 인가 규칙(GET /api/public/events/* 허용)으로 검증하려고 직접 import 한다.
 @WebMvcTest(PublicEventController.class)
+@Import({SecurityConfig.class, JwtProvider.class})
 class PublicEventApiTest {
 
     @Autowired
