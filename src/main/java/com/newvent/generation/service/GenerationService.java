@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import com.newvent.common.exception.code.ErrorCode;
 import com.newvent.generation.exception.GenerationErrorCode;
+import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmCallException;
 import com.newvent.registry.Block;
 import com.newvent.registry.PromptBuilder;
@@ -44,6 +45,7 @@ public class GenerationService {
     private final VersionStore versions;
     private final EventGuard guard;
     private final GenerationJobStore jobs;
+    private final LlmCallRecorder recorder;
 
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -53,12 +55,14 @@ public class GenerationService {
     });
 
     public GenerationService(RetryService retry, TemplateService templates,
-                             VersionStore versions, EventGuard guard, GenerationJobStore jobs) {
+                             VersionStore versions, EventGuard guard, GenerationJobStore jobs,
+                             LlmCallRecorder recorder) {
         this.retry = retry;
         this.templates = templates;
         this.versions = versions;
         this.guard = guard;
         this.jobs = jobs;
+        this.recorder = recorder;
     }
 
     @PreDestroy
@@ -109,7 +113,18 @@ public class GenerationService {
             }
         }
 
-        // ③ 자리 잡기
+        // ③ 하루 상한 — 백지 경로만. 템플릿 경로는 모델을 아예 안 부른다
+        //
+        //   ★ 여기서 본다. 작업 스레드에 넘긴 뒤에 보면 429 가 관리자에게 도달하지 못한다.
+        //     (워커에서 터지면 job.fail() 의 "문제가 생겼습니다" 로 뭉개진다)
+        //   ★ StartResult.Rejected 로 안 돌리고 예외를 던진다.
+        //     LlmDailyLimitExceededException 이 이미 429 를 들고 있고,
+        //     이건 "요청이 잘못됐다" 가 아니라 "오늘은 더 못 쓴다" 라서 결이 다르다.
+        if (!cmd.hasTemplate()) {
+            retry.reserve();
+        }
+
+        // ④ 자리 잡기
         Optional<GenerationJob> slot = jobs.start(cmd.eventId());
         if (slot.isEmpty()) {
             return new StartResult.AlreadyRunning(
@@ -136,6 +151,12 @@ public class GenerationService {
     private void runSafely(GenerationJob job, GenerateCommand cmd) {
         try {
             run(job, cmd);
+        } catch (RetryService.Aborted e) {
+            // ★ 터진 시도의 실패 행은 문(LlmCallGateway)이 이미 남겼다.
+            //   그 앞의 시도들은 아직 아무도 안 남겼다 — 여기서 남긴다.
+            log.warn("생성 실패 — {}차 시도에서 모델 호출 (event={})", e.attempt(), cmd.eventId(), e);
+            recorder.recordAttempts(ctxOf(job, cmd), e.partial());
+            job.fail("페이지 생성 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         } catch (LlmCallException e) {
             // 연결 끊김 · 타임아웃 · 모델 서버 down. 프롬프트를 고쳐도 안 고쳐진다
             log.warn("생성 실패 — 모델 호출 (event={})", cmd.eventId(), e);
@@ -188,9 +209,13 @@ public class GenerationService {
         job.to(GenerationJob.Phase.CALLING);
 
         RetryService.Result res = retry.run(
+                ctxOf(job, cmd),
                 PromptBuilder.generate(),
                 userPrompt(cmd),
                 HtmlPolicy.generation());
+
+        // ★ 성공이든 실패든 시도 전부를 남긴다. 저장·취소보다 먼저 — 취소돼도 쓴 토큰은 쓴 것이다
+        recorder.recordAttempts(ctxOf(job, cmd), res);
 
         job.attempt(res.attempts());
         if (job.checkCancelled()) return null;
@@ -244,6 +269,16 @@ public class GenerationService {
         host.appendElement("p").attr("data-slot", Slot.PERIOD.key());
 
         return doc.body().html();
+    }
+
+    /**
+     * 이 작업의 호출 꼬리표.
+     *
+     * ★ requestId = jobId 다. 작업 하나가 로그에서 재시도 묶음 하나가 된다.
+     *   {@code (request_id, attempt_no)} 가 유니크라서 같은 작업을 두 번 기록하면 저장이 터진다.
+     */
+    private static LlmCallContext ctxOf(GenerationJob job, GenerateCommand cmd) {
+        return LlmCallContext.of(cmd.eventId(), job.jobId());
     }
 
     // ── 프롬프트 ──────────────────────────────────────────────────
