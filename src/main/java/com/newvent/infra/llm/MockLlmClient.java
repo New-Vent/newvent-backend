@@ -79,6 +79,9 @@ public class MockLlmClient implements LlmClient {
     @Override
     public String providerName() { return "mock"; }
 
+    @Override
+    public String modelName() { return "mock"; }
+
     /** 한글은 대략 1.5자당 1토큰. 로그 모양을 보려는 용도지 정확한 값이 아닙니다 */
     private static int estimateTokens(String s) {
         return s == null ? 0 : (int) (s.length() / 1.5);
