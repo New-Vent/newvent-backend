@@ -15,7 +15,6 @@ import com.newvent.registry.Block;
  * ★ AskBack 은 모델을 부르지 않음.
  *   항목 값은 관리자가 정함. 모델이 채우게 두면 지어낼 수 있음.
  */
-// TODO Op 임포트 추가 필요
 public interface Decision {
 
 	// 그대로 실행

@@ -23,7 +23,6 @@ import com.newvent.registry.Block;
  *   (target -> op -> SERVER -> 항목유무 -> 교정 순서로 감)
  *   순서를 바꾸면 다른 결과가 출력
  */
-// TODO Route, Op 임포트 추가
 public class Gate {
 
 	// Block.of() 를 쓰지 않음. 모르는 key 에 IllegalArgumentException 을 던지는데 여기선 Reject
@@ -82,13 +81,12 @@ public class Gate {
 					why != null ? why : block.key() + "영역은 지울 수 없습니다.");
 		}
 
-		// 5. ★ 항목 추가인데 내용이 없으면 되물음.
-		//	  benefits 는 required 라 6번에서 EDIT 으로 바뀌면,
-		//	  content == null 이 그대로 실행돼서 빈 항목이 생김.
-		boolean noContent = raw.content() == null || raw.content().isBlank();
-		if(op == Op.ADD && noContent && block.minItems() >= 2) {
-			return new Decision.AskBack(askBackQuestion(block));
-		}
+		// 5. 항목 추가인데 내용이 없다 → 되묻는다. 교정보다 먼저.
+        //    benefits 는 required 라 6번에서 EDIT 으로 바뀌어 버리면
+        //    content == null 이 그대로 실행돼서 빈 항목이 생긴다.
+        if (op == Op.ADD && (raw.content() == null || raw.content().isBlank())) {
+            return new Decision.AskBack(askBackQuestion(block));
+        }
 
 		// 6. 필수 영역에 ADD 하면 EDIT 으로 교정
 		//	  canCreate() false = SERVER 이거나 필수
