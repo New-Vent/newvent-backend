@@ -4,11 +4,11 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
 
-import com.newvent.event.domain.EventVersion;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.event.domain.Event;
+import com.newvent.event.domain.EventVersion;
 import com.newvent.event.dto.response.EventVersionListResponse;
 import com.newvent.event.dto.response.EventVersionSummaryResponse;
 import com.newvent.event.exception.EventErrorCode;
