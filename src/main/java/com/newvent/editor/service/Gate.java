@@ -56,29 +56,31 @@ public class Gate {
 					"알 수 없는 영역입니다. 다시 말씀해 주세요.");
 		}
 
-		// 2. ★ op 확인이 SERVER 판정보다 먼저
-		// 		Block.denyReason(String) 은 switch(op) 를 하므로 null 이면 죽는다.
-		//		RouterParser 는 { "ops":[{}] } 를 성공으로 통과시킨다.
-		Op op = Op.find(raw.op()).orElse(null);
-		if (op == null) {
-			return new Decision.Reject(RouterErrorCode.UNKNOWN_OP,
-					"무엇을 하시려는지 알아내지 못했습니다. 다시 말씀해 주세요.");
-		}
+		// 2. ★ op 확인이 SERVER 판정보다 먼저다.
+        //    Block.denyReason(String) 은 switch(op) 를 하므로 null 이면 죽는다.
+        //    RouteParser 는 {"ops":[{}] } 를 성공으로 통과시킨다.
+        Op op = Op.find(raw.op()).orElse(null);
+        if (op == null) {
+            return new Decision.Reject(RouterErrorCode.UNKNOWN_OP,
+                    "무엇을 하실지 알아내지 못했습니다. 다시 말씀해 주세요.");
+        }
 
-		// 3. 서버 소유
-		//	  ★ Block.denyReason() 의 switch 에 STYLE 이 없어서 null 이 나옴.
-		//	 	"notices 는 어떤 op 든 거부"를 지키려면 여기서 끊어야 함.
-		if(block.source() == Block.Source.SERVER) {
-			return new Decision.Reject(RouterErrorCode.NOT_ALLOWED, serverOwnedMessage(block));
-		}
+        // 3. ★ 서버 소유 — op 과 무관하게 거부한다.
+        //    Block.denyReason() 의 switch 에 STYLE 이 없어서 null 이 나온다.
+        //    notices 에 스타일 이 오면 조용히 통과해 버린다.
+        if (block.source() == Block.Source.SERVER) {
+            return new Decision.Reject(RouterErrorCode.NOT_ALLOWED,
+                    block.desc() + " 영역은 시스템이 관리합니다. 채팅으로 바꿀 수 없습니다.");
+        }
 
-		// 4. 필수 영역은 지울 수 없음.
-		// 	  ★ canCreate() 가 아니라 canDelete()
-		//		benefits 는 canCreate() = true 라 DELETE 를 막지 못한다.
+    	// 4. 필수 영역은 지울 수 없음.
+        //     ★ 삭제라는 의도에 맞는 canDelete() 를 쓴다.
+        //       canCreate() 여도 결과는 같지만 "만들 수 있나" 와 "지울 수 있나" 는
+        //       다른 질문이다. 후자다.
 		if(!block.canDelete() && op == Op.DELETE) {
 			String why = block.denyReason(op.name());
 			return new Decision.Reject(RouterErrorCode.NOT_ALLOWED,
-					why != null ? why : block.key() + "영역은 지울 수 없습니다.");
+					why != null ? why : block.key() + " 영역은 지울 수 없습니다.");
 		}
 
 		// 5. 항목 추가인데 내용이 없다 → 되묻는다. 교정보다 먼저.

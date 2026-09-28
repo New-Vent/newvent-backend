@@ -92,25 +92,21 @@ public class GateTest {
 
 	// ----- 4 행 : 필수 영역 삭제 거부 -------
 
-	@Test
-	@DisplayName("필수 영역 삭제는 거부 - 조용히 편집으로 바꾸지 않음")
-	void 필수_영역_삭제는_거부() {
-		Decision d = gate.decide(new RawRoute("DELETE", "hero", null));
+    @Test
+    @DisplayName("필수가 아닌 영역 삭제는 통과한다 - steps 만 해당")
+    void 선택_영역_삭제는_통과() {
+        assertEquals(new Decision.Run(Block.STEPS, Op.DELETE, null),
+                gate.decide(new RawRoute("DELETE", "steps", null)));
+    }
 
-		Decision.Reject r = assertInstanceOf(Decision.Reject.class, d);
-		assertTrue(r.message().contains("필수"));
-	}
+    @Test
+    @DisplayName("필수 영역 삭제는 거부한다 - benefits 도 필수")
+    void 필수_영역_삭제는_혜택도_거부() {
+        Decision d = gate.decide(new RawRoute("DELETE", "benefits", null));
 
-	@Test
-	@DisplayName("필수가 아닌 영역 삭제는 통과 - canDelete 로 판정")
-	void 선택_영역_삭제는_통과() {
-		assertEquals(new Decision.Run(Block.STEPS, Op.DELETE, null),
-				gate.decide(new RawRoute("DELETE", "steps", null)));
-
-		// benefits 는 canCreate 가 true 다. canCreate 로 막으면 이게 안 걸림
-		assertEquals(new Decision.Run(Block.BENEFITS, Op.DELETE, null),
-				gate.decide(new RawRoute("DELETE", "benefits", null)));
-	}
+        Decision.Reject r = assertInstanceOf(Decision.Reject.class, d);
+        assertTrue(r.message().contains("필수"));
+    }
 
 	// ----- 5 행 : 항목 추가 + 내용 없음 -> 되묻기 -------
 
