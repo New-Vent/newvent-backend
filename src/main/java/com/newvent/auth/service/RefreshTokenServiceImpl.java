@@ -58,7 +58,7 @@ public class RefreshTokenServiceImpl implements RefreshTokenService {
      */
     @Override
     @Transactional(noRollbackFor = AuthException.class)
-    public Rotated rotate(String raw) {
+    public AuthUser consume(String raw) {
         String hash = sha256(raw);
         Instant now = Instant.now();
 
@@ -76,8 +76,9 @@ public class RefreshTokenServiceImpl implements RefreshTokenService {
             throw new InvalidRefreshTokenException();
         }
 
-        RefreshToken current = repository.findByTokenHash(hash).orElseThrow(InvalidRefreshTokenException::new);
-        return new Rotated(current.owner(), issue(current.owner()));
+        return repository.findByTokenHash(hash)
+                .map(RefreshToken::owner)
+                .orElseThrow(InvalidRefreshTokenException::new);
     }
 
     @Override

@@ -65,7 +65,16 @@ public class AuthServiceImpl implements AuthService {
         return issue(AuthUser.admin(admin.getId()));
     }
 
-    /** 재사용 탐지로 인한 세션 전체 폐기가 AuthException 과 함께 롤백되지 않도록 한다 (RefreshTokenServiceImpl.rotate 참고). */
+    /**
+     * 소비 → 주인 확인 → 발급 순서로 회전한다.
+     *
+     * ★ 주인이 로그인할 수 없으면(삭제·비활성 관리자) 새 토큰을 만들지 않고 그 계정의 토큰을 전부 지운다.
+     *   발급을 먼저 하면 아무도 받지 못하는 토큰 행이 남고, 다른 기기의 토큰도 살아 있어
+     *   관리자를 다시 활성화하면 그 세션들이 되살아난다.
+     *
+     * ★ noRollbackFor: 재사용 탐지·비활성 계정의 전체 폐기가 AuthException 과 함께 롤백되지 않도록 한다
+     *   (RefreshTokenServiceImpl.consume 참고).
+     */
     @Override
     @Transactional(noRollbackFor = AuthException.class)
     public Issued refresh(String refreshToken) {
@@ -73,12 +82,13 @@ public class AuthServiceImpl implements AuthService {
             throw new InvalidRefreshTokenException();
         }
 
-        var rotated = refreshTokens.rotate(refreshToken);
-        if (!canSignIn(rotated.owner())) {
+        AuthUser owner = refreshTokens.consume(refreshToken);
+        if (!canSignIn(owner)) {
+            refreshTokens.revokeAll(owner);
             throw new InvalidRefreshTokenException();
         }
 
-        return new Issued(accessTokenOf(rotated.owner()), rotated.raw());
+        return issue(owner);
     }
 
     @Override

@@ -259,12 +259,23 @@ class AuthFlowTest {
     }
 
     @Test
-    @DisplayName("관리자가 비활성화되면 가지고 있던 Refresh Token 으로도 재발급받지 못한다")
+    @DisplayName("관리자가 비활성화되면 가지고 있던 Refresh Token 으로도 재발급받지 못하고, 그 계정의 토큰이 전부 지워진다")
     void 비활성_관리자_갱신_거부() throws Exception {
         Cookie c = login("/auth/admin/login", ADMIN, PASSWORD).getResponse().getCookie("refresh_token");
+        Cookie otherDevice = login("/auth/admin/login", ADMIN, PASSWORD).getResponse().getCookie("refresh_token");
         jdbc.update("UPDATE admins SET is_active = FALSE WHERE login_id = ?", ADMIN);
 
         mvc.perform(post("/auth/refresh").header("Origin", origin).cookie(c))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH401-1"));
+
+        // 새 토큰을 발급하지 않고, 다른 기기의 토큰까지 그 계정의 토큰이 전부 지워진다 (롤백되지 않는다)
+        assertEquals(0, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE admin_id = ?", Integer.class, adminIdOf(ADMIN)));
+
+        // 다시 활성화해도 비활성화 전 세션은 되살아나지 않는다
+        jdbc.update("UPDATE admins SET is_active = TRUE WHERE login_id = ?", ADMIN);
+        mvc.perform(post("/auth/refresh").header("Origin", origin).cookie(otherDevice))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH401-1"));
     }
