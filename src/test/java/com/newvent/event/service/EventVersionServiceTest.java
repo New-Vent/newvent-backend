@@ -4,13 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -30,8 +33,19 @@ public class EventVersionServiceTest {
     @Mock
     private EventRepository eventRepository;
     @Mock private EventVersionRepository eventVersionRepository;
-    @InjectMocks
+
+    private static final Clock FIXED_CLOCK = Clock.fixed(
+            Instant.parse("2026-09-28T01:00:00Z"),
+            ZoneId.of("Asia/Seoul")
+    );
+
     private EventVersionService eventVersionService;
+
+    @BeforeEach
+    void setUp() {
+        eventVersionService = new EventVersionService(
+                eventRepository, eventVersionRepository, FIXED_CLOCK);
+    }
 
     @Test
     void getVersions_returnsCheckpointSummariesWithPublishedAndSourceInformation() {
@@ -93,5 +107,73 @@ public class EventVersionServiceTest {
         assertThatThrownBy(() -> eventVersionService.getVersions(eventId))
                 .isInstanceOf(EventException.class);
         verifyNoInteractions(eventVersionRepository);
+    }
+
+    @Test
+    void markCheckpoint_marksVersionBelongingToEvent() {
+        Long eventId = 12L;
+        Long versionId = 102L;
+        Event event = mock(Event.class);
+        EventVersion version = mock(EventVersion.class);
+
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId))
+                .thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventId(versionId, eventId))
+                .thenReturn(Optional.of(version));
+
+        eventVersionService.markCheckpoint(eventId, versionId);
+
+        verify(version).markCheckpoint(OffsetDateTime.now(FIXED_CLOCK));
+        verify(eventVersionRepository).findByIdAndEventId(versionId, eventId);
+    }
+
+    @Test
+    void unmarkCheckpoint_unmarksVersionBelongingToEvent() {
+        Long eventId = 12L;
+        Long versionId = 102L;
+        Event event = mock(Event.class);
+        EventVersion version = mock(EventVersion.class);
+
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId))
+                .thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventId(versionId, eventId))
+                .thenReturn(Optional.of(version));
+
+        eventVersionService.unmarkCheckpoint(eventId, versionId);
+
+        verify(version).unmarkCheckpoint();
+        verify(eventVersionRepository).findByIdAndEventId(versionId, eventId);
+    }
+
+    @Test
+    void markCheckpoint_rejectsMissingOrDeletedEvent() {
+        Long eventId = 12L;
+        Long versionId = 102L;
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventVersionService.markCheckpoint(eventId, versionId))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo("EVENT404-0");
+
+        verifyNoInteractions(eventVersionRepository);
+    }
+
+    @Test
+    void markCheckpoint_rejectsVersionFromAnotherEvent() {
+        Long eventId = 12L;
+        Long versionId = 102L;
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId))
+                .thenReturn(Optional.of(mock(Event.class)));
+
+        // 이 eventId에 속하는 versionId가 없으면 빈 값
+        when(eventVersionRepository.findByIdAndEventId(versionId, eventId))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventVersionService.markCheckpoint(eventId, versionId))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo("EVENT404-3");
     }
 }
