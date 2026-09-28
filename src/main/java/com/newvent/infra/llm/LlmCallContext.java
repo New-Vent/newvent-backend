@@ -13,6 +13,9 @@ public record LlmCallContext(Long eventId, UUID requestId, int attemptNo) {
             throw new IllegalArgumentException("attemptNo 는 1부터입니다: " + attemptNo);
         }
     }
+    public static LlmCallContext newGroup(Long eventId) {
+        return new LlmCallContext(eventId, UUID.randomUUID(), 1);
+    }
 
     /** 묶음의 첫 시도 */
     public static LlmCallContext of(Long eventId, UUID requestId) {
