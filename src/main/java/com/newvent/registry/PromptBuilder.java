@@ -139,15 +139,18 @@ public final class PromptBuilder {
         s.add("- href=\"#\" 는 그대로 둬라. 실제 주소를 만들어 넣지 마라.");
         for (String line : 지어내기_금지()) s.add(line);
         s.add("- 대괄호 자리표시자를 남기지 마라.");
-        // ★ "항목을 새로 지어내지 마라" 는 아직 안 넣었다.
-        //   붙일 블록을 고르려면 Block.itemsAreFormValues() 가 필요한데
-        //   (minItems > 0 && source == MIXED — 지금은 benefits 하나),
-        //   그건 수정 경로 작업이라 EditService 와 함께 넣는다.
-        //   여기에 if (b == Block.BENEFITS) 를 쓰지 말 것. 레지스트리를 만든 의미가 없어진다.
+        // ★ 항목이 관리자가 정하는 값인 블록에만 한 줄 더 붙인다.
+        //   benefits 는 "혜택 3개" 가 실제로 지급해야 하는 약속이라, 모델이 4번째를
+        //   지어내면 관리자가 모르는 약속이 게시된다. 문구 오류가 아니라 사고다.
+        //   steps 처럼 모델이 쓰는 블록에는 붙이지 않는다 — 붙이면 다듬기도 막힌다.
+        //
+        //   ★ if (b == Block.BENEFITS) 로 쓰지 말 것. 레지스트리를 만든 의미가 없어진다.
+        if (b.itemsAreFormValues()) {
+            s.add("- 항목을 새로 만들거나 지우지 마라. 개수는 그대로 두고 문장만 다듬는다.");
+        }
         return s.toString();
     }
 
-    /** 라우터 — 영역 목록도 레지스트리에서 나온다 */
     public static String router() {
         StringJoiner names = new StringJoiner(", ");
         for (Block b : Block.values()) names.add(b.key());
@@ -158,13 +161,34 @@ public final class PromptBuilder {
         s.add("영역 이름: " + names);
         s.add("");
         s.add("출력 형식:");
-        s.add("{\"op\":\"<동작>\",\"target\":\"<영역 이름 또는 null>\"}");
+        s.add("{\"ops\":[{\"op\":\"<동작>\",\"target\":\"<영역 이름>\",\"content\":<사용자가 쓴 문구 또는 null>}]}");
         s.add("");
         s.add("동작:");
         s.add("- \"EDIT\"    특정 영역의 내용을 고친다");
         s.add("- \"ADD\"     없는 영역을 새로 넣는다");
         s.add("- \"DELETE\"  영역을 통째로 지운다");
         s.add("- \"STYLE\"   색·크기·굵기 등 겉모양만 바꾼다");
+        s.add("");
+        s.add("content 규칙:");
+        s.add("- 사용자가 **직접 쓴 문구**가 있으면 그 문구만 그대로 넣는다.");
+        s.add("- 없으면 null 이다. 지어내지 마라. 요청문 전체를 넣지 마라.");
+        s.add("");
+        // ★ 예시가 있고 없고가 실제로 갈렸다 — v11 1차에서 모델이 요청문을 통째로
+        //   content 에 넣는 일이 4건 났고, 아래 예시를 넣자 0건이 됐다.
+        //   줄여도 되는 줄이 아니다.
+        s.add("예시:");
+        s.add("\"제목을 가을 대축제로 바꿔줘\"");
+        s.add("{\"ops\":[{\"op\":\"EDIT\",\"target\":\"hero\",\"content\":\"가을 대축제\"}]}");
+        s.add("");
+        s.add("\"혜택에 데이터 10GB 증정을 추가해줘\"");
+        s.add("{\"ops\":[{\"op\":\"ADD\",\"target\":\"benefits\",\"content\":\"데이터 10GB 증정\"}]}");
+        s.add("");
+        s.add("\"혜택 하나 더 추가해줘\"");
+        s.add("{\"ops\":[{\"op\":\"ADD\",\"target\":\"benefits\",\"content\":null}]}");
+        s.add("");
+        s.add("\"제목 바꾸고 참여방법도 더 친절하게 다듬어줘\"");
+        s.add("{\"ops\":[{\"op\":\"EDIT\",\"target\":\"hero\",\"content\":null},"
+                + "{\"op\":\"EDIT\",\"target\":\"steps\",\"content\":null}]}");
         s.add("");
         s.add("JSON 외에는 아무것도 출력하지 마라.");
         return s.toString();

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.condition.EnabledIf;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.newvent.infra.llm.BedrockClient;
 import com.newvent.infra.llm.LlmClient;
 import com.newvent.infra.llm.OllamaClient;
 
@@ -18,7 +19,9 @@ import com.newvent.infra.llm.OllamaClient;
  *
  *   LLM_SMOKE=1 ./gradlew test --rerun                          기본 (ollama)
  *   LLM_SMOKE=1 LLM_MODEL=exaone3.5:7.8b ./gradlew test --rerun
- *   LLM_SMOKE=1 LLM_PROVIDER=bedrock ./gradlew test --rerun     (BedrockClient 생기면)
+ *   LLM_SMOKE=1 LLM_PROVIDER=bedrock ./gradlew test --rerun     gemma-3-27b (기본)
+ *   LLM_SMOKE=1 LLM_PROVIDER=bedrock LLM_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0 \
+ *       ./gradlew test --rerun                                  대조군
  *   OLLAMA=1 ./gradlew test --rerun                             예전 명령도 그대로 됨
  *
  * ★ provider 중립이다
@@ -56,8 +59,10 @@ class LlmSmokeTest {
                     env("OLLAMA_URL", "http://localhost:11434"),
                     env("LLM_MODEL", env("OLLAMA_MODEL", "qwen2.5:7b")),
                     180);
-            // case "bedrock" -> new BedrockClient(env("AWS_REGION", "ap-northeast-2"),
-            //                                     env("LLM_MODEL", "..."), 180);
+            case "bedrock" -> new BedrockClient(
+                    env("BEDROCK_REGION", BedrockClient.DEFAULT_REGION),
+                    env("LLM_MODEL", "google.gemma-3-27b-it"),
+                    180);
             default -> throw new IllegalStateException(
                     "모르는 provider: " + provider + " (ollama | bedrock)");
         };

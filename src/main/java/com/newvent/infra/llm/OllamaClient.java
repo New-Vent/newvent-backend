@@ -59,7 +59,12 @@ public class OllamaClient implements LlmClient {
 
     @Override
     public String providerName() {
-        return "ollama:" + model;
+        return "ollama";
+    }
+
+    @Override
+    public String modelName() {
+        return model;
     }
 
     // ══════════════════════════════════════════════════════════════

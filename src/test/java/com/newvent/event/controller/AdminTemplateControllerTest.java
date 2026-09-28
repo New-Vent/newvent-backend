@@ -12,17 +12,23 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.newvent.auth.jwt.JwtProvider;
+import com.newvent.common.config.SecurityConfig;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
 import com.newvent.event.dto.response.TemplateResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.service.EventTemplateService;
 
+// @WebMvcTest 는 SecurityConfig 를 스캔하지 않는다 — 안 넣으면 Spring Security 기본 설정(전부 인증 + CSRF)이 걸린다.
+// 실제 인가 규칙(/api/admin/** 는 ADMIN)으로 검증하려고 직접 import 하고, 관리자로 요청한다.
 @WebMvcTest(AdminTemplateController.class)
-@Import(GlobalExceptionHandler.class)
+@Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtProvider.class})
+@WithMockUser(roles = "ADMIN")
 class AdminTemplateControllerTest {
 
     @Autowired

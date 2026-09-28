@@ -12,6 +12,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.newvent.generation.exception.GenerationErrorCode;
+import com.newvent.generation.exception.LlmDailyLimitExceededException;
+import com.newvent.infra.llm.LlmCallContext;
+import com.newvent.infra.llm.LlmCallGateway;
+import com.newvent.infra.llm.LlmClient;
 import com.newvent.registry.Block;
 import com.newvent.registry.BlockValidator;
 import com.newvent.registry.Slot;
@@ -33,13 +37,18 @@ class GenerationServiceTest {
         private RetryService.Result next;
         private final AtomicInteger calls = new AtomicInteger();
 
-        FakeRetry() { super(null, 0); }
+        // ★ 기본은 Direct — reserve() 가 no-op 이라 상한 검사가 테스트에 끼어들지 않는다
+        FakeRetry() { this(new LlmCallGateway.Direct(null)); }
+
+        /** 상한 경로를 보려면 문을 직접 준다 */
+        FakeRetry(LlmCallGateway gateway) { super(gateway, 0); }
 
         void willReturn(RetryService.Result r) { this.next = r; }
         int calls() { return calls.get(); }
 
+        // ★ ctx 를 받는 쪽을 덮어야 한다. GenerationService 는 이 쪽만 부른다
         @Override
-        public RetryService.Result run(String system, String user, HtmlPolicy policy) {
+        public RetryService.Result run(LlmCallContext ctx, String system, String user, HtmlPolicy policy) {
             calls.incrementAndGet();
             return next;
         }
@@ -75,7 +84,7 @@ class GenerationServiceTest {
         service = new GenerationService(
                 retry,
                 new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
-                versions, guard, jobs);
+                versions, guard, jobs, LlmCallRecorder.none());
     }
 
     /** 워커 스레드가 끝날 때까지 기다린다. 2초면 충분하다 — 모델을 안 부르므로 */
@@ -243,6 +252,60 @@ class GenerationServiceTest {
         assertEquals(0, retry.calls());
     }
 
+    // ── 하루 상한과 자리 잡기의 순서 ──────────────────────────────
+
+    /** 상한이 꽉 찬 문. 모델을 부르면 테스트가 깨진다 */
+    private static LlmCallGateway full() {
+        return new LlmCallGateway() {
+            @Override
+            public void reserve(int expectedCalls) {
+                throw new LlmDailyLimitExceededException(200, 200);
+            }
+
+            @Override
+            public LlmClient.Response call(LlmCallContext ctx, LlmClient.Request req) {
+                throw new AssertionError("상한에 걸렸는데 모델을 불렀습니다.");
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("★ 하루 상한에 걸려도 자리를 잡지 않는다 — 잡으면 그 이벤트가 영구히 잠긴다")
+    void 상한_초과는_자리를_잡지_않는다() {
+        GenerationService s = new GenerationService(
+                new FakeRetry(full()),
+                new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
+                versions, guard, jobs, LlmCallRecorder.none());
+
+        assertThrows(LlmDailyLimitExceededException.class,
+                () -> s.start(blank(1L, "여름 데이터 이벤트")));
+
+        // ★ 자리를 잡았다면 worker.submit 이 안 됐으니 아무도 finish() 를 안 부른다.
+        //   running 맵에 남아서 이 이벤트는 서버 재시작까지 AlreadyRunning 이 된다.
+        assertTrue(jobs.ofEvent(1L).isEmpty(),
+                "상한에 걸린 요청이 자리를 잡고 있습니다. "
+                + "이 이벤트는 다음 생성을 영원히 못 합니다.");
+    }
+
+    @Test
+    @DisplayName("★ 이미 돌고 있으면 상한을 보지 않는다 — 중복 요청은 모델을 0회 부른다")
+    void 중복_요청은_상한을_보지_않는다() {
+        // 상한이 꽉 차 있고 + 같은 이벤트가 이미 돌고 있다.
+        // 답은 429 가 아니라 409 여야 한다 — 첫 요청은 살아 있다.
+        GenerationJobStore store = new GenerationJobStore();
+        GenerationJob held = store.start(1L).orElseThrow();
+
+        GenerationService s = new GenerationService(
+                new FakeRetry(full()),
+                new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
+                versions, guard, store, LlmCallRecorder.none());
+
+        var r = s.start(blank(1L, "여름 데이터 이벤트"));
+
+        var running = assertInstanceOf(GenerationService.StartResult.AlreadyRunning.class, r);
+        assertEquals(held.jobId(), running.job().jobId());
+    }
+
     @Test
     @DisplayName("★ EventGuard 가 막으면 시작조차 안 한다 (REQ-EVT-10)")
     void 종료된_이벤트() {
@@ -251,7 +314,7 @@ class GenerationServiceTest {
                 new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
                 versions,
                 id -> Optional.of(GenerationErrorCode.EMPTY_REQUEST),   // 아무 코드나 — 막히는지만 본다
-                jobs);
+                jobs, LlmCallRecorder.none());
 
         var r = blocked.start(blank(1L, "여름 데이터 이벤트"));
 
@@ -271,7 +334,7 @@ class GenerationServiceTest {
         GenerationService s2 = new GenerationService(
                 retry,
                 new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
-                versions, guard, store);
+                versions, guard, store, LlmCallRecorder.none());
 
         var r = s2.start(blank(1L, "여름 데이터 이벤트"));
 
