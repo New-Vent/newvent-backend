@@ -6,6 +6,8 @@ import jakarta.validation.ConstraintViolationException;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -95,6 +97,19 @@ public class GlobalExceptionHandler {
         );
     }
 
+    // 인증되지 않은 요청(토큰 없음·서명/만료 검증 실패)을 처리
+    // 필터 체인에서 난 예외라 SecurityConfig 의 인증 진입점이 HandlerExceptionResolver 로 넘겨 여기에 도달한다
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ErrorResponse> handleAuthenticationException() {
+        return createErrorResponse(CommonErrorCode.UNAUTHORIZED);
+    }
+
+    // 인증은 됐지만 권한이 부족한 요청을 처리 (필터 체인의 인가 거부 + 컨트롤러의 @PreAuthorize)
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDeniedException() {
+        return createErrorResponse(CommonErrorCode.ACCESS_DENIED);
+    }
+
     // 별도로 처리되지 않은 예상하지 못한 예외를 처리
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleException(Exception e) {
@@ -105,6 +120,15 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of(
                         CommonErrorCode.INTERNAL_SERVER_ERROR.getCode(),
                         CommonErrorCode.INTERNAL_SERVER_ERROR.getMessage()
+                ));
+    }
+
+    private ResponseEntity<ErrorResponse> createErrorResponse(ErrorCode errorCode) {
+        return ResponseEntity
+                .status(errorCode.getHttpStatus())
+                .body(ErrorResponse.of(
+                        errorCode.getCode(),
+                        errorCode.getMessage()
                 ));
     }
 
