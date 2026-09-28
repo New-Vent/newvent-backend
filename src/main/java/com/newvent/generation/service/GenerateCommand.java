@@ -53,16 +53,14 @@ public record GenerateCommand(
     }
 
     /**
-     * ★ **확인이 필요한 한 줄이다.**
-     *   `events.url` 이 "참여 링크" 면 이대로 맞고, "게시된 페이지 주소" 면 틀렸다 —
-     *   후자면 CTA 버튼이 자기 페이지를 다시 여는 꼴이 된다.
-     *   이벤트 파트 답이 오면 **고칠 곳은 이 메서드 하나뿐이다.**
-     *   (참여 링크 칼럼이 따로 없다는 답이 오면 여기서 null 을 돌려주고,
-     *    버튼은 링크 없이 나간다 — 엉뚱한 데로 보내는 것보다 낫다.)
+     * CTA 버튼에 붙일 참여 링크. **지금은 담을 칸이 없어서 항상 null 이다.**
+     *
+     * ★ `events.url` 을 쓰면 안 된다 — 이벤트 파트 확인 결과 **게시 링크**다.
+     *   CTA 에 넣으면 버튼이 자기 페이지를 다시 여는 꼴이 된다.
+     *
      */
     private static String ctaUrl(Event event) {
-        String url = event.getUrl();
-        return (url == null || url.isBlank()) ? null : url.strip();
+        return null;
     }
 
     /** 템플릿을 골랐나. 이 한 줄이 두 경로를 가른다 */
