@@ -24,8 +24,8 @@ server:
 # LLM — 기본값은 목(mock)
 
 llm:
-  provider: mock
-  # provider: ${LLM_PROVIDER:mock}  # 주석을 변경하면 Bedrock 적용
+  # 환경변수 설정하면 Bedrock
+  provider: ${LLM_PROVIDER:mock}
   daily-limit: 200      # 하루 최대 호출 수 — 무한루프 방어
   max-retry: 3          # 재시도 상한
   timeout-seconds: 120
