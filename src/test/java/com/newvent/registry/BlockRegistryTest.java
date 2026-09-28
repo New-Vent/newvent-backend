@@ -4,9 +4,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 
+import org.jsoup.Jsoup;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.newvent.generation.service.ResourceTemplateLoader;
+import com.newvent.generation.service.TemplateLoader;
 import com.newvent.infra.llm.LlmClient;
 import com.newvent.infra.llm.MockLlmClient;
 
@@ -150,4 +153,54 @@ class BlockRegistryTest {
         assertEquals("[data-slot=\"cta-link\"]", Slot.CTA_LINK.selector());
         assertThrows(IllegalArgumentException.class, () -> Slot.of("없는슬롯"));
     }
+
+
+     private static final TemplateLoader TEMPLATES = new ResourceTemplateLoader();
+
+     @Test
+     @DisplayName("container 와 minItems 가 짝을 이룬다")
+     void 컨테이너와_최소개수가_짝이다() {
+         for (Block b : Block.values()) {
+             if (b.minItems() > 0) {
+                 assertNotNull(b.container(), b.key() + " 는 항목을 세는데 담는 자리가 없습니다.");
+             } else {
+                 assertNull(b.container(), b.key() + " 는 항목 개념이 없는데 container 가 있습니다.");
+             }
+         }
+     }
+
+     @Test
+     @DisplayName("★ 템플릿 5종에서 container 가 항목을 정확히 담는다 — benefits · steps 둘 다")
+     void 템플릿_5종에서_컨테이너가_항목을_담는다() {
+         assertEquals(5, TEMPLATES.all().size());
+
+         for (TemplateLoader.Source t : TEMPLATES.all()) {
+             var body = Jsoup.parse(t.html()).body();
+
+             for (Block b : List.of(Block.BENEFITS, Block.STEPS)) {
+                 String where = t.code() + " / " + b.key();
+
+                 var sections = body.select(b.selector());
+                 assertEquals(1, sections.size(), where + " 섹션이 하나가 아닙니다.");
+
+                 // ★ 자손으로 찾는다. template_5 는 .benefits-list 가 한 단계 더 안에 있다
+                 var containers = sections.first().select(b.container());
+                 assertEquals(1, containers.size(),
+                         where + " 컨테이너가 하나가 아닙니다. 찾은 수=" + containers.size()
+                         + " (선택자 " + b.container() + ")");
+
+                 // ★ 개수는 섹션이 아니라 컨테이너에서 센다.
+                 //   template_5 의 benefits 는 게이지·진행바가 컨테이너 밖에 있다
+                 int items = containers.first().select(b.must()).size();
+                 assertTrue(items >= b.minItems(),
+                         where + " 항목이 minItems 보다 적습니다. " + items + " < " + b.minItems());
+
+                 // 컨테이너 밖에서 세면 달라지는지 — template_5 가 이걸 증명한다
+                 int fromSection = sections.first().select(b.must()).size();
+                 assertEquals(items, fromSection,
+                         where + " 컨테이너 밖에 같은 클래스의 항목이 있습니다. "
+                         + "개수를 셀 때 반드시 container() 안에서 세야 합니다.");
+             }
+         }
+     }
 }

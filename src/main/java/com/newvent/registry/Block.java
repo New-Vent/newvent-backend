@@ -31,29 +31,29 @@ public enum Block {
     HERO("hero", true, Source.MIXED,
             "이벤트 제목과 한 줄 소개. 기간은 서버가 넣는다",
             "제목은 <h1>, 소개는 <p> 로 감싼다",
-            "h1", 0),
+            "h1", null, 0),
 
     BENEFITS("benefits", true, Source.MIXED,
             "혜택 — 항목은 폼 값, 문장만 다듬는다",
             "<ul> 안에 <li> 로 항목을 나열한다. 2개 이상",
             // 백지: ul li · 템플릿: .benefit-card (계약 EVENT_STRUCTURE_CONTRACT §3)
-            "ul li, .benefit-card", 2),
+            "ul li, .benefit-card", "ul, .benefits-list", 2),
 
     STEPS("steps", false, Source.LLM,
             "참여 방법 2~4단계",
             "<ol> 안에 <li> 로 순서대로 나열한다",
-            "ol li, .step-card", 2),
+            "ol li, .step-card", "ol, .steps-list", 2),
 
     NOTICES("notices", true, Source.SERVER,
             "유의사항 — 승인된 문구만 서버가 삽입",
-            null, null, 0),
+            null, null, null, 0),
 
     CTA("cta", true, Source.MIXED,
             "참여 버튼. 문구만 생성, 링크는 폼 값",
             "<a href=\"#\" class=\"btn\"> 안에 버튼 문구를 넣는다",
             // 템플릿 5종은 전부 <button>. <a> 는 5종 통틀어 0개다.
             // 호스트가 이벤트 위임으로 클릭을 받으므로 button 이 맞는 선택이다.
-            "a, button", 0);
+            "a, button", null, 0);
 
     /** 누가 내용을 만드는가. 프롬프트·클릭 가능 여부·덮어쓰기가 여기서 갈린다. */
     public enum Source {
@@ -71,16 +71,18 @@ public enum Block {
     private final String desc;
     private final String shape;
     private final String must;
+    private final String container;
     private final int minItems;
 
     Block(String key, boolean required, Source source,
-          String desc, String shape, String must, int minItems) {
+          String desc, String shape, String must, String container, int minItems) {
         this.key = key;
         this.required = required;
         this.source = source;
         this.desc = desc;
         this.shape = shape;
         this.must = must;
+        this.container = container;
         this.minItems = minItems;
     }
 
@@ -91,6 +93,12 @@ public enum Block {
     public String shape()    { return shape; }
     public String must()     { return must; }
     public int minItems()    { return minItems; }
+
+    /**
+     * 항목이 들어가는 자리. <b>자식 수를 세는 기준이다.</b>
+     *
+     */
+    public String container() { return container; }
 
     /**
      * 이 블록의 **항목이 관리자가 정하는 값인가.** 지금은 benefits 하나다.
@@ -195,6 +203,14 @@ public enum Block {
             if (b.minItems > 0 && !hasMust) {
                 throw new IllegalStateException(
                         b.key + ": minItems 를 세려면 must 가 필요합니다.");
+            }
+            // ★ 항목을 세는 블록은 담는 자리가 있어야 한다. 반대도 같다.
+            //   한쪽만 있으면 "몇 개인지는 아는데 어디서 세는지 모르는" 상태가 된다.
+            boolean hasContainer = b.container != null && !b.container.isBlank();
+            if ((b.minItems > 0) != hasContainer) {
+                throw new IllegalStateException(
+                        b.key + ": minItems 와 container 는 짝이어야 합니다 "
+                        + "(minItems=" + b.minItems + ", container=" + hasContainer + ")");
             }
         }
     }
