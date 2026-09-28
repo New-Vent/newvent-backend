@@ -35,6 +35,7 @@ import com.newvent.auth.jwt.JwtProvider;
  *   POST /auth/login, /auth/admin/login,
  *        /auth/refresh, /auth/logout          public
  *   POST /api/public/users/signup             public
+ *   GET  /api/public/events                   public (목록 조회)
  *   GET  /api/public/events/{id}              public
  *   /api/admin/**                             ADMIN  (admins 테이블로 로그인)
  *   /api/users/**                             USER   (본인 정보 — 토큰의 id 가 users.id 여야 한다)
@@ -74,6 +75,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/auth/login", "/auth/admin/login", "/auth/refresh", "/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/public/users/signup").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/public/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/public/events/*").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/users/**").hasRole("USER")
