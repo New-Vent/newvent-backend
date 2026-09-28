@@ -12,6 +12,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.newvent.generation.exception.GenerationErrorCode;
+import com.newvent.infra.llm.LlmCallContext;
+import com.newvent.infra.llm.LlmCallGateway;
 import com.newvent.registry.Block;
 import com.newvent.registry.BlockValidator;
 import com.newvent.registry.Slot;
@@ -33,13 +35,15 @@ class GenerationServiceTest {
         private RetryService.Result next;
         private final AtomicInteger calls = new AtomicInteger();
 
-        FakeRetry() { super(null, 0); }
+        // ★ 문을 Direct 로 준다 — reserve() 가 no-op 이라 상한 검사가 테스트에 끼어들지 않는다
+        FakeRetry() { super(new LlmCallGateway.Direct(null), 0); }
 
         void willReturn(RetryService.Result r) { this.next = r; }
         int calls() { return calls.get(); }
 
+        // ★ ctx 를 받는 쪽을 덮어야 한다. GenerationService 는 이 쪽만 부른다
         @Override
-        public RetryService.Result run(String system, String user, HtmlPolicy policy) {
+        public RetryService.Result run(LlmCallContext ctx, String system, String user, HtmlPolicy policy) {
             calls.incrementAndGet();
             return next;
         }
@@ -75,7 +79,7 @@ class GenerationServiceTest {
         service = new GenerationService(
                 retry,
                 new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
-                versions, guard, jobs);
+                versions, guard, jobs, LlmCallRecorder.none());
     }
 
     /** 워커 스레드가 끝날 때까지 기다린다. 2초면 충분하다 — 모델을 안 부르므로 */
@@ -251,7 +255,7 @@ class GenerationServiceTest {
                 new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
                 versions,
                 id -> Optional.of(GenerationErrorCode.EMPTY_REQUEST),   // 아무 코드나 — 막히는지만 본다
-                jobs);
+                jobs, LlmCallRecorder.none());
 
         var r = blocked.start(blank(1L, "여름 데이터 이벤트"));
 
@@ -271,7 +275,7 @@ class GenerationServiceTest {
         GenerationService s2 = new GenerationService(
                 retry,
                 new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
-                versions, guard, store);
+                versions, guard, store, LlmCallRecorder.none());
 
         var r = s2.start(blank(1L, "여름 데이터 이벤트"));
 

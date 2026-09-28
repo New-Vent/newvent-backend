@@ -17,7 +17,7 @@ import com.newvent.infra.llm.LlmClient;
 import com.newvent.registry.BlockValidator.Failure;
 
 /**
- * llm_call_logs 에 실제로 쓰는 층. 
+ * llm_call_logs 에 실제로 쓰는 층.
  *
  */
 @Service
