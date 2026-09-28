@@ -1,7 +1,5 @@
 package com.newvent.event.exception;
 
-import com.newvent.event.exception.code.EventErrorCode;
-
 public class EventNotFoundException extends EventException {
 
     public EventNotFoundException() {
