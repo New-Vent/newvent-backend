@@ -34,14 +34,9 @@ public class Gate {
 				.orElse(null);
 	}
 
-	// 서버 소유 문구는 op와 무관
-	private static String serverOwnedMessage(Block block) {
-		return block.desc() + "영역은 시스템이 관리합니다. 채팅으로 바꿀 수 없습니다.";
-	}
-
 	// 항목 값은 관리자가 정한다. 모델이 지어내면 게시된 페이지에서 사고
 	private static String askBackQuestion(Block block) {
-		return block.desc() + "항목은 관리자가 정하는 값입니다. 어떤 항목을 넣을까요?";
+		return block.desc() + " 항목은 관리자가 정하는 값입니다. 어떤 항목을 넣을까요?";
 	}
 
 	public Decision decide(RawRoute raw) {
