@@ -104,4 +104,16 @@ public class LlmCallLogTest {
 		assertEquals(req, row.getRequestId());
 		assertEquals(AT, row.getCreatedAt());
 	}
+
+	@Test
+	@DisplayName("provider 가 긴 모델명이어도 들어간다 - ollama: 접두사 + 긴 이름")
+	void provider_긴_이름도_저장된다() {
+	    String provider = "ollama:llama3.3:70b-instruct-q4_K_M";  // 35자
+	    assertEquals(35, provider.length());
+
+	    LlmCallLog row = LlmCallLog.create(mock(Event.class), null, UUID.randomUUID(), 1,
+	            "qwen2.5:7b", provider, 100, 200, 10, false, true, true, null, null, null, AT);
+
+	    assertEquals(provider, row.getProvider());
+	}
 }

@@ -134,4 +134,5 @@ class LlmCallLogRepositoryTest {
             repo.save(row(event, req, 1, NEXT_KST_MIDNIGHT));
         });
     }
+
 }

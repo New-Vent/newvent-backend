@@ -92,7 +92,7 @@ public class LlmCallLog {
     @Column(nullable = false)
     private boolean truncated = false;
 
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false, length = 40)
     private String provider;
 
     @Column(name = "created_at", nullable = false, updatable = false)
