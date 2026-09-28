@@ -174,6 +174,6 @@ public class EventVersionServiceTest {
         assertThatThrownBy(() -> eventVersionService.markCheckpoint(eventId, versionId))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
-                .isEqualTo("EVENT404-2");
+                .isEqualTo("EVENT404-3");
     }
 }

@@ -9,7 +9,8 @@ public enum EventErrorCode implements ErrorCode {
     INVALID_SEARCH_PERIOD(HttpStatus.BAD_REQUEST, "EVENT400-1", "조회 시작일은 조회 종료일보다 늦을 수 없습니다."),
     EVENT_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-0", "이벤트를 찾을 수 없습니다."),
     TEMPLATE_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-1", "템플릿을 찾을 수 없습니다."),
-    VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-2", "이벤트 버전을 찾을 수 없습니다.");
+    EVENT_NOT_ACCESSIBLE(HttpStatus.NOT_FOUND, "EVENT404-2", "지금은 접근할 수 없는 이벤트입니다."),
+    VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-3", "이벤트 버전을 찾을 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

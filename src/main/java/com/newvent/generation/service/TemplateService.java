@@ -37,6 +37,28 @@ public class TemplateService {
     }
 
     /**
+     * 그 코드의 템플릿이 있나. **생성을 시작하기 전에 묻는다.**
+     *
+     * ★ 왜 이게 필요해졌나
+     *   예전에는 templateCode 가 프론트에서 왔다. 프론트는 목록 API 가 준 코드를
+     *   그대로 돌려주니 항상 맞았다.
+     *   지금은 `events.template_id` 가 준 코드도 들어온다. 그게 리소스(또는 나중의
+     *   event_templates)에 있는지는 **아무도 보장하지 않는다.**
+     *
+     * ★ 없는 코드를 그냥 두면 initialHtml() 이 워커 스레드에서 터진다.
+     *   runSafely 가 잡아서 "문제가 생겼습니다" 로 끝나고, **다시 시도해도 영원히 같다.**
+     *   원인은 로그에만 남는다. 그래서 시작 전에 400 으로 돌려보낸다.
+     *
+     * ★ all() 이 아니라 find() 를 쓴다
+     *   all() 은 HTML 5벌을 다 들고 온다. 있는지만 보는 데 그럴 이유가 없고,
+     *   DB 로 옮기면 그 차이가 커진다. 그리고 **비활성 템플릿도 찾아야 한다** —
+     *   이미 그 템플릿으로 만든 이벤트는 계속 페이지를 만들 수 있어야 한다.
+     */
+    public boolean exists(String code) {
+        return code != null && !code.isBlank() && loader.find(code).isPresent();
+    }
+
+    /**
      * 이 템플릿으로 시작할 때 event_versions 1번에 들어갈 HTML.
      *
      * 순서가 중요하다:
@@ -60,7 +82,6 @@ public class TemplateService {
      *   **막는 게 서로 다르다.** 같은 일을 두 번 하는 게 아니다.
      *
      *   관리자 템플릿은 "그때의" 정화 규칙을 통과한 HTML 이다.
-     *   정화 규칙은 계속 바뀐다 — 이번 주에만 두 번 바뀌었다
      *   (data-slot 보존, button·id 보존).
      *   템플릿은 수명이 길고 여러 이벤트에 퍼지므로 한 번 잘못 들어가면 다 퍼진다.
      *
