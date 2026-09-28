@@ -19,9 +19,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.newvent.auth.jwt.JwtProvider;
+import com.newvent.common.config.SecurityConfig;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.request.EventCreateRequest;
@@ -33,8 +36,11 @@ import com.newvent.event.exception.EventException;
 import com.newvent.event.service.EventService;
 import com.newvent.user.domain.MembershipGrade;
 
+// @WebMvcTest 는 SecurityConfig 를 스캔하지 않는다 — 안 넣으면 Spring Security 기본 설정(전부 인증 + CSRF)이 걸린다.
+// 실제 인가 규칙(/api/admin/** 는 ADMIN)으로 검증하려고 직접 import 하고, 관리자로 요청한다.
 @WebMvcTest(AdminEventController.class)
-@Import(GlobalExceptionHandler.class)
+@Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtProvider.class})
+@WithMockUser(roles = "ADMIN")
 class AdminEventControllerTest {
 
     @Autowired
@@ -164,6 +170,41 @@ class AdminEventControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "이름만 변경" }
+                                """))
+                .andExpect(status().isNotImplemented());
+    }
+
+    @Test
+    @DisplayName("수정 요청의 이벤트명이 공백만 있으면 400 과 COMMON400-0 을 반환한다")
+    void 이벤트_수정_이름이_공백뿐이면_400을_반환한다() throws Exception {
+        mockMvc.perform(patch("/api/admin/events/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "   " }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400-0"));
+    }
+
+    @Test
+    @DisplayName("수정 요청의 이벤트명이 빈 문자열이면 400 과 COMMON400-0 을 반환한다")
+    void 이벤트_수정_이름이_빈_문자열이면_400을_반환한다() throws Exception {
+        mockMvc.perform(patch("/api/admin/events/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "" }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400-0"));
+    }
+
+    @Test
+    @DisplayName("수정 요청에 이벤트명이 없으면 검증을 통과한다")
+    void 이벤트_수정_이름이_없으면_검증을_통과한다() throws Exception {
+        mockMvc.perform(patch("/api/admin/events/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "endAt": "2026-10-20T23:59:59+09:00" }
                                 """))
                 .andExpect(status().isNotImplemented());
     }

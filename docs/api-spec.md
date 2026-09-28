@@ -218,7 +218,7 @@ Content-Type: application/json
 
 | 필드 | 필수 | 설명 |
 | --- | --- | --- |
-| `name` | X | 1~100자. null 이면 유지 |
+| `name` | X | 1~100자. null(생략)이면 유지. 값이 오면 공백만 있는 값(`""`, `"   "`)은 400 (`COMMON400-0`) |
 | `startAt` | X | null 이면 유지 |
 | `endAt` | X | null 이면 유지 |
 | `templateKey` | X | null 이면 유지 |

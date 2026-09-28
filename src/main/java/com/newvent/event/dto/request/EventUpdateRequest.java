@@ -2,6 +2,7 @@ package com.newvent.event.dto.request;
 
 import java.time.OffsetDateTime;
 
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import com.newvent.user.domain.MembershipGrade;
@@ -11,7 +12,9 @@ import com.newvent.user.domain.MembershipGrade;
  * null 필드는 변경하지 않는다.
  */
 public record EventUpdateRequest(
-        @Size(min = 1, max = 100, message = "이벤트명은 1~100자여야 합니다.")
+        /** null 이면 유지. 값이 오면 생성 요청의 @NotBlank 와 같은 기준으로 공백만 있는 이름을 거부한다. */
+        @Pattern(regexp = "(?s).*\\S.*", message = "이벤트명은 공백만으로 입력할 수 없습니다.")
+        @Size(max = 100, message = "이벤트명은 100자 이하여야 합니다.")
         String name,
 
         OffsetDateTime startAt,

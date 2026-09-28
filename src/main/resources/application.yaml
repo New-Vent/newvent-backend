@@ -21,13 +21,32 @@ spring:
 server:
   port: 8080
 
+# 인증 — JWT Access Token + Refresh Token(HttpOnly 쿠키)
+auth:
+  jwt:
+    secret: ${JWT_SECRET}
+    access-ttl-minutes: 30
+    refresh-ttl-days: 7
+  cookie:
+    name: refresh_token
+    path: /auth
+    secure: ${AUTH_COOKIE_SECURE:true}
+    same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
 # LLM — 기본값은 목(mock)
 
 llm:
-  provider: mock
+  # 환경변수 설정하면 Bedrock
+  provider: ${LLM_PROVIDER:mock}
   daily-limit: 200      # 하루 최대 호출 수 — 무한루프 방어
   max-retry: 3          # 재시도 상한
   timeout-seconds: 120
+
+  # provider 별 설정
+  model: ${LLM_MODEL:}
+  region: ${BEDROCK_REGION:}
 
 logging:
   level:

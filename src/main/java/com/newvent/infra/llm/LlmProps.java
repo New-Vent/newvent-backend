@@ -13,6 +13,8 @@ public record LlmProps(
         String provider,
         String baseUrl,
         String model,
+         // Bedrock 리전. 계정 기본 리전(AWS_REGION)과 일부러 분리
+        String region,
 
         /** 하루 최대 호출 수. 무한루프 방어의 마지막 선 */
         int dailyLimit,
@@ -27,6 +29,7 @@ public record LlmProps(
         if (provider == null || provider.isBlank()) provider = "mock";
         if (baseUrl  == null || baseUrl.isBlank())  baseUrl  = "http://localhost:11434";
         if (model    == null || model.isBlank())    model    = "qwen2.5:7b";
+        if (region   == null || region.isBlank())   region   = BedrockClient.DEFAULT_REGION;
         if (dailyLimit     <= 0) dailyLimit     = 200;
         if (maxRetry       <= 0) maxRetry       = 3;
         if (timeoutSeconds <= 0) timeoutSeconds = 120;
