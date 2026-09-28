@@ -9,7 +9,9 @@ import jakarta.validation.constraints.Min;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,6 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.newvent.common.response.ApiResponse;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.request.EventCreateRequest;
+import com.newvent.event.dto.request.EventStatusChangeRequest;
+import com.newvent.event.dto.request.EventUpdateRequest;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
 import com.newvent.event.dto.response.PageResponse;
@@ -58,5 +62,33 @@ public class AdminEventController {
             @Valid @RequestBody EventCreateRequest request) {
         EventDetailResponse created = eventService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(created));
+    }
+
+    /** 골격 — 본구현 전. null 필드는 변경하지 않는다. */
+    @PatchMapping("/{id}")
+    public ResponseEntity<ApiResponse<EventDetailResponse>> update(
+            @PathVariable Long id,
+            @Valid @RequestBody EventUpdateRequest request) {
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+    }
+
+    /** 골격 — 소프트 삭제(deletedAt). 본구현 전. */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+    }
+
+    /** 골격 — DRAFT → PUBLISHED → ENDED. 본구현 전. */
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<ApiResponse<EventDetailResponse>> changeStatus(
+            @PathVariable Long id,
+            @Valid @RequestBody EventStatusChangeRequest request) {
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+    }
+
+    /** 골격 — DRAFT 게시(PUBLISHED). 본구현 전. */
+    @PostMapping("/{id}/publish")
+    public ResponseEntity<ApiResponse<EventDetailResponse>> publish(@PathVariable Long id) {
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
     }
 }

@@ -34,7 +34,7 @@
 - 인증/인가 (Security 미사용. `/api/admin/**` 도 토큰 없이 호출됨)
 - JPA/Flyway — 지금은 메모리 더미 (이벤트 시드 6건 · 템플릿 5종)
 - 템플릿 `baseContent`(HTML 조각) — 메타데이터만 제공
-- 수정·삭제·상태변경·게시
+- 수정·삭제·상태변경·게시 **본구현** (엔드포인트 자리만 501)
 - 공개 조회 `/api/public/events`
 - LLM HTML 생성 (생성 API 는 DRAFT 메타만 저장)
 
@@ -200,6 +200,35 @@ http://localhost:8080/api/admin/events/3
 POST http://localhost:8080/api/admin/events
 Content-Type: application/json
 ```
+
+---
+
+## 쓰기 골격 (501 Not Implemented)
+
+본구현 전. 자리만 잡혀 있고 호출하면 `501` 을 반환한다.
+
+| Method | Path | Request | 비고 |
+| --- | --- | --- | --- |
+| `PATCH` | `/api/admin/events/{id}` | `EventUpdateRequest` | null 필드는 미변경 |
+| `DELETE` | `/api/admin/events/{id}` | — | 소프트 삭제 (`deletedAt`) |
+| `PATCH` | `/api/admin/events/{id}/status` | `EventStatusChangeRequest` | `DRAFT` → `PUBLISHED` → `ENDED` |
+| `POST` | `/api/admin/events/{id}/publish` | — | `DRAFT` → `PUBLISHED` |
+
+### `EventUpdateRequest`
+
+| 필드 | 필수 | 설명 |
+| --- | --- | --- |
+| `name` | X | 1~100자. null 이면 유지 |
+| `startAt` | X | null 이면 유지 |
+| `endAt` | X | null 이면 유지 |
+| `templateKey` | X | null 이면 유지 |
+| `grade` | X | `NORMAL` / `EXCELLENT` / `BEST`. null 이면 유지 |
+
+### `EventStatusChangeRequest`
+
+| 필드 | 필수 | 설명 |
+| --- | --- | --- |
+| `status` | O | `DRAFT` / `PUBLISHED` / `ENDED` |
 
 ---
 
