@@ -4,6 +4,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -16,10 +18,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.newvent.auth.dto.AuthUser;
 import com.newvent.auth.jwt.JwtProvider;
 import com.newvent.common.config.SecurityConfig;
 import com.newvent.user.domain.MembershipGrade;
@@ -30,13 +34,16 @@ import com.newvent.user.exception.code.UserErrorCode;
 import com.newvent.user.service.UserService;
 
 // @WebMvcTest 는 SecurityConfig 를 스캔하지 않는다 — 안 넣으면 Spring Security 기본 설정(전부 인증 + CSRF)이 걸린다.
-// 실제 인가 규칙(/api/public/** 허용)으로 검증하려고 직접 import 한다.
+// 실제 인가 규칙(signup 공개, /api/users/** 는 USER)으로 검증하려고 직접 import 하고, 토큰은 JwtProvider 로 진짜를 발급한다.
 @WebMvcTest(UserController.class)
 @Import({SecurityConfig.class, JwtProvider.class})
 class UserApiTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JwtProvider jwtProvider;
 
     @MockitoBean
     private UserService userService;
@@ -104,24 +111,66 @@ class UserApiTest {
     }
 
     @Test
-    @DisplayName("존재하는 회원을 조회하면 200과 회원 정보를 반환한다")
-    void 조회_성공() throws Exception {
+    @DisplayName("내 정보 조회는 경로가 아니라 토큰의 id 로 회원을 찾는다")
+    void 내정보_조회_성공() throws Exception {
         User user = new User("user01", "hash", "이름", "user01@test.com", "010-0000-0000", 50000,
                 MembershipGrade.NORMAL);
-        when(userService.getById(1L)).thenReturn(user);
+        when(userService.getById(7L)).thenReturn(user);
 
-        mockMvc.perform(get("/api/public/users/1"))
+        mockMvc.perform(get("/api/users/me").header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.user(7L))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.loginId").value("user01"))
                 .andExpect(jsonPath("$.data.membershipGrade").value("NORMAL"));
+        verify(userService).getById(7L);
     }
 
     @Test
-    @DisplayName("존재하지 않는 회원을 조회하면 404를 반환한다")
-    void 조회_없는회원_404() throws Exception {
+    @DisplayName("토큰의 회원이 없으면 404를 반환한다")
+    void 내정보_조회_없는회원_404() throws Exception {
         when(userService.getById(anyLong())).thenThrow(new UserNotFoundException());
 
-        mockMvc.perform(get("/api/public/users/999")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/users/me").header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.user(999L))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("토큰 없이 내 정보 API 를 부르면 401 이다")
+    void 내정보_토큰없음_401() throws Exception {
+        mockMvc.perform(get("/api/users/me")).andExpect(status().isUnauthorized());
+        mockMvc.perform(patch("/api/users/me/plan")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"plan":70000}
+                                """))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(userService);
+    }
+
+    @Test
+    @DisplayName("관리자 토큰의 id 는 admins 의 id 라 내 정보 API 에서 403 이다")
+    void 내정보_관리자토큰_403() throws Exception {
+        mockMvc.perform(get("/api/users/me").header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.admin(1L))))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(userService);
+    }
+
+    @Test
+    @DisplayName("예전 공개 경로(/api/public/users/{id})로는 더 이상 조회·수정할 수 없다")
+    void 예전_공개경로는_막힌다() throws Exception {
+        mockMvc.perform(get("/api/public/users/1")).andExpect(status().isUnauthorized());
+        mockMvc.perform(patch("/api/public/users/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"phone":"010-9999-9999"}
+                                """))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(patch("/api/public/users/1/plan")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"plan":70000}
+                                """))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(userService);
     }
 
     @Test
@@ -131,19 +180,22 @@ class UserApiTest {
                 "user01", "hash", "새이름", "user01@test.com", "010-9999-9999", 50000, MembershipGrade.NORMAL);
         when(userService.updateProfile(anyLong(), any(), any(), any())).thenReturn(user);
 
-        mockMvc.perform(patch("/api/public/users/1")
+        mockMvc.perform(patch("/api/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.user(7L)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"phone":"010-9999-9999"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.phone").value("010-9999-9999"));
+        verify(userService).updateProfile(7L, null, null, "010-9999-9999");
     }
 
     @Test
     @DisplayName("정보 수정 시 공백 문자열을 보내면 400을 반환한다 (필드 생략과는 구분)")
     void 정보수정_공백값_유효성실패() throws Exception {
-        mockMvc.perform(patch("/api/public/users/1")
+        mockMvc.perform(patch("/api/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.user(7L)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"name":"   "}
@@ -157,23 +209,30 @@ class UserApiTest {
         User user = new User("user01", "hash", "이름", "user01@test.com", null, 70000, MembershipGrade.EXCELLENT);
         when(userService.changePlan(anyLong(), anyInt())).thenReturn(user);
 
-        mockMvc.perform(patch("/api/public/users/1/plan")
+        mockMvc.perform(patch("/api/users/me/plan")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.user(7L)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"plan":70000}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.membershipGrade").value("EXCELLENT"));
+        verify(userService).changePlan(7L, 70000);
     }
 
     @Test
     @DisplayName("요금제에 음수를 넣으면 400을 반환한다")
     void 요금제변경_유효성실패() throws Exception {
-        mockMvc.perform(patch("/api/public/users/1/plan")
+        mockMvc.perform(patch("/api/users/me/plan")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.user(7L)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"plan":-5}
                                 """))
                 .andExpect(status().isBadRequest());
+    }
+
+    private String bearer(AuthUser principal) {
+        return "Bearer " + jwtProvider.issue(principal).value();
     }
 }

@@ -30,7 +30,7 @@ auth:
   cookie:
     name: refresh_token
     path: /auth
-    secure: ${AUTH_COOKIE_SECURE:false}
+    secure: ${AUTH_COOKIE_SECURE:true}
     same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}

@@ -27,7 +27,7 @@ import com.newvent.event.exception.EventNotFoundException;
 import com.newvent.event.service.PublicEventService;
 
 // @WebMvcTest 는 SecurityConfig 를 스캔하지 않는다 — 안 넣으면 Spring Security 기본 설정(전부 인증 + CSRF)이 걸린다.
-// 실제 인가 규칙(/api/public/** 허용)으로 검증하려고 직접 import 한다.
+// 실제 인가 규칙(GET /api/public/events/* 허용)으로 검증하려고 직접 import 한다.
 @WebMvcTest(PublicEventController.class)
 @Import({SecurityConfig.class, JwtProvider.class})
 class PublicEventApiTest {

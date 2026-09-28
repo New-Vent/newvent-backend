@@ -34,9 +34,14 @@ import com.newvent.auth.jwt.JwtProvider;
  *
  *   POST /auth/login, /auth/admin/login,
  *        /auth/refresh, /auth/logout          public
- *   /api/public/**                            public (회원가입 등)
+ *   POST /api/public/users/signup             public
+ *   GET  /api/public/events/{id}              public
  *   /api/admin/**                             ADMIN  (admins 테이블로 로그인)
+ *   /api/users/**                             USER   (본인 정보 — 토큰의 id 가 users.id 여야 한다)
  *   그 외 /api/**                             USER 또는 ADMIN
+ *
+ * ★ /api/public/** 을 통째로 열지 않는다. 공개할 엔드포인트만 하나씩 적는다 —
+ *   public 아래에 새 API 를 두는 것만으로 인증 없이 열리는 일을 막는다. 적지 않은 것은 /api/** 규칙에 걸린다.
  *
  * 역할 컬럼/enum 은 없다 — 어느 테이블로 로그인했는지가 곧 권한이다 (JwtAuthenticationFilter).
  */
@@ -68,8 +73,10 @@ public class SecurityConfig {
                         .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/auth/login", "/auth/admin/login", "/auth/refresh", "/auth/logout").permitAll()
-                        .requestMatchers("/api/public/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/public/users/signup").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/public/events/*").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/users/**").hasRole("USER")
                         .requestMatchers("/api/**").hasAnyRole("USER", "ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(new JwtAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class)

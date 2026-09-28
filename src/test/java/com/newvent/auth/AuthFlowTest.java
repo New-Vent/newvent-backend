@@ -32,6 +32,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import com.newvent.auth.config.AuthProps;
 import com.newvent.auth.dto.AuthUser;
 import com.newvent.auth.entity.RefreshToken;
 import com.newvent.auth.repository.RefreshTokenRepository;
@@ -59,8 +60,6 @@ class AuthFlowTest {
     private static final String USER2 = "authtest_user2";
     private static final String ADMIN = "authtest_admin";
     private static final String INACTIVE_ADMIN = "authtest_admin_off";
-    /** application.yaml 의 CORS_ALLOWED_ORIGINS 기본값. refresh/logout 은 CsrfOriginFilter 때문에 필요하다. */
-    private static final String ORIGIN = "http://localhost:5173";
 
     @Autowired MockMvc mvc;
     @Autowired UserRepository users;
@@ -69,9 +68,17 @@ class AuthFlowTest {
     @Autowired PasswordEncoder encoder;
     @Autowired JdbcTemplate jdbc;
     @Value("${auth.jwt.secret}") String jwtSecret;
+    @Autowired AuthProps authProps;
+
+    /**
+     * 허용 Origin — refresh/logout 은 CsrfOriginFilter 때문에 필요하다.
+     * 값을 박아 두지 않고 설정(CORS_ALLOWED_ORIGINS)에서 읽는다. CI 는 배포용 값으로 돌기 때문이다.
+     */
+    private String origin;
 
     @BeforeEach
     void setUp() {
+        origin = authProps.cors().allowedOrigins().getFirst();
         cleanUp();
         users.save(new User(USER, encoder.encode(PASSWORD), "인증테스트", USER + "@test.com", null, 30000,
                 MembershipGrade.BEST));   // 일부러 틀린 등급 — 로그인 시 재계산되는지 본다
@@ -115,7 +122,7 @@ class AuthFlowTest {
     }
 
     private MvcResult refresh(Cookie cookie) throws Exception {
-        return mvc.perform(post("/auth/refresh").header("Origin", ORIGIN).cookie(cookie)).andReturn();
+        return mvc.perform(post("/auth/refresh").header("Origin", origin).cookie(cookie)).andReturn();
     }
 
     @Test
@@ -129,8 +136,10 @@ class AuthFlowTest {
                 .andExpect(jsonPath("$.data.expireDate").isNotEmpty())
                 .andExpect(cookie().httpOnly("refresh_token", true))
                 .andExpect(cookie().path("refresh_token", "/auth"))
-                .andExpect(cookie().secure("refresh_token", false))       // 로컬 기본값
-                .andExpect(header().string("Set-Cookie", containsString("SameSite=Lax")));
+                // Secure·SameSite 는 설정(AUTH_COOKIE_SECURE / AUTH_COOKIE_SAME_SITE)을 그대로 따른다
+                .andExpect(cookie().secure("refresh_token", authProps.cookie().secure()))
+                .andExpect(header().string("Set-Cookie",
+                        containsString("SameSite=" + authProps.cookie().sameSite())));
     }
 
     @Test
@@ -185,7 +194,7 @@ class AuthFlowTest {
     }
 
     @Test
-    @DisplayName("토큰 없음·위조·만료·claim 누락은 401(COMMON401-0) JSON, /api/public/** 은 토큰 없이 통과")
+    @DisplayName("토큰 없음·위조·만료·claim 누락은 401(COMMON401-0) JSON, 회원가입은 토큰 없이 통과")
     void 인증_실패와_공개경로() throws Exception {
         var key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
         var otherKey = Keys.hmacShaKeyFor("another-secret-another-secret-another-secret!!".getBytes(
@@ -218,7 +227,7 @@ class AuthFlowTest {
     void 갱신_로테이션() throws Exception {
         Cookie first = userCookie(USER);
 
-        MvcResult refreshed = mvc.perform(post("/auth/refresh").header("Origin", ORIGIN).cookie(first))
+        MvcResult refreshed = mvc.perform(post("/auth/refresh").header("Origin", origin).cookie(first))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
                 .andReturn();
@@ -226,7 +235,7 @@ class AuthFlowTest {
         assertNotEquals(first.getValue(), second.getValue());
         assertEquals(200, refresh(second).getResponse().getStatus());       // 새 토큰은 동작
 
-        mvc.perform(post("/auth/refresh").header("Origin", ORIGIN).cookie(first))   // 재사용 → 거부 + 쿠키 삭제
+        mvc.perform(post("/auth/refresh").header("Origin", origin).cookie(first))   // 재사용 → 거부 + 쿠키 삭제
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH401-1"))
                 .andExpect(cookie().maxAge("refresh_token", 0));
@@ -255,7 +264,7 @@ class AuthFlowTest {
         Cookie c = login("/auth/admin/login", ADMIN, PASSWORD).getResponse().getCookie("refresh_token");
         jdbc.update("UPDATE admins SET is_active = FALSE WHERE login_id = ?", ADMIN);
 
-        mvc.perform(post("/auth/refresh").header("Origin", ORIGIN).cookie(c))
+        mvc.perform(post("/auth/refresh").header("Origin", origin).cookie(c))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH401-1"));
     }
@@ -281,7 +290,7 @@ class AuthFlowTest {
     @Test
     @DisplayName("쿠키 없이 refresh 하면 401")
     void 쿠키_없는_갱신() throws Exception {
-        mvc.perform(post("/auth/refresh").header("Origin", ORIGIN))
+        mvc.perform(post("/auth/refresh").header("Origin", origin))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH401-1"));
     }
@@ -291,11 +300,11 @@ class AuthFlowTest {
     void 로그아웃() throws Exception {
         Cookie c = userCookie(USER);
 
-        mvc.perform(post("/auth/logout").header("Origin", ORIGIN).cookie(c))
+        mvc.perform(post("/auth/logout").header("Origin", origin).cookie(c))
                 .andExpect(status().isNoContent())
                 .andExpect(cookie().maxAge("refresh_token", 0));
         assertEquals(401, refresh(c).getResponse().getStatus());
-        mvc.perform(post("/auth/logout").header("Origin", ORIGIN)).andExpect(status().isNoContent());   // 멱등
+        mvc.perform(post("/auth/logout").header("Origin", origin)).andExpect(status().isNoContent());   // 멱등
     }
 
     @Test
@@ -316,7 +325,7 @@ class AuthFlowTest {
                 .andExpect(status().isForbidden());
 
         // 거부된 요청들이 토큰을 소모하지 않았다 — Referer 로 허용 Origin 을 대신해도 통과
-        mvc.perform(post("/auth/refresh").cookie(c).header("Referer", ORIGIN + "/admin/events"))
+        mvc.perform(post("/auth/refresh").cookie(c).header("Referer", origin + "/admin/events"))
                 .andExpect(status().isOk());
         // login 은 검사 대상이 아니다 (Origin 없이도 200)
         assertEquals(200, login("/auth/login", USER, PASSWORD).getResponse().getStatus());
@@ -342,11 +351,11 @@ class AuthFlowTest {
     @DisplayName("CORS: 허용한 Origin 에만 credentials 허용")
     void cors() throws Exception {
         mvc.perform(options("/auth/refresh")
-                        .header("Origin", ORIGIN)
+                        .header("Origin", origin)
                         .header("Access-Control-Request-Method", "POST"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Credentials", "true"))
-                .andExpect(header().string("Access-Control-Allow-Origin", ORIGIN));
+                .andExpect(header().string("Access-Control-Allow-Origin", origin));
         mvc.perform(options("/auth/refresh")
                         .header("Origin", "http://evil.example")
                         .header("Access-Control-Request-Method", "POST"))
