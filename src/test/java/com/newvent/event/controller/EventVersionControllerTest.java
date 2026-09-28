@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import com.newvent.event.dto.response.EventVersionDetailResponse;
 import com.newvent.event.dto.response.EventVersionListResponse;
 import com.newvent.event.service.EventVersionService;
 
@@ -54,5 +56,31 @@ class EventVersionControllerTest {
                 .andExpect(jsonPath("$.data.versions").isEmpty());
 
         verify(eventVersionService).getVersions(eventId);
+    }
+
+    @Test
+    void getVersion_returnsSelectedVersionHtml() throws Exception {
+        EventVersionDetailResponse response = EventVersionDetailResponse.builder()
+                .versionId(102L)
+                .versionNo(2)
+                .createdAt(OffsetDateTime.parse("2026-09-21T14:20:00+09:00"))
+                .htmlContent("<html><body>저장된 화면</body></html>")
+                .build();
+
+        when(eventVersionService.getVersion(12L, 102L)).thenReturn(response);
+
+        mockMvc.perform(get(
+                        "/api/admin/events/{eventId}/versions/{versionId}",
+                        12L, 102L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.versionId").value(102))
+                .andExpect(jsonPath("$.data.versionNo").value(2))
+                .andExpect(jsonPath("$.data.createdAt")
+                        .value("2026-09-21T14:20:00+09:00"))
+                .andExpect(jsonPath("$.data.htmlContent")
+                        .value("<html><body>저장된 화면</body></html>"));
+
+        verify(eventVersionService).getVersion(12L, 102L);
     }
 }
