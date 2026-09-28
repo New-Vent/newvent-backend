@@ -45,6 +45,47 @@ class ValueCheckTest {
     }
 
     @Test
+    @DisplayName("천원·천만원·원 앞 공백이 있는 금액도 추출한다")
+    void 천원_천만원_공백_금액_추출() {
+        Set<String> tokens = ValueCheck.extract("3천원, 5천만원, 1만 원");
+        assertTrue(tokens.containsAll(Set.of("3천원", "5천만원", "1만 원")),
+                "금액을 놓쳤습니다: " + tokens);
+    }
+
+    @Test
+    @DisplayName("새로 추가된 천원·천만원·공백 포함 금액은 각각 차단한다")
+    void 새로_추가된_금액_표기_차단() {
+        for (String amount : List.of("3천원", "5천만원", "1만 원")) {
+            List<Failure> failures = ValueCheck.diff(
+                    "<p>참여해 주세요</p>", "<p>최대 " + amount + " 지급</p>", "혜택 문구를 강조해줘");
+            assertTrue(failures.stream().anyMatch(f -> f.isBlocking() && f.message().contains(amount)),
+                    amount + " 추가를 막지 못했습니다: " + failures);
+        }
+    }
+
+    @Test
+    @DisplayName("동일 금액의 만원·숫자 표기 변경은 추가나 삭제가 아니다")
+    void 같은_금액_표기_변경은_통과() {
+        for (String[] pair : List.of(
+                new String[] {"1만원", "10,000원"},
+                new String[] {"10,000원", "1만 원"},
+                new String[] {"3천원", "3,000원"},
+                new String[] {"5천만원", "50,000,000원"})) {
+            assertTrue(ValueCheck.diff("<p>" + pair[0] + "</p>",
+                    "<p>" + pair[1] + "</p>", "문구를 자연스럽게").isEmpty(),
+                    pair[0] + " → " + pair[1] + " 는 같은 금액입니다");
+        }
+    }
+
+    @Test
+    @DisplayName("요청문과 수정본에서 동일 금액을 다르게 표기해도 허용한다")
+    void 요청한_금액의_다른_표기는_허용() {
+        List<Failure> failures = ValueCheck.diff("<p>혜택 없음</p>",
+                "<p>20,000원 지급</p>", "2만 원을 지급해줘");
+        assertTrue(failures.isEmpty(), "요청한 금액인데 차단됐습니다: " + failures);
+    }
+
+    @Test
     @DisplayName("한글 조사가 붙어도 수치를 잡고, 영문 단위 일부는 잡지 않는다")
     void 조사_붙은_수치도_토큰() {
         Set<String> tokens = ValueCheck.extract("3만원을 지급하고 72시간동안 참여, 10GB를 제공. 20GBps는 제외");

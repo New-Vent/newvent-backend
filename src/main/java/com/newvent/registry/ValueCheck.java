@@ -1,5 +1,6 @@
 package com.newvent.registry;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -49,15 +50,21 @@ public final class ValueCheck {
      *   순수 숫자 단독(1, 2026, 100) — 연도·순서 번호와 구별이 어려워 오탐이 크다.
      *   %·GB·원 같은 단위가 붙어야 "약속된 값"으로 본다.
      *
-     * 한국어 단위: 원, 만원, 시간, 일, 분, 초, 회, 개, 개월, 달, 배, 명, 장, 점, 종
+     * 한국어 단위: 원, 천원, 만원, 천만원, 억원, 시간, 일, 분, 초, 회, 개, 개월, 달, 배, 명, 장, 점, 종
      * 영문 단위: % (앞에 붙는 것), GB, MB, KB, TB, GHz, Mbps, Gbps
      */
     private static final Pattern TOKEN = Pattern.compile(
-            // 숫자 (콤마 포함, 소수점 포함) + 한국어 단위
-            "\\d[\\d,]*(?:\\.\\d+)?(?:만|억)?(?:원|시간|일|분|초|회|개월?|달|배|명|장|점|종|GB|MB|KB|TB|GHz|Mbps|Gbps)(?![A-Za-z])"
-            // 또는 숫자 + %
+            // 금액은 천/만/천만/억 및 '1만 원'처럼 원 앞의 공백을 허용한다.
+            "\\d[\\d,]*(?:\\.\\d+)?(?:천만|천|만|억)?\\s*원(?![A-Za-z])"
+            // 금액 외 숫자+단위
+            + "|\\d[\\d,]*(?:\\.\\d+)?(?:시간|일|분|초|회|개월?|달|배|명|장|점|종|GB|MB|KB|TB|GHz|Mbps|Gbps)(?![A-Za-z])"
+            // 숫자 + %
             + "|\\d[\\d,]*(?:\\.\\d+)?%",
             Pattern.UNICODE_CHARACTER_CLASS
+    );
+
+    private static final Pattern MONEY = Pattern.compile(
+            "^(\\d[\\d,]*(?:\\.\\d+)?)(천만|천|만|억)?\\s*원$"
     );
 
     /**
@@ -67,17 +74,22 @@ public final class ValueCheck {
      * @param after      수정 후 블록 HTML (sanitizeEdited 를 거친 것)
      * @param userPrompt 사용자가 보낸 요청문 (여기에 나온 숫자는 허용)
      * @return 실패·경고 목록. 빈 목록이면 통과.
+     * 같은 수치가 어떤 혜택에 연결되는지는 비교하지 않으므로 혜택 간 수치 교환은 검출하지 못합니다.
      */
     public static List<Failure> diff(String before, String after, String userPrompt) {
         Set<String> tokensBefore = extract(before);
         Set<String> tokensAfter  = extract(after);
         Set<String> tokensInReq  = extract(userPrompt == null ? "" : userPrompt);
+        Set<String> valuesBefore = normalized(tokensBefore);
+        Set<String> valuesAfter = normalized(tokensAfter);
+        Set<String> valuesInReq = normalized(tokensInReq);
 
         List<Failure> f = new ArrayList<>();
 
         // 없던 숫자가 생겼다 — 요청문에 있던 것은 허용
         for (String t : tokensAfter) {
-            if (!tokensBefore.contains(t) && !tokensInReq.contains(t)) {
+            String value = normalize(t);
+            if (!valuesBefore.contains(value) && !valuesInReq.contains(value)) {
                 f.add(new Failure(
                         "value_added_" + sanitizeCode(t),
                         "\"" + t + "\" 는 원본에 없던 수치입니다. "
@@ -88,7 +100,7 @@ public final class ValueCheck {
 
         // 있던 숫자가 빠졌다 — 경고(실패 아님)
         for (String t : tokensBefore) {
-            if (!tokensAfter.contains(t)) {
+            if (!valuesAfter.contains(normalize(t))) {
                 f.add(new Failure(
                         "warning_value_removed_" + sanitizeCode(t),
                         "\"" + t + "\" 가 수정 후 빠졌습니다. "
@@ -113,6 +125,30 @@ public final class ValueCheck {
             tokens.add(m.group());
         }
         return tokens;
+    }
+
+    /** 금액만 원 단위로 바꾸고, 다른 단위의 비교 방식은 유지합니다. */
+    private static Set<String> normalized(Set<String> tokens) {
+        Set<String> values = new LinkedHashSet<>();
+        for (String token : tokens) values.add(normalize(token));
+        return values;
+    }
+
+    private static String normalize(String token) {
+        Matcher money = MONEY.matcher(token);
+        if (!money.matches()) return token;
+
+        long multiplier;
+        String unit = money.group(2);
+        if ("천".equals(unit)) multiplier = 1_000L;
+        else if ("만".equals(unit)) multiplier = 10_000L;
+        else if ("천만".equals(unit)) multiplier = 10_000_000L;
+        else if ("억".equals(unit)) multiplier = 100_000_000L;
+        else multiplier = 1L;
+
+        return "KRW:" + new BigDecimal(money.group(1).replace(",", ""))
+                .multiply(BigDecimal.valueOf(multiplier))
+                .stripTrailingZeros().toPlainString();
     }
 
     /** Failure.code 에 쓸 수 없는 문자를 제거합니다 */
