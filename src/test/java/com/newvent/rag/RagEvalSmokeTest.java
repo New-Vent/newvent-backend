@@ -2,7 +2,12 @@ package com.newvent.rag;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +54,14 @@ class RagEvalSmokeTest {
     private TestEntityManager tem;
 
     record EvalQuery(String query, String expectedBlock) {}
+
+    private final List<String> report = new ArrayList<>();
+
+    /** 콘솔과 리포트 파일에 같이 남긴다. */
+    private void note(String line) {
+        report.add(line);
+        System.out.println(line);
+    }
 
     static boolean 스모크_켜짐() {
         return "1".equals(System.getenv("RAG_EVAL"));
@@ -124,13 +137,13 @@ class RagEvalSmokeTest {
                     : hits.stream().anyMatch(h -> h.getBlockKey().equals(q.expectedBlock()));
             if (ok) score++;
 
-            System.out.printf("[%s] Q=%s 기대=%s → %s%n",
-                    model, q.query(), q.expectedBlock(), ok ? "O" : "X");
+            note("[%s] Q=%s 기대=%s → %s".formatted(
+                    model, q.query(), q.expectedBlock(), ok ? "O" : "X"));
             for (RagChunk h : hits) {
-                System.out.printf("    - (%s) %s%n", h.getBlockKey(), h.getContent());
+                note("    - (%s) %s".formatted(h.getBlockKey(), h.getContent()));
             }
         }
-        System.out.printf("== %s: %d/%d%n", model, score, questions.size());
+        note("== %s: %d/%d".formatted(model, score, questions.size()));
     }
 
     private void tryEvaluate(String model, EmbeddingClient embedding,
@@ -138,7 +151,7 @@ class RagEvalSmokeTest {
         try {
             evaluate(model, embedding, event, questions);
         } catch (Exception e) {
-            System.out.printf("== %s: SKIP (%s)%n", model, e.getMessage());
+            note("== %s: SKIP (%s)".formatted(model, e.getMessage()));
         }
     }
 
@@ -166,7 +179,13 @@ class RagEvalSmokeTest {
                     new BedrockEmbeddingClient(region, "cohere.embed-multilingual-v3"),
                     event, questions);
         } else {
-            System.out.println("== Bedrock 2종 SKIP (RAG_EVAL_AWS=1 필요)");
+            note("== Bedrock 2종 SKIP (RAG_EVAL_AWS=1 필요)");
         }
+
+        Path dir = Paths.get("build", "rag-eval");
+        Files.createDirectories(dir);
+        String name = "eval-" + LocalDateTime.now()
+                .format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")) + ".md";
+        Files.write(dir.resolve(name), report, StandardCharsets.UTF_8);
     }
 }
