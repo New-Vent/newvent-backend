@@ -3,6 +3,7 @@ package com.newvent.registry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.jsoup.Jsoup;
@@ -23,14 +24,46 @@ import org.jsoup.safety.Safelist;
  */
 public class BlockValidator {
 
-    public record Failure(String code, String message) {
-        /** 경고는 기록하되 결과를 실패로 만들거나 재시도를 일으키지 않는다. */
-        public boolean isWarning() {
-            return code.startsWith("warning_");
+    /**
+     * 검증 실패 한 건.
+     *
+     * @param kind    무슨 실패인가. 분류·심각도·대응은 FailureCode 가 안다
+     * @param detail  어디서 났나 — 블록 key, 슬롯 key, id, 수치 등. 없으면 null
+     * @param message 재시도 프롬프트에 그대로 들어가는 의미 메시지
+     *
+     * ★ 코드 문자열을 손으로 조립하지 않는다. Failure.of(FailureCode, …) 로만 만든다.
+     */
+    public record Failure(FailureCode kind, String detail, String message) {
+
+        public Failure {
+            Objects.requireNonNull(kind, "kind");
+            Objects.requireNonNull(message, "message");
         }
 
+        public static Failure of(FailureCode kind, String message) {
+            return new Failure(kind, null, message);
+        }
+
+        public static Failure of(FailureCode kind, String detail, String message) {
+            return new Failure(kind, detail, message);
+        }
+
+        /**
+         * 로그(llm_call_logs.fail_codes)와 테스트가 보는 문자열 — "lost_hero", "slot_lost_period", "no_html".
+         * ★ 형식을 바꾸면 과거 로그와 집계가 끊긴다.
+         */
+        public String code() {
+            return detail == null ? kind.key() : kind.key() + "_" + detail;
+        }
+
+        /** 경고는 기록하되 결과를 실패로 만들거나 재시도를 일으키지 않는다. */
+        public boolean isWarning() {
+            return kind.severity() == FailureCode.Severity.WARNING;
+        }
+
+        /** 결과를 실패로 만든다 — 재시도하거나 관리자에게 되묻는다 */
         public boolean isBlocking() {
-            return !isWarning();
+            return kind.severity() == FailureCode.Severity.HARD;
         }
     }
 
@@ -45,17 +78,17 @@ public class BlockValidator {
     public static List<Failure> validateGenerated(String html) {
         List<Failure> f = new ArrayList<>();
         if (html == null || html.isBlank()) {
-            f.add(new Failure("no_html", "HTML을 찾을 수 없습니다. <section> 으로 시작하는 HTML만 출력하세요."));
+            f.add(Failure.of(FailureCode.NO_HTML, "HTML을 찾을 수 없습니다. <section> 으로 시작하는 HTML만 출력하세요."));
             return f;
         }
         Document doc = Jsoup.parseBodyFragment(html);
 
         if (doc.body().select("section").isEmpty()) {
-            f.add(new Failure("no_section", "<section> 태그가 없습니다."));
+            f.add(Failure.of(FailureCode.NO_SECTION, "<section> 태그가 없습니다."));
         }
         for (Element sec : doc.body().select("section")) {
             if (!sec.hasAttr("data-block")) {
-                f.add(new Failure("no_data_block",
+                f.add(Failure.of(FailureCode.NO_DATA_BLOCK,
                         "모든 <section> 에 data-block=\"이름\" 속성이 있어야 합니다."));
                 break;
             }
@@ -65,7 +98,7 @@ public class BlockValidator {
             Element el = doc.body().selectFirst(b.selector());
             if (el == null) {
                 if (b.required()) {
-                    f.add(new Failure("lost_" + b.key(), b.key() + " 영역이 없습니다."));
+                    f.add(Failure.of(FailureCode.LOST_BLOCK, b.key(), b.key() + " 영역이 없습니다."));
                 }
                 continue;
             }
@@ -75,13 +108,13 @@ public class BlockValidator {
         // 서버 소유 블록을 모델이 만들었나
         for (Block b : Block.serverBlocks()) {
             if (doc.body().selectFirst(b.selector()) != null) {
-                f.add(new Failure("wrote_" + b.key(),
+                f.add(Failure.of(FailureCode.WROTE_SERVER_BLOCK, b.key(),
                         b.key() + " 영역은 만들면 안 됩니다. 서버가 채웁니다."));
             }
         }
 
         if (html.matches("(?s).*\\[[가-힣A-Za-z0-9 _\\-]{1,15}\\].*")) {
-            f.add(new Failure("placeholder", "자리표시자가 남아 있습니다. 해당 문장을 빼세요."));
+            f.add(Failure.of(FailureCode.PLACEHOLDER, "자리표시자가 남아 있습니다. 해당 문장을 빼세요."));
         }
         return f;
     }
@@ -102,12 +135,12 @@ public class BlockValidator {
 
         Element el = doc.body().selectFirst(target.selector());
         if (el == null) {
-            f.add(new Failure("lost_" + target.key(), target.key() + " 영역이 없습니다."));
+            f.add(Failure.of(FailureCode.LOST_BLOCK, target.key(), target.key() + " 영역이 없습니다."));
             return f;
         }
         for (Block b : Block.values()) {
             if (b != target && doc.body().selectFirst(b.selector()) != null) {
-                f.add(new Failure("extra_" + b.key(),
+                f.add(Failure.of(FailureCode.EXTRA_BLOCK, b.key(),
                         b.key() + " 영역은 만들지 마세요. 요청한 영역만 출력하세요."));
             }
         }
@@ -132,7 +165,7 @@ public class BlockValidator {
         if (b.must() == null) return;
 
         if (el.selectFirst(b.must()) == null) {
-            f.add(new Failure("empty_" + b.key(), editing
+            f.add(Failure.of(FailureCode.EMPTY_BLOCK, b.key(), editing
                     ? b.key() + " 안에 내용이 없습니다. 원래 구조를 그대로 두고 문구만 고치세요."
                     : b.key() + " 안에 " + b.shape() + " — 맨 텍스트만 두면 안 됩니다."));
             return;
@@ -142,7 +175,7 @@ public class BlockValidator {
             //   must 가 "ul li, .benefit-card" 라 백지도 템플릿도 같은 코드로 센다.
             int n = el.select(b.must()).size();
             if (n < b.minItems()) {
-                f.add(new Failure("few_" + b.key(),
+                f.add(Failure.of(FailureCode.FEW_ITEMS, b.key(),
                         b.key() + " 항목이 " + n + "개입니다. " + b.minItems() + "개 이상 필요합니다."));
             }
         }
@@ -168,15 +201,15 @@ public class BlockValidator {
      */
     private static void checkPreserved(String before, String after, List<Failure> f) {
         diff(Slots.keysOf(before), Slots.keysOf(after), f,
-                "slot_lost_", "data-slot=\"%s\" 가 붙은 태그를 지웠습니다. "
+                FailureCode.SLOT_LOST, "data-slot=\"%s\" 가 붙은 태그를 지웠습니다. "
                         + "그 자리는 서버가 채우는 곳입니다. 태그와 속성을 원래대로 두세요.",
-                "slot_invented_", "data-slot=\"%s\" 를 새로 만들었습니다. "
+                FailureCode.SLOT_INVENTED, "data-slot=\"%s\" 를 새로 만들었습니다. "
                         + "data-slot 은 서버만 심습니다. 원래 있던 것만 그대로 두세요.");
 
         diff(Slots.idsOf(before), Slots.idsOf(after), f,
-                "id_lost_", "id=\"%s\" 를 지웠습니다. 화면 기능이 그 id 로 요소를 찾습니다. "
+                FailureCode.ID_LOST, "id=\"%s\" 를 지웠습니다. 화면 기능이 그 id 로 요소를 찾습니다. "
                         + "원래 있던 id 를 그대로 두세요.",
-                "id_invented_", "id=\"%s\" 를 새로 만들었습니다. "
+                FailureCode.ID_INVENTED, "id=\"%s\" 를 새로 만들었습니다. "
                         + "id 는 화면 기능이 쓰는 이름이라 임의로 추가하면 안 됩니다.");
 
         diffClasses(Slots.classMap(before), Slots.classMap(after), f);
@@ -203,20 +236,20 @@ public class BlockValidator {
             if (after == null) continue;              // 요소가 없어진 건 위에서 잡았다
             if (e.getValue().equals(after)) continue;
 
-            f.add(new Failure("class_changed_" + at,
+            f.add(Failure.of(FailureCode.CLASS_CHANGED, at,
                     at + " 의 class 를 바꿨습니다. 디자인과 버튼 동작이 이 class 에 걸려 있습니다. "
                             + "원래대로 두세요: class=\"" + e.getValue() + "\""));
         }
     }
 
     private static void diff(Set<String> was, Set<String> now, List<Failure> f,
-                             String lostCode, String lostMsg,
-                             String newCode, String newMsg) {
+                             FailureCode lostCode, String lostMsg,
+                             FailureCode newCode, String newMsg) {
         for (String k : was) {
-            if (!now.contains(k)) f.add(new Failure(lostCode + k, String.format(lostMsg, k)));
+            if (!now.contains(k)) f.add(Failure.of(lostCode, k, String.format(lostMsg, k)));
         }
         for (String k : now) {
-            if (!was.contains(k)) f.add(new Failure(newCode + k, String.format(newMsg, k)));
+            if (!was.contains(k)) f.add(Failure.of(newCode, k, String.format(newMsg, k)));
         }
     }
 
