@@ -1,0 +1,24 @@
+# 로컬 개발용 — **기본 프로파일이다.** 아무것도 지정하지 않고 ./gradlew bootRun 하면 이걸로 뜬다.
+#
+# ★ 배포에서 쓰면 안 된다 — 쿠키가 Secure 없이 나가고, 누구나 아는 비밀키로 토큰이 서명된다.
+#   배포는 SPRING_PROFILES_ACTIVE=prod (application-prod.yaml). prod 가 켜지면 이 파일은 안 읽힌다.
+#
+# ★ 경로 · 쿠키 이름은 배포와 같다. 여기서 바꾸는 건 보안 수준뿐이다.
+#   그래야 로컬에서 통과한 게 배포에서도 통과한다.
+#
+# 이 파일에는 비밀 정보가 없다 — 커밋한다. 개인 설정(DB 비밀번호 등)은 환경변수나
+# application-local.yaml(커밋 안 됨)에 둔다.
+
+auth:
+  jwt:
+    # 개발 전용 기본값. HS256 은 32바이트 이상이어야 한다. 환경변수가 있으면 그걸 쓴다
+    secret: ${JWT_SECRET:newvent-dev-only-jwt-secret-do-not-use-in-prod}
+    # 자동 갱신을 빨리 보고 싶으면 줄인다. 예) AUTH_ACCESS_TTL_MINUTES=1
+    access-ttl-minutes: ${AUTH_ACCESS_TTL_MINUTES:30}
+  cookie:
+    # http://localhost 에서도 쿠키가 저장되게 한다 (Safari 는 Secure 쿠키를 http 에서 버린다)
+    secure: ${AUTH_COOKIE_SECURE:false}
+    same-site: Lax
+  cors:
+    # Vite 개발 서버 — 사용자 5173, 관리자 5174. 프록시를 거쳐도 브라우저가 보내는 Origin 은 이 주소다
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}
