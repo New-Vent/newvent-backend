@@ -4,6 +4,7 @@ import java.time.OffsetDateTime;
 
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
+import com.newvent.user.domain.MembershipGrade;
 
 public record PublicEventResponse(
         Long id,
@@ -11,6 +12,7 @@ public record PublicEventResponse(
         OffsetDateTime startDate,
         OffsetDateTime endDate,
         EventStatus status,
+        MembershipGrade grade,
         String url,
         String publishedHtml,
         boolean closingSoon) {
@@ -22,6 +24,6 @@ public record PublicEventResponse(
 
         return new PublicEventResponse(
                 event.getId(), event.getTitle(), event.getStartDate(), event.getEndDate(),
-                event.getStatus(), event.getUrl(), publishedHtml, closingSoon);
+                event.getStatus(), event.getGrade(), event.getUrl(), publishedHtml, closingSoon);
     }
 }
