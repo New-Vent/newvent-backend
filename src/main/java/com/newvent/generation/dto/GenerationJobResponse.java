@@ -14,7 +14,12 @@ public record GenerationJobResponse(
         int percent,
         boolean done,
         Integer attempt,
-        String message) {
+        String message,
+
+        /**
+         * 이 작업이 만든 버전의 id. phase 가 SAVING 을 지나기 전에는 null
+         */
+        Long versionId) {
 
     public static GenerationJobResponse of(GenerationJob j) {
         return new GenerationJobResponse(
@@ -24,6 +29,7 @@ public record GenerationJobResponse(
                 j.phase().percent(),
                 j.done(),
                 j.attempt() > 0 ? j.attempt() : null,
-                j.message());
+                j.message(),
+                j.versionId());
     }
 }

@@ -61,6 +61,13 @@ public final class GenerationJob {
      */
     private final AtomicReference<Integer> attempt = new AtomicReference<>(0);
 
+    /**
+     * 이 작업이 만들어 낸 버전의 id. <b>저장 단계를 지나기 전에는 null</b>.
+     *
+     * ★ 실패 · 중단으로 끝나면 끝까지 null 이다 — 저장 단계에 도달하지 못했으므로 버전이 없다.
+     */
+    private final AtomicReference<Long> versionId = new AtomicReference<>();
+
     public GenerationJob(Long eventId) {
         this.eventId = eventId;
     }
@@ -71,6 +78,9 @@ public final class GenerationJob {
     public Phase phase()       { return phase.get(); }
     public int attempt()       { return attempt.get(); }
     public boolean done()      { return phase.get().done(); }
+
+    /** 이 작업이 만든 버전의 id. 저장 전에는 null */
+    public Long versionId()    { return versionId.get(); }
 
     /** 관리자에게 보여줄 문장. 실패했을 때만 채워진다 */
     public String message()    { return message.get(); }
@@ -86,6 +96,17 @@ public final class GenerationJob {
         attempt.set(n);
     }
 
+    /**
+     * 저장 직후 워커가 부른다. 한 작업에서 한 번만 불린다.
+     *
+     * ★★ <b>to(DONE) 보다 먼저 불러야 한다.</b>
+     *   순서를 뒤집으면 폴링이 phase == DONE 을 보고 versionId 를 읽었는데
+     *   아직 null 인 창이 생긴다. 먼저 쓰면 그런 창이 없다.
+     */
+    public void versionId(Long id) {
+        versionId.set(id);
+    }
+
     public void fail(String userMessage) {
         message.set(userMessage);
         to(Phase.FAILED);
@@ -96,6 +117,8 @@ public final class GenerationJob {
      * 중단을 요청한다. **즉시 멈추지 않는다.**
      *
      * ★ RetryService 루프 중간에는 끼어들 훅이 없다.
+     * ★ 저장이 시작된 뒤의 중단은 반영되지 않는다 — 저장 후에는 checkCancelled 를
+     *   부르지 않으므로 DONE 으로 끝나고 버전 1행이 남는다. 그게 맞다. 이미 저장됐다.
      */
     public void requestCancel() {
         cancelRequested.set(true);

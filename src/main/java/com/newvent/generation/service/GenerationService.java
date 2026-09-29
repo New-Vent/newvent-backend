@@ -188,11 +188,20 @@ public class GenerationService {
         if (job.checkCancelled()) return;
 
         job.to(GenerationJob.Phase.SAVING);
-        String note = cmd.hasTemplate()
-                ? "템플릿 " + cmd.templateCode()
-                : "백지 생성";
-        versions.save(cmd.eventId(), html, note);
 
+        // ★ sourceVersionId = null 이다. 생성은 고친 원본이 없다 — 두 번째 생성이어도 그렇다.
+        //   기준이 된 버전을 가리키는 건 수정(EditService)의 일이다.
+        VersionStore.Saved saved = versions.save(cmd.eventId(), html, null);
+
+        // ★ "템플릿 T1" / "백지 생성" 은 event_versions 에 넣을 컬럼이 없어 로그로만 남긴다
+        log.info("버전 저장 (event={}, versionId={}, v{}) — {}",
+                cmd.eventId(), saved.versionId(), saved.versionNo(),
+                cmd.hasTemplate() ? "템플릿 " + cmd.templateCode() : "백지 생성");
+
+        // ★★ 순서가 중요하다 — versionId 를 먼저 넣고 DONE 을 나중에 넣는다
+        //   폴링은 다른 스레드(HTTP)에서 읽는다. 반대로 하면 프론트가
+        //   phase == DONE 을 보고 versionId 를 읽었는데 null 인 순간이 생긴다.
+        job.versionId(saved.versionId());
         job.to(GenerationJob.Phase.DONE);
     }
 
@@ -309,12 +318,22 @@ public class GenerationService {
     // ── 보여주기 ──────────────────────────────────────────────────
 
     /**
+     * 미리보기 한 장. <b>HTML 과 그 HTML 이 어느 버전인지를 같이 준다.</b>
+     * ★ versionId 를 같이 주는 이유
+     *   자동 저장 버전은 checkpoint = false 라서 저장 지점 목록 API 에 안 나온다.
+     *   프론트가 "지금 화면이 어느 버전인가" 를 알 수 있는 경로가
+     *   생성 폴링 응답과 이 미리보기 응답뿐이다. 이후 수정 요청의 기준이 된다.
+     */
+    public record Rendered(Long versionId, int versionNo, String html) {}
+
+    /**
      * 저장된 HTML 에 이벤트 값을 채워 돌려준다. **미리보기·게시 응답에서 부른다.**
      *
      * ★ 저장 경로에서 부르면 안 된다. 값이 박혀서 들어가고 clear() 한 이유가 없어진다.
      */
-    public Optional<String> render(GenerateCommand cmd) {
+    public Optional<Rendered> render(GenerateCommand cmd) {
         return versions.latest(cmd.eventId())
-                .map(html -> Slots.fill(html, cmd.period(), cmd.ctaUrl()));
+                .map(v -> new Rendered(v.versionId(), v.versionNo(),
+                        Slots.fill(v.html(), cmd.period(), cmd.ctaUrl())));
     }
 }
