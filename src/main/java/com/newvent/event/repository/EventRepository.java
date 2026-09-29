@@ -21,6 +21,40 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             + "WHERE e.id = :id AND e.deletedAt IS NULL AND e.status <> :excludedStatus")
     Optional<Event> findPublicEventById(@Param("id") Long id, @Param("excludedStatus") EventStatus excludedStatus);
 
+    // 관리자 상세 조회용. template/publishedVersion 모두 LAZY라 fetch join으로 같이 가져온다.
+    @Query("SELECT e FROM Event e LEFT JOIN FETCH e.template LEFT JOIN FETCH e.publishedVersion "
+            + "WHERE e.id = :id AND e.deletedAt IS NULL")
+    Optional<Event> findAdminEventById(@Param("id") Long id);
+
+    // 관리자 목록 조회 — 이름(부분 일치)·상태·기간(구간 겹침) 조건은 전달되지 않으면(null) 제외한다.
+    // namePattern은 Service에서 이미 "%값%" 형태로 소문자 변환까지 마친 LIKE 패턴을 그대로 받는다.
+    // 정렬은 기존 인메모리 저장소와 동일하게 수정일 내림차순(동률이면 id 내림차순)으로 맞춘다.
+    @Query(
+            value = """
+            SELECT e FROM Event e
+            LEFT JOIN FETCH e.template t
+            WHERE e.deletedAt IS NULL
+              AND (:namePattern IS NULL OR LOWER(e.title) LIKE :namePattern)
+              AND (:status IS NULL OR e.status = :status)
+              AND (:periodFrom IS NULL OR e.endDate >= :periodFrom)
+              AND (:periodTo IS NULL OR e.startDate <= :periodTo)
+            ORDER BY e.updatedAt DESC, e.id DESC
+            """,
+            countQuery = """
+            SELECT COUNT(e) FROM Event e
+            WHERE e.deletedAt IS NULL
+              AND (:namePattern IS NULL OR LOWER(e.title) LIKE :namePattern)
+              AND (:status IS NULL OR e.status = :status)
+              AND (:periodFrom IS NULL OR e.endDate >= :periodFrom)
+              AND (:periodTo IS NULL OR e.startDate <= :periodTo)
+            """)
+    Page<Event> findAdminEvents(
+            @Param("namePattern") String namePattern,
+            @Param("status") EventStatus status,
+            @Param("periodFrom") OffsetDateTime periodFrom,
+            @Param("periodTo") OffsetDateTime periodTo,
+            Pageable pageable);
+
     // 카테고리(templateCode)/키워드(이벤트명)/진행상태(progress)는 전달되지 않으면(null) 조건에서 제외한다.
     // progress는 EventProgress.name() 문자열("UPCOMING"/"ONGOING"/"ENDED")을 그대로 받는다.
     // keywordPattern은 Service에서 이미 "%값%" 형태로 소문자 변환까지 마친 LIKE 패턴을 그대로 받는다.
