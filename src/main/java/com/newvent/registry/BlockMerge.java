@@ -41,7 +41,8 @@ public final class BlockMerge {
         Objects.requireNonNull(block, "block");
 
         Document doc = Jsoup.parse(html, "", Parser.htmlParser().setTrackPosition(true));
-        Elements matches = doc.select("section" + block.selector());
+        // ★ 태그 이름을 붙이지 않는다 — 검증기와 같은 문자열을 봐야 한다.
+        Elements matches = doc.select(block.selector());
         if (matches.size() != 1) {
             throw new IllegalArgumentException(block.key() + " 섹션은 정확히 하나여야 합니다. 발견: "
                     + matches.size());
