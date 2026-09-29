@@ -105,6 +105,11 @@ class GenerationServiceTest {
         return ((GenerationService.StartResult.Started) r).job();
     }
 
+    /** 저장된 마지막 HTML. latest() 가 Snapshot 을 주므로 html() 로 꺼낸다 */
+    private String savedHtml(long eventId) {
+        return versions.latest(eventId).orElseThrow().html();
+    }
+
     private GenerateCommand blank(long id, String text) {
         return new GenerateCommand(id, null, "여름 이벤트", "2026.07.01 ~ 07.31", null, text);
     }
@@ -132,7 +137,7 @@ class GenerationServiceTest {
     void 템플릿_슬롯이_비어있다() {
         await(started(service.start(template(1L, "template_2_holiday_gift"))));
 
-        String saved = versions.latest(1L).orElseThrow();
+        String saved = savedHtml(1L);
         var doc = Jsoup.parseBodyFragment(saved);
 
         assertEquals("", doc.body().select(Slot.PERIOD.selector()).text(),
@@ -179,7 +184,7 @@ class GenerationServiceTest {
         GenerationJob job = await(started(service.start(blank(1L, "여름 데이터 이벤트"))));
         assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
 
-        String saved = versions.latest(1L).orElseThrow();
+        String saved = savedHtml(1L);
         assertEquals(java.util.Set.of("period"), Slots.keysOf(saved),
                 "기간 슬롯이 없습니다. 백지로 만든 페이지에는 기간이 영영 안 나옵니다.");
 
@@ -196,10 +201,10 @@ class GenerationServiceTest {
         GenerateCommand cmd = blank(1L, "여름 데이터 이벤트");
         await(started(service.start(cmd)));
 
-        assertFalse(versions.latest(1L).orElseThrow().contains("2026.07.01"),
+        assertFalse(savedHtml(1L).contains("2026.07.01"),
                 "저장본에 날짜가 박혔습니다. 비워서 저장해야 합니다.");
 
-        String rendered = service.render(cmd).orElseThrow();
+        String rendered = service.render(cmd).orElseThrow().html();
         assertTrue(rendered.contains("2026.07.01 ~ 07.31"),
                 "보여줄 때 기간이 안 채워졌습니다: " + rendered);
     }
@@ -235,6 +240,47 @@ class GenerationServiceTest {
         assertInstanceOf(GenerationService.StartResult.Started.class,
                 service.start(blank(1L, "다시 시도")),
                 "실패 후 재시도가 막혔습니다.");
+    }
+
+    // ── 저장한 버전의 id 를 작업에 남기는가 ───────────────────────
+
+    @Test
+    @DisplayName("★ 끝난 작업은 저장한 버전의 id 를 들고 있다 — 폴링이 이걸 내려준다")
+    void 완료된_작업은_버전_id_를_들고_있다() {
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(GENERATED)));
+
+        GenerationJob job = await(started(service.start(blank(1L, "여름 데이터 이벤트"))));
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertNotNull(job.versionId(),
+                "DONE 인데 versionId 가 없습니다. 자동 저장 버전은 is_checkpoint=false 라서 "
+                + "저장 지점 목록 API 에 안 나오고, 프론트가 그 id 를 알 경로가 "
+                + "폴링 응답과 미리보기 응답뿐입니다.");
+        assertEquals(versions.latest(1L).orElseThrow().versionId(), job.versionId(),
+                "작업에 남은 id 가 실제 저장된 마지막 버전과 다릅니다.");
+    }
+
+    @Test
+    @DisplayName("★ 템플릿 경로도 버전 id 를 남긴다 — 모델을 안 불러도 페이지는 생긴다")
+    void 템플릿_경로도_버전_id_를_남긴다() {
+        GenerationJob job = await(started(
+                service.start(template(1L, "template_2_holiday_gift"))));
+
+        assertNotNull(job.versionId(),
+                "템플릿 경로에서 versionId 가 비었습니다. 이 경로도 버전 1행을 남깁니다.");
+    }
+
+    @Test
+    @DisplayName("★ 실패로 끝난 작업의 versionId 는 null 이다 — 저장 단계에 못 갔다")
+    void 실패한_작업은_버전_id_가_없다() {
+        retry.willReturn(fail());
+
+        GenerationJob job = await(started(service.start(blank(1L, "여름 데이터 이벤트"))));
+
+        assertEquals(GenerationJob.Phase.FAILED, job.phase());
+        assertNull(job.versionId(),
+                "실패했는데 versionId 가 채워졌습니다. 프론트가 없는 버전을 "
+                + "수정 기준으로 잡습니다.");
     }
 
     // ── 진입부 ────────────────────────────────────────────────────

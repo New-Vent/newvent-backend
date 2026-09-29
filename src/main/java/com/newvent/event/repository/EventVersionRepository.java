@@ -16,4 +16,9 @@ public interface EventVersionRepository extends JpaRepository<EventVersion, Long
     Optional<EventVersion> findByIdAndEventId(Long versionId, Long eventId);
 
     Optional<EventVersion> findByIdAndEventIdAndCheckpointTrue(Long versionId, Long eventId);
+
+    /**
+     * 이 이벤트의 마지막 버전. version_no 최대값 하나.
+     */
+    Optional<EventVersion> findTopByEventIdOrderByVersionNoDesc(Long eventId);
 }

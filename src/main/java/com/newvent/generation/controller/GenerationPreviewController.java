@@ -33,6 +33,8 @@ public class GenerationPreviewController {
 
     /**
      * 저장된 마지막 버전에 이벤트 값을 채워 돌려준다.
+     *
+     * ★ 응답에 versionId 가 같이 나간다. 프론트가 이후 수정의 기준으로 쓴다.
      */
     @GetMapping
     @Transactional(readOnly = true)
@@ -41,7 +43,7 @@ public class GenerationPreviewController {
         Event event = events.findByIdAndDeletedAtIsNull(eventId)
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
         return generation.render(GenerateCommand.forRender(event))
-                .map(html -> ApiResponse.success(PreviewResponse.of(html)))
+                .map(rendered -> ApiResponse.success(PreviewResponse.of(rendered)))
                 .orElseThrow(() -> new GenerationException(GenerationErrorCode.PAGE_NOT_FOUND));
     }
 }
