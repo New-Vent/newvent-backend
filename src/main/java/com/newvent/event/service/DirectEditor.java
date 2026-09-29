@@ -38,7 +38,7 @@ public final class DirectEditor {
 
     public static List<EditableText> editableTexts(String html) {
         Objects.requireNonNull(html, "html은 필수입니다.");
-        List<TextNode> nodes = collectTextNodes(Jsoup.parse(html));
+        List<TextNode> nodes = collectTextNodes(Jsoup.parseBodyFragment(html));
         List<EditableText> result = new ArrayList<>(nodes.size());
         for (int i = 0; i < nodes.size(); i++) {
             result.add(new EditableText(i, nodes.get(i).text().trim()));
@@ -84,7 +84,7 @@ public final class DirectEditor {
             return baseHtml;
         }
 
-        Document doc = Jsoup.parse(baseHtml);
+        Document doc = Jsoup.parseBodyFragment(baseHtml);
         doc.outputSettings().prettyPrint(false);
 
         List<TextNode> textNodes = collectTextNodes(doc);
@@ -106,7 +106,7 @@ public final class DirectEditor {
             targetNode.text(edit.after());
         }
 
-        return doc.outerHtml();
+        return doc.body().html();
     }
 
     /**
@@ -128,7 +128,7 @@ public final class DirectEditor {
             return baseHtml;
         }
 
-        Document doc = Jsoup.parse(baseHtml);
+        Document doc = Jsoup.parseBodyFragment(baseHtml);
         doc.outputSettings().prettyPrint(false);
 
         Element ctaElement = doc.selectFirst("[data-slot=\"cta-link\"]");
@@ -159,7 +159,7 @@ public final class DirectEditor {
             ctaElement.attr("style", serializedStyle);
         }
 
-        return doc.outerHtml();
+        return doc.body().html();
     }
 
     private static void applySizeStyle(Map<String, String> styleMap, String size) {

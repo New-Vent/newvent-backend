@@ -27,6 +27,31 @@ class DirectEditorTest {
     private static final TemplateLoader TEMPLATES = new ResourceTemplateLoader();
 
     @Test
+    @DisplayName("직접 편집한 저장본은 미리보기 슬롯 처리와 같은 HTML 조각 형식을 유지한다")
+    void 직접편집_결과는_HTML_조각() {
+        for (TemplateLoader.Source template : TEMPLATES.all()) {
+            String saved = Slots.clear(template.html());
+            DirectEditor.EditableText first = DirectEditor.editableTexts(saved).get(0);
+
+            String textEdited = DirectEditor.applyTextEdits(saved,
+                    List.of(new TextEdit(first.index(), first.before(), "수정된 문구")));
+            String styleEdited = DirectEditor.applyButtonStyle(saved,
+                    new ButtonStyle("#d60076", null, null, null));
+            String combined = DirectEditor.apply(saved,
+                    List.of(new TextEdit(first.index(), first.before(), "수정된 문구")),
+                    new ButtonStyle("#d60076", null, null, null));
+
+            for (String result : List.of(textEdited, styleEdited, combined)) {
+                assertFalse(result.matches("(?is).*<(?:!doctype|html|head|body)\\b.*"), template.code());
+                assertEquals(5, Jsoup.parseBodyFragment(result).select("section[data-block]").size(),
+                        template.code());
+                assertNotNull(Jsoup.parseBodyFragment(Slots.fill(result, "2026.10.01", "/join"))
+                        .selectFirst(Block.HERO.selector()), template.code());
+            }
+        }
+    }
+
+    @Test
     @DisplayName("템플릿 5종의 저장본과 기간을 채운 미리보기에서 편집 가능 문구의 인덱스가 같다")
     void 미리보기와_저장본의_인덱스_일치() {
         for (TemplateLoader.Source template : TEMPLATES.all()) {
