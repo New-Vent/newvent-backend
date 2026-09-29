@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.List;
 
+import com.newvent.user.domain.MembershipGrade;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.BeanUtils;
@@ -52,12 +53,16 @@ class PublicEventApiTest {
     void 상세조회_성공() throws Exception {
         EventVersion publishedVersion = newEventVersion("<h1>hello</h1>");
         Event event = newEvent(1L, "가을 이벤트", "https://newvent.example/e/1", publishedVersion);
+
+        ReflectionTestUtils.setField(event, "grade", MembershipGrade.EXCELLENT);
+
         when(publicEventService.getPublicEvent(1L)).thenReturn(event);
         when(publicEventService.isClosingSoon(any(), any())).thenReturn(true);
 
         mockMvc.perform(get("/api/public/events/1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.title").value("가을 이벤트"))
+                .andExpect(jsonPath("$.data.grade").value("EXCELLENT"))
                 .andExpect(jsonPath("$.data.url").value("https://newvent.example/e/1"))
                 .andExpect(jsonPath("$.data.publishedHtml").value("<h1>hello</h1>"))
                 .andExpect(jsonPath("$.data.closingSoon").value(true));
