@@ -12,7 +12,7 @@ public enum EventErrorCode implements ErrorCode {
     EVENT_NOT_ACCESSIBLE(HttpStatus.NOT_FOUND, "EVENT404-2", "지금은 접근할 수 없는 이벤트입니다."),
     VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-3", "이벤트 버전을 찾을 수 없습니다."),
     /** REQ-EVT-10. 종료 판정은 생성 쪽(GEN409-1)과 같이 status = ENDED 기준. */
-    EVENT_ENDED_NOT_EDITABLE(HttpStatus.CONFLICT, "EVENT409-0", "종료된 이벤트는 수정할 수 없습니다.");
+    EVENT_ENDED_NOT_EDITABLE(HttpStatus.CONFLICT, "EVENT409-1", "종료된 이벤트는 수정할 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

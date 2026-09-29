@@ -19,11 +19,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.newvent.auth.dto.AuthUser;
 import com.newvent.auth.jwt.JwtProvider;
 import com.newvent.common.config.SecurityConfig;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
@@ -47,6 +49,9 @@ class AdminEventControllerTest {
 
     @Autowired
     MockMvc mockMvc;
+
+    @Autowired
+    JwtProvider jwtProvider;
 
     @MockitoBean
     EventService eventService;
@@ -113,9 +118,10 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
                 "sports_cheer", null, MembershipGrade.BEST,
                 null, false);
-        given(eventService.create(any(EventCreateRequest.class))).willReturn(created);
+        given(eventService.create(eq(1L), any(EventCreateRequest.class))).willReturn(created);
 
         mockMvc.perform(post("/api/admin/events")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtProvider.issue(AuthUser.admin(1L)).value())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -190,7 +196,7 @@ class AdminEventControllerTest {
     }
 
     @Test
-    @DisplayName("종료된 이벤트 수정은 409 와 EVENT409-0 을 반환한다")
+    @DisplayName("종료된 이벤트 수정은 409 와 EVENT409-1 을 반환한다")
     void 종료된_이벤트_수정은_409를_반환한다() throws Exception {
         given(eventService.update(eq(6L), any(EventUpdateRequest.class)))
                 .willThrow(new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE));
@@ -201,7 +207,7 @@ class AdminEventControllerTest {
                                 { "name": "이름 변경" }
                                 """))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("EVENT409-0"));
+                .andExpect(jsonPath("$.code").value("EVENT409-1"));
     }
 
     @Test

@@ -234,7 +234,7 @@ Content-Type: application/json
 | 수정 후 `endAt` ≤ `startAt` | 400 | `EVENT400-0` |
 | 없거나 삭제된 이벤트 | 404 | `EVENT404-0` |
 | 없는·비활성 `templateKey` | 404 | `EVENT404-1` |
-| 종료(`ENDED`)된 이벤트 | 409 | `EVENT409-0` |
+| 종료(`ENDED`)된 이벤트 | 409 | `EVENT409-1` |
 
 ---
 
