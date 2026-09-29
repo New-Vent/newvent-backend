@@ -7,7 +7,7 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.util.Objects;
 
-import org.hibernate.engine.spi.SharedSessionContractImplementor;
+import org.hibernate.type.descriptor.WrapperOptions;
 import org.hibernate.usertype.UserType;
 
 /**
@@ -44,14 +44,14 @@ public class VectorType implements UserType<String>{
 
     @Override
     public String nullSafeGet(ResultSet rs, int position,
-            SharedSessionContractImplementor session, Object owner) throws SQLException {
+            WrapperOptions options) throws SQLException {
         String value = rs.getString(position);
         return rs.wasNull() ? null : value;
     }
 
     @Override
     public void nullSafeSet(PreparedStatement st, String value, int index,
-            SharedSessionContractImplementor session) throws SQLException {
+            WrapperOptions options) throws SQLException {
         if (value == null) {
             st.setNull(index, Types.OTHER);
         } else {
