@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventVersion;
+import com.newvent.event.dto.response.EventVersionDetailResponse;
 import com.newvent.event.dto.response.EventVersionListResponse;
 import com.newvent.event.dto.response.EventVersionSummaryResponse;
 import com.newvent.event.exception.EventErrorCode;
@@ -63,5 +64,16 @@ public class EventVersionService {
 
         return eventVersionRepository.findByIdAndEventId(versionId, eventId)
                 .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
+    }
+
+    public EventVersionDetailResponse getVersion(Long eventId, Long versionId) {
+        eventRepository.findByIdAndDeletedAtIsNull(eventId)
+                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+
+        EventVersion version = eventVersionRepository
+                .findByIdAndEventIdAndCheckpointTrue(versionId, eventId)
+                .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
+
+        return EventVersionDetailResponse.from(version);
     }
 }

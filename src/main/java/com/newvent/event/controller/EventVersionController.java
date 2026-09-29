@@ -3,6 +3,7 @@ package com.newvent.event.controller;
 import org.springframework.web.bind.annotation.*;
 
 import com.newvent.common.response.ApiResponse;
+import com.newvent.event.dto.response.EventVersionDetailResponse;
 import com.newvent.event.dto.response.EventVersionListResponse;
 import com.newvent.event.service.EventVersionService;
 
@@ -37,5 +38,13 @@ public class EventVersionController {
     ) {
         eventVersionService.unmarkCheckpoint(eventId, versionId);
         return ApiResponse.successNoData();
+    }
+
+    @GetMapping("/{versionId}")
+    public ApiResponse<EventVersionDetailResponse> getVersion(
+            @PathVariable Long eventId,
+            @PathVariable Long versionId
+    ) {
+        return ApiResponse.success(eventVersionService.getVersion(eventId, versionId));
     }
 }
