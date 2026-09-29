@@ -23,7 +23,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * RAG 검색용 임베딩 청크. V8__add_rag_tables.sql 매핑
+ * RAG 검색용 임베딩 청크. V10__add_rag_tables.sql 매핑
  *
  * ★ embedding 은 String 으로 들고 있는다.
  * 	 Hibernate 7에서 float[] 직매핑은 별도 타입 라이브러리가 필요하다.
