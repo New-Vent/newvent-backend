@@ -157,7 +157,7 @@ public class BlockValidator {
 
     	int was = beforeBox.children().size();
     	int now = afterBox.children().size();
-    	if (was <= now) return;
+    	if (now <= was) return;
 
     	f.add(new Failure("item_added_" + target.key(),
     	        target.key() + " 항목 개수가 " + was + "개에서 " + now + "개로 늘었습니다. " +
