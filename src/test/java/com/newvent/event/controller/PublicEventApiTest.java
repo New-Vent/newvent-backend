@@ -34,6 +34,7 @@ import com.newvent.event.dto.response.PublicEventSummaryResponse;
 import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.exception.EventNotFoundException;
 import com.newvent.event.service.PublicEventService;
+import com.newvent.user.domain.MembershipGrade;
 
 // @WebMvcTest 는 SecurityConfig 를 스캔하지 않는다 — 안 넣으면 Spring Security 기본 설정(전부 인증 + CSRF)이 걸린다.
 // 실제 인가 규칙(GET /api/public/events/* 허용)으로 검증하려고 직접 import 한다.
@@ -52,12 +53,16 @@ class PublicEventApiTest {
     void 상세조회_성공() throws Exception {
         EventVersion publishedVersion = newEventVersion("<h1>hello</h1>");
         Event event = newEvent(1L, "가을 이벤트", "https://newvent.example/e/1", publishedVersion);
+
+        ReflectionTestUtils.setField(event, "grade", MembershipGrade.EXCELLENT);
+
         when(publicEventService.getPublicEvent(1L)).thenReturn(event);
         when(publicEventService.isClosingSoon(any(), any())).thenReturn(true);
 
         mockMvc.perform(get("/api/public/events/1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.title").value("가을 이벤트"))
+                .andExpect(jsonPath("$.data.grade").value("EXCELLENT"))
                 .andExpect(jsonPath("$.data.url").value("https://newvent.example/e/1"))
                 .andExpect(jsonPath("$.data.publishedHtml").value("<h1>hello</h1>"))
                 .andExpect(jsonPath("$.data.closingSoon").value(true));
