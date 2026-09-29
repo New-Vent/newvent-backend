@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventVersion;
+import com.newvent.event.dto.response.EventVersionDetailResponse;
 import com.newvent.event.dto.response.EventVersionListResponse;
 import com.newvent.event.dto.response.EventVersionSummaryResponse;
 import com.newvent.event.exception.EventException;
@@ -172,6 +173,65 @@ public class EventVersionServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> eventVersionService.markCheckpoint(eventId, versionId))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo("EVENT404-3");
+    }
+
+    @Test
+    void getVersion_returnsCheckpointHtml() {
+        Long eventId = 12L;
+        Long versionId = 102L;
+        OffsetDateTime createdAt =
+                OffsetDateTime.parse("2026-09-21T14:20:00+09:00");
+
+        Event event = mock(Event.class);
+        EventVersion version = mock(EventVersion.class);
+
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId))
+                .thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventIdAndCheckpointTrue(versionId, eventId))
+                .thenReturn(Optional.of(version));
+        when(version.getId()).thenReturn(versionId);
+        when(version.getVersionNo()).thenReturn(2);
+        when(version.getCreatedAt()).thenReturn(createdAt);
+        when(version.getHtmlContent())
+                .thenReturn("<html><body>저장된 화면</body></html>");
+
+        EventVersionDetailResponse response =
+                eventVersionService.getVersion(eventId, versionId);
+
+        assertThat(response.versionId()).isEqualTo(versionId);
+        assertThat(response.versionNo()).isEqualTo(2);
+        assertThat(response.createdAt()).isEqualTo(createdAt);
+        assertThat(response.htmlContent())
+                .isEqualTo("<html><body>저장된 화면</body></html>");
+
+        verify(eventVersionRepository)
+                .findByIdAndEventIdAndCheckpointTrue(versionId, eventId);
+    }
+
+    @Test
+    void getVersion_throwsWhenEventIsMissingOrDeleted() {
+        when(eventRepository.findByIdAndDeletedAtIsNull(12L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventVersionService.getVersion(12L, 102L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo("EVENT404-0");
+
+        verifyNoInteractions(eventVersionRepository);
+    }
+
+    @Test
+    void getVersion_throwsWhenVersionIsNotACheckpointForEvent() {
+        when(eventRepository.findByIdAndDeletedAtIsNull(12L))
+                .thenReturn(Optional.of(mock(Event.class)));
+        when(eventVersionRepository.findByIdAndEventIdAndCheckpointTrue(102L, 12L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventVersionService.getVersion(12L, 102L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo("EVENT404-3");
