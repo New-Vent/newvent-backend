@@ -3,6 +3,9 @@ package com.newvent.event.dto.request;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import com.newvent.event.exception.DirectEditErrorCode;
+import com.newvent.event.exception.DirectEditException;
+
 /**
  * CTA 참여 버튼 스타일 변경 레코드.
  *
@@ -33,7 +36,7 @@ public record ButtonStyle(String background, String color, String size, String s
             return null;
         }
         if (!HEX_COLOR_PATTERN.matcher(trimmed).matches()) {
-            throw new IllegalArgumentException(fieldName + " 은(는) ^#[0-9a-f]{6} 형식이어야 합니다. 입력: " + value);
+            throw new DirectEditException(DirectEditErrorCode.INVALID_BUTTON_STYLE);
         }
         return trimmed.toLowerCase();
     }
@@ -47,7 +50,7 @@ public record ButtonStyle(String background, String color, String size, String s
             return null;
         }
         if (!allowed.contains(trimmed)) {
-            throw new IllegalArgumentException(fieldName + " 값은 " + allowed + " 중 하나여야 합니다. 입력: " + value);
+            throw new DirectEditException(DirectEditErrorCode.INVALID_BUTTON_STYLE);
         }
         return trimmed;
     }

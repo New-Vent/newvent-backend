@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 
 import com.newvent.event.dto.request.ButtonStyle;
 import com.newvent.event.dto.request.TextEdit;
+import com.newvent.event.exception.DirectEditErrorCode;
+import com.newvent.event.exception.DirectEditException;
 import com.newvent.generation.service.ResourceTemplateLoader;
 import com.newvent.generation.service.TemplateLoader;
 import com.newvent.registry.Block;
@@ -37,7 +39,9 @@ class DirectEditorTest {
 
             // notices의 텍스트로 치환 시도 시 모두 실패해야 함 (notices는 수집 목록에 없으므로)
             List<TextEdit> invalidEdits = List.of(new TextEdit(0, "유의사항", "변조 시도"));
-            assertThrows(IllegalArgumentException.class, () -> DirectEditor.applyTextEdits(html, invalidEdits));
+            DirectEditException ex = assertThrows(DirectEditException.class,
+                    () -> DirectEditor.applyTextEdits(html, invalidEdits));
+            assertEquals(DirectEditErrorCode.BEFORE_TEXT_MISMATCH, ex.getErrorCode());
         }
     }
 
@@ -69,13 +73,15 @@ class DirectEditorTest {
         TemplateLoader.Source tpl = TEMPLATES.find("template_1_sports_cheer").orElseThrow();
         String html = tpl.html();
 
-        // before 불일치
-        assertThrows(IllegalArgumentException.class,
+        // before 불일치 -> 409 Conflict
+        DirectEditException mismatchEx = assertThrows(DirectEditException.class,
                 () -> DirectEditor.applyTextEdits(html, List.of(new TextEdit(0, "완전히 다른 문구", "새 문구"))));
+        assertEquals(DirectEditErrorCode.BEFORE_TEXT_MISMATCH, mismatchEx.getErrorCode());
 
-        // 범위 초과 인덱스
-        assertThrows(IllegalArgumentException.class,
+        // 범위 초과 인덱스 -> 400 Bad Request
+        DirectEditException outOfBoundsEx = assertThrows(DirectEditException.class,
                 () -> DirectEditor.applyTextEdits(html, List.of(new TextEdit(9999, "아무거나", "새 문구"))));
+        assertEquals(DirectEditErrorCode.INVALID_TEXT_INDEX, outOfBoundsEx.getErrorCode());
     }
 
     @Test
@@ -123,18 +129,23 @@ class DirectEditorTest {
     @DisplayName("ButtonStyle 화이트리스트 외의 값이 들어오면 예외를 발생시킨다")
     void 버튼스타일_화이트리스트_예외() {
         // 잘못된 색상 형식
-        assertThrows(IllegalArgumentException.class,
+        DirectEditException ex1 = assertThrows(DirectEditException.class,
                 () -> new ButtonStyle("red", "#ffffff", "medium", "pill"));
-        assertThrows(IllegalArgumentException.class,
+        assertEquals(DirectEditErrorCode.INVALID_BUTTON_STYLE, ex1.getErrorCode());
+
+        DirectEditException ex2 = assertThrows(DirectEditException.class,
                 () -> new ButtonStyle("#12345", "#ffffff", "medium", "pill"));
+        assertEquals(DirectEditErrorCode.INVALID_BUTTON_STYLE, ex2.getErrorCode());
 
         // 잘못된 size
-        assertThrows(IllegalArgumentException.class,
+        DirectEditException ex3 = assertThrows(DirectEditException.class,
                 () -> new ButtonStyle("#000000", "#ffffff", "extra-large", "pill"));
+        assertEquals(DirectEditErrorCode.INVALID_BUTTON_STYLE, ex3.getErrorCode());
 
         // 잘못된 shape
-        assertThrows(IllegalArgumentException.class,
+        DirectEditException ex4 = assertThrows(DirectEditException.class,
                 () -> new ButtonStyle("#000000", "#ffffff", "medium", "triangle"));
+        assertEquals(DirectEditErrorCode.INVALID_BUTTON_STYLE, ex4.getErrorCode());
     }
 
     @Test

@@ -16,6 +16,8 @@ import org.jsoup.select.NodeVisitor;
 
 import com.newvent.event.dto.request.ButtonStyle;
 import com.newvent.event.dto.request.TextEdit;
+import com.newvent.event.exception.DirectEditErrorCode;
+import com.newvent.event.exception.DirectEditException;
 import com.newvent.registry.Block;
 
 /**
@@ -55,7 +57,7 @@ public final class DirectEditor {
      * 규칙:
      * 1. [data-block] 내부의 텍스트 노드를 문서 순서로 수집 (공백만 있는 노드 제외)
      * 2. data-block="notices" (서버 소유 블록)는 수집에서 제외
-     * 3. index로 찾아 before와 대조, 불일치 시 예외 발생
+     * 3. index로 찾아 before와 대조, 불일치 시 409 Conflict 예외 발생
      * 4. TextNode.text(after)로 치환하여 자동 이스케이프 (XSS 방지)
      *
      * @param baseHtml 기준 버전 HTML
@@ -76,8 +78,7 @@ public final class DirectEditor {
         for (TextEdit edit : edits) {
             int idx = edit.index();
             if (idx < 0 || idx >= textNodes.size()) {
-                throw new IllegalArgumentException(
-                        "유효하지 않은 텍스트 노드 인덱스입니다. (index: " + idx + ", 전체 노드 수: " + textNodes.size() + ")");
+                throw new DirectEditException(DirectEditErrorCode.INVALID_TEXT_INDEX);
             }
 
             TextNode targetNode = textNodes.get(idx);
@@ -85,9 +86,7 @@ public final class DirectEditor {
             String expectedText = edit.before().trim();
 
             if (!actualText.equals(expectedText) && !targetNode.getWholeText().trim().equals(expectedText)) {
-                throw new IllegalArgumentException(
-                        "수정 전 텍스트가 일치하지 않습니다. 화면이 최신이 아닙니다. (index: " + idx
-                                + ", 기대: \"" + edit.before() + "\", 실제: \"" + actualText + "\")");
+                throw new DirectEditException(DirectEditErrorCode.BEFORE_TEXT_MISMATCH);
             }
 
             targetNode.text(edit.after());
@@ -120,7 +119,7 @@ public final class DirectEditor {
 
         Element ctaElement = doc.selectFirst("[data-slot=\"cta-link\"]");
         if (ctaElement == null) {
-            throw new IllegalArgumentException("참여 버튼([data-slot=\"cta-link\"])을 찾을 수 없습니다.");
+            throw new DirectEditException(DirectEditErrorCode.CTA_NOT_FOUND);
         }
 
         Map<String, String> styleMap = parseInlineStyle(ctaElement.attr("style"));
