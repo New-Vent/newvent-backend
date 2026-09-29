@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.event.domain.Event;
+import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventVersion;
 import com.newvent.event.dto.response.EventVersionDetailResponse;
 import com.newvent.event.dto.response.EventVersionListResponse;
@@ -54,7 +55,18 @@ public class EventVersionService {
 
     @Transactional
     public void unmarkCheckpoint(Long eventId, Long versionId) {
-        EventVersion version = findVersion(eventId, versionId);
+        Event event = eventRepository.findByIdAndDeletedAtIsNull(eventId)
+                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+
+        EventVersion version = eventVersionRepository.findByIdAndEventId(versionId, eventId)
+                .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
+
+        if (event.getStatus() == EventStatus.PUBLISHED
+                && event.getPublishedVersion() != null
+                && versionId.equals(event.getPublishedVersion().getId())) {
+            throw new EventException(EventErrorCode.PUBLISHED_VERSION_CHECKPOINT_UNMARK_FORBIDDEN);
+        }
+
         version.unmarkCheckpoint();
     }
 

@@ -1,7 +1,6 @@
 package com.newvent.event.controller;
 
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -18,8 +17,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import com.newvent.common.exception.handler.GlobalExceptionHandler;
 import com.newvent.event.dto.response.EventVersionDetailResponse;
 import com.newvent.event.dto.response.EventVersionListResponse;
+import com.newvent.event.exception.EventErrorCode;
+import com.newvent.event.exception.EventException;
 import com.newvent.event.service.EventVersionService;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,7 +36,9 @@ class EventVersionControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(eventVersionController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(eventVersionController)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
     }
 
     @Test
@@ -76,6 +80,21 @@ class EventVersionControllerTest {
                         12L, 102L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
+
+        verify(eventVersionService).unmarkCheckpoint(12L, 102L);
+    }
+
+    @Test
+    void unmarkCheckpoint_returnsConflictForPublishedVersion() throws Exception {
+        doThrow(new EventException(
+                EventErrorCode.PUBLISHED_VERSION_CHECKPOINT_UNMARK_FORBIDDEN))
+                .when(eventVersionService).unmarkCheckpoint(12L, 102L);
+
+        mockMvc.perform(delete(
+                        "/api/admin/events/{eventId}/versions/{versionId}/checkpoint",
+                        12L, 102L))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-0"));
 
         verify(eventVersionService).unmarkCheckpoint(12L, 102L);
     }
