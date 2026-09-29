@@ -6,6 +6,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.event.domain.EventVersion;
+import com.newvent.event.exception.EventErrorCode;
+import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.event.repository.EventVersionRepository;
 
@@ -47,10 +49,10 @@ public class JpaVersionStore implements VersionStore {
                 .map(v -> v.getVersionNo() + 1)
                 .orElse(1);
 
-        // ★ 프록시로 받는다 — FK 만 필요하고 내용을 안 읽는다
-        EventVersion source = (sourceVersionId == null)
-                ? null
-                : versions.getReferenceById(sourceVersionId);
+        // ★ eventId 를 같이 건다 — 남의 이벤트 버전을 원본으로 걸 수 없다.
+        EventVersion source = (sourceVersionId == null) ? null
+                : versions.findByIdAndEventId(sourceVersionId, eventId)
+                        .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
 
         EventVersion saved = versions.save(EventVersion.create(
                 events.getReferenceById(eventId), nextNo, html, source));

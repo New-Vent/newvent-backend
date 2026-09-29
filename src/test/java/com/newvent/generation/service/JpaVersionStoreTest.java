@@ -19,6 +19,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventVersion;
+import com.newvent.event.exception.EventErrorCode;
+import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventVersionRepository;
 
 /**
@@ -244,5 +246,22 @@ class JpaVersionStoreTest {
             tem.flush();
         }, "uk_event_versions_event_version_no 가 막지 않았습니다. "
                 + "JpaVersionStore 의 max+1 은 이벤트당 직렬화에 의존합니다.");
+    }
+
+    @Test
+    @DisplayName("남의 이벤트 버전을 원본으로 주면 거부한다")
+    void 다른_이벤트의_버전은_원본이_될_수_없다() {
+        Long a = seedEvent("이벤트 A");
+        Long b = seedEvent("이벤트 B");
+
+        Long aVersion = store.save(a, "<p>A 의 버전</p>", null).versionId();
+
+        EventException e = assertThrows(EventException.class,
+                () -> store.save(b, "<p>B 의 버전</p>", aVersion));
+        assertEquals(EventErrorCode.VERSION_NOT_FOUND, e.getErrorCode());
+
+        // ★ 거부만 보면 부족하다. 행이 안 생겼는지도 본다
+        assertTrue(versions.findTopByEventIdOrderByVersionNoDesc(b).isEmpty(),
+                "거부된 저장이 행을 남기면 안 된다");
     }
 }
