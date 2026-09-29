@@ -8,6 +8,7 @@ import java.util.Set;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.nodes.TextNode;
 import org.jsoup.safety.Safelist;
 
 /**
@@ -112,6 +113,7 @@ public class BlockValidator {
             }
         }
         checkShape(target, el, f, true);
+        checkItemCount(target, before, el, f);
         checkPreserved(before, html, f);
         return f;
     }
@@ -146,6 +148,33 @@ public class BlockValidator {
                         b.key() + " 항목이 " + n + "개입니다. " + b.minItems() + "개 이상 필요합니다."));
             }
         }
+    }
+
+    /**
+	 * ★ 늘어난 것만 본다. 줄어든 것은 허용한다.
+	 *   "복주머니를 2개만 보여줘" 는 정상 요청이다 (TemplateRoundTripTest).
+	 *   전멸은 minItems(few_키)가 잡는다.
+     *
+     *  ★ container() 가 null 인 블록(hero·notices·cta)은 검사하지 않는다.
+     */
+    private static void checkItemCount(Block target, String before, Element el, List<Failure> f) {
+    	if (target.container() == null) return;
+
+    	Document beforeDoc = Jsoup.parseBodyFragment(before == null ? "" : before);
+    	Element beforeBox = beforeDoc.body().selectFirst(target.container());
+    	Element afterBox = el.selectFirst(target.container());
+    	if (beforeBox == null || afterBox == null) return;				// 없으면 shape 쪽에서 잡음
+
+    	int wasMust = beforeBox.select(target.must()).size();
+    	int nowMust = afterBox.select(target.must()).size();
+    	int wasKids = beforeBox.children().size();
+    	int nowKids = afterBox.children().size();
+    	// ★ 둘 다 늘지 않았으면 통과 (삭제 허용 — "복주머니 2개" 유지)
+    	if (nowMust <= wasMust && nowKids <= wasKids) return;
+
+    	f.add(new Failure("item_added_" + target.key(),
+    	        target.key() + " 항목이 늘었습니다. " +
+    	        "항목 추가는 서버만 합니다. 문구만 고치세요."));
     }
 
     // ── 보존 검사 ──────────────────────────────────────────────────
@@ -309,6 +338,31 @@ public class BlockValidator {
         return doc.body().html();
     }
 
+    /**
+     * 서버가 카드를 먼저 복제한다. 모델은 문구만 채운다.
+     *
+     * ★ 복제한 카드의 글자는 비운다. 구조·class·data-slot 은 그대로 둔다.
+     *   모델이 받은 HTML에 이미 4개가 있으므로 전후 개수가 같아 검사를 통과한다.
+     *   모델이 스스로 늘리면 3→4로 걸린다.
+     *
+     * ★ container() 가 null 이면 그대로 돌려준다.
+     */
+    public static String duplicateCard(String html, Block target) {
+    	if (target.container() == null) return html;
+
+    	Document doc = Jsoup.parseBodyFragment(html == null ? "" : html);
+    	Element box = doc.body().selectFirst(target.container());
+    	if(box == null || box.children().isEmpty()) return html;
+
+    	Element src = box.select(target.must()).last(); // 이후
+    	if (src == null) return html;
+
+    	Element copy = src.clone();
+    	emptyText(copy);
+    	src.parent().appendChild(copy);
+    	return doc.body().html();
+    }
+
     /** style="..." 안에서 허용 목록에 있는 선언만 남긴다 */
     private static String cleanStyle(String style) {
         StringBuilder out = new StringBuilder();
@@ -354,5 +408,20 @@ public class BlockValidator {
     public static String blockOf(String doc, Block target) {
         Element el = Jsoup.parseBodyFragment(doc).body().selectFirst(target.selector());
         return el == null ? "" : el.outerHtml();
+    }
+
+    /**
+     * ★ 글자와 내용성 속성값을 비운다. 자식 태그·속성 구조는 둔다.
+     *   text("")는 자식 요소까지 지워서 버튼 등이 사라진다.
+     *   data-demo-msg 는 카드별 문구라 복사하면 원본 안내가 뜬다.
+     *   없으면 프론트가 '(데모)' 를 보여준다.
+     */
+    private static void emptyText(Element el) {
+        for (TextNode t : new ArrayList<>(el.textNodes())) t.remove();
+        for (Element d : el.select("*")) {
+            for (TextNode t : new ArrayList<>(d.textNodes())) t.remove();
+            d.removeAttr("data-demo-msg");   // 추가
+        }
+        el.removeAttr("data-demo-msg");      // 추가 (자기 자신도)
     }
 }
