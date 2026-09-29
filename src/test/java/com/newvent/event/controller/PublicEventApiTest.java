@@ -13,7 +13,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.List;
 
-import com.newvent.user.domain.MembershipGrade;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.BeanUtils;
@@ -35,6 +34,7 @@ import com.newvent.event.dto.response.PublicEventSummaryResponse;
 import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.exception.EventNotFoundException;
 import com.newvent.event.service.PublicEventService;
+import com.newvent.user.domain.MembershipGrade;
 
 // @WebMvcTest 는 SecurityConfig 를 스캔하지 않는다 — 안 넣으면 Spring Security 기본 설정(전부 인증 + CSRF)이 걸린다.
 // 실제 인가 규칙(GET /api/public/events/* 허용)으로 검증하려고 직접 import 한다.
