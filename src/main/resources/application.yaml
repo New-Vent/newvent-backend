@@ -48,6 +48,16 @@ llm:
   model: ${LLM_MODEL:}
   region: ${BEDROCK_REGION:}
 
+# Docker 헬스체크
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
 logging:
   level:
     com.newvent: DEBUG

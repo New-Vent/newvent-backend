@@ -1,0 +1,48 @@
+# 앱까지 컨테이너로 띄운다. 기존 docker-compose.yml 위에 겹쳐 쓴다.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml up --build
+#
+#   docker-compose.yml 은 로컬 개발용 DB 전용이다
+#   DB 만 컨테이너로 쓰는 게 개발할 땐 편하다(디버거·핫리로드).
+
+#
+#   평소 개발   docker compose up                                     DB 만
+#   이미지 확인 docker compose -f ... -f docker-compose.app.yml up     전부
+
+services:
+  app:
+    build:
+      context: .
+    container_name: newvent-app
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy      # DB 가 뜰 때까지 기다린다
+
+    environment:
+      #   localhost 가 아니라 서비스 이름이다.
+      DB_URL: "jdbc:postgresql://postgres:5432/${DB_NAME}"
+      DB_USERNAME: "${DB_USERNAME}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+
+      #   인증 — JWT_SECRET 은 기본값이 없다. 없으면 JwtProvider 생성에서 죽는다
+      JWT_SECRET: "${JWT_SECRET}"
+      AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-false}"
+      AUTH_COOKIE_SAME_SITE: "${AUTH_COOKIE_SAME_SITE:-Lax}"
+      CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-http://localhost:5173}"
+
+      # LLM — 기본은 mock 이라 AWS 자격증명 없이도 뜬다
+      LLM_PROVIDER: "${LLM_PROVIDER:-mock}"
+      LLM_MODEL: "${LLM_MODEL:-}"
+      BEDROCK_REGION: "${BEDROCK_REGION:-us-east-1}"
+
+    ports:
+      - "8080:8080"
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s               # 스프링 기동이 느리다. 짧으면 계속 unhealthy

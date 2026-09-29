@@ -72,6 +72,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/error").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/auth/login", "/auth/admin/login", "/auth/refresh", "/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/public/users/signup").permitAll()

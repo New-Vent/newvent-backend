@@ -94,4 +94,18 @@ public class EventVersion {
         checkpoint = false;
         checkpointedAt = null;
     }
+
+        /**
+         * 새 버전. JpaVersionStore 가 이걸로 만든다.
+         *
+         */
+    public static EventVersion create(Event event, int versionNo,
+            String htmlContent, EventVersion sourceVersion) {
+            EventVersion version = new EventVersion();
+            version.event = event;
+            version.versionNo = versionNo;
+            version.htmlContent = htmlContent;
+            version.sourceVersion = sourceVersion;
+            return version;
+        }
 }
