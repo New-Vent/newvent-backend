@@ -103,6 +103,7 @@ public class BlockValidator {
             }
         }
         checkShape(target, el, f, true);
+        checkItemCount(target, before, el, f);
         checkPreserved(before, html, f);
         return f;
     }
@@ -137,6 +138,33 @@ public class BlockValidator {
                         b.key() + " 항목이 " + n + "개입니다. " + b.minItems() + "개 이상 필요합니다."));
             }
         }
+    }
+
+    /**
+     * 항목 개수가 바뀌었나. **컨테이너 안에서 must() 로 센다.**
+     *
+     *  ★ 직계 자식(childreN)으로 세지 않는다.
+     *    template_1 benefits 는 카드 2개가 래퍼 안에 중첩돼 있고,
+     *    template_3 steps 는 구분선 2개가 섞여 있다. 직계로 세면 틀린다.
+     *    must() 는 "ul li, .benefit-card"라 백지도 템플릿도 같은 코드로 센다.
+     *
+     *  ★ container() 가 null 인 블록(hero·notices·cta)은 검사하지 않는다.
+     */
+    private static void checkItemCount(Block target, String before, Element el, List<Failure> f) {
+    	if (target.container() == null) return;
+
+    	Document beforeDoc = Jsoup.parseBodyFragment(before == null ? "" : before);
+    	Element beforeBox = beforeDoc.body().selectFirst(target.container());
+    	Element afterBox = el.selectFirst(target.container());
+    	if (beforeBox == null || afterBox == null) return;				// 없으면 shape 쪽에서 잡음
+
+    	int was = beforeBox.select(target.must()).size();
+    	int now = afterBox.select(target.must()).size();
+    	if(was == now) return;
+
+    	f.add(new Failure((now > was ? "item_added_" : "item_removed_") + target.key(),
+    			target.key() + " 항목 개수가 " + was + "개에서 " + now + "개로 바뀌었습니다. " +
+    			"항목 수는 서버만 바꿉니다. 문구만 고치세요."));
     }
 
     // ── 보존 검사 ──────────────────────────────────────────────────
@@ -298,6 +326,28 @@ public class BlockValidator {
             else el.attr("style", safe);
         }
         return doc.body().html();
+    }
+
+    /**
+     * 서버가 카드를 먼저 복제한다. 모델은 문구만 채운다.
+     *
+     * ★ 복제한 카드의 글자는 비운다. 구조·class·data-slot 은 그대로 둔다.
+     *   모델이 받은 HTML에 이미 4개가 있으므로 전후 개수가 같아 검사를 통과한다.
+     *   모델이 스스로 늘리면 3→4로 걸린다.
+     *
+     * ★ container() 가 null 이면 그대로 돌려준다.
+     */
+    public static String duplicateCard(String html, Block target) {
+    	if (target.container() == null) return html;
+
+    	Document doc = Jsoup.parseBodyFragment(html == null ? "" : html);
+    	Element box = doc.body().selectFirst(target.container());
+    	if(box == null || box.children().isEmpty()) return html;
+
+    	Element copy = box.children().last().clone();
+    	copy.text("");
+    	box.appendChild(copy);
+    	return doc.body().html();
     }
 
     /** style="..." 안에서 허용 목록에 있는 선언만 남긴다 */
