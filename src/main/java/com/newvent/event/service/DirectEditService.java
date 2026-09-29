@@ -2,9 +2,11 @@ package com.newvent.event.service;
 
 import java.util.Objects;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.newvent.event.domain.Event;
 import com.newvent.event.dto.request.DirectEditRequest;
 import com.newvent.event.dto.response.DirectEditResponse;
 import com.newvent.event.exception.EventErrorCode;
@@ -37,13 +39,17 @@ public class DirectEditService {
      * @return 새로 생성된 버전 ID 및 순번 응답
      */
     @Transactional
-    public DirectEditResponse directEdit(Long eventId, DirectEditRequest request) {
+    public DirectEditResponse directEdit(Long eventId, DirectEditRequest request, Long adminId) {
         Objects.requireNonNull(eventId, "eventId는 필수입니다.");
         Objects.requireNonNull(request, "request는 필수입니다.");
 
         // 1. 이벤트 존재 확인 (삭제된 이벤트는 제외)
-        eventRepository.findByIdAndDeletedAtIsNull(eventId)
+        Event event = eventRepository.findByIdAndDeletedAtIsNull(eventId)
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        if (adminId == null || event.getOwnerAdmin() == null
+                || !adminId.equals(event.getOwnerAdmin().getId())) {
+            throw new AccessDeniedException("이벤트 소유 관리자만 직접 편집할 수 있습니다.");
+        }
 
         // 2. 기준 버전 HTML 조회 (해당 이벤트의 버전인지 함께 검증)
         String baseHtml = versionStore.htmlOf(eventId, request.sourceVersionId())

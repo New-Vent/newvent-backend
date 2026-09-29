@@ -15,7 +15,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
 
+import com.newvent.admin.domain.Admin;
 import com.newvent.event.domain.Event;
 import com.newvent.event.dto.request.ButtonStyle;
 import com.newvent.event.dto.request.DirectEditRequest;
@@ -53,7 +55,7 @@ class DirectEditServiceTest {
     void directEdit_성공() {
         Long eventId = 1L;
         Long sourceVersionId = 12L;
-        Event event = mock(Event.class);
+        Event event = ownedEvent();
         String baseHtml = TEMPLATES.find("template_1_sports_cheer").orElseThrow().html();
 
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event));
@@ -66,7 +68,7 @@ class DirectEditServiceTest {
                 List.of(new TextEdit(0, "LIVE PROMOTION", "REALTIME EVENT")),
                 new ButtonStyle("#d60076", "#ffffff", "medium", "pill"));
 
-        DirectEditResponse response = directEditService.directEdit(eventId, request);
+        DirectEditResponse response = directEditService.directEdit(eventId, request, 1L);
 
         assertThat(response.versionId()).isEqualTo(13L);
         assertThat(response.versionNo()).isEqualTo(5);
@@ -88,7 +90,7 @@ class DirectEditServiceTest {
                 List.of(new TextEdit(0, "LIVE PROMOTION", "새문구")),
                 null);
 
-        assertThatThrownBy(() -> directEditService.directEdit(eventId, request))
+        assertThatThrownBy(() -> directEditService.directEdit(eventId, request, 1L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND);
@@ -101,7 +103,7 @@ class DirectEditServiceTest {
     void directEdit_기준버전미존재() {
         Long eventId = 1L;
         Long sourceVersionId = 999L;
-        Event event = mock(Event.class);
+        Event event = ownedEvent();
 
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event));
         when(versionStore.htmlOf(eventId, sourceVersionId)).thenReturn(Optional.empty());
@@ -111,7 +113,7 @@ class DirectEditServiceTest {
                 List.of(new TextEdit(0, "LIVE PROMOTION", "새문구")),
                 null);
 
-        assertThatThrownBy(() -> directEditService.directEdit(eventId, request))
+        assertThatThrownBy(() -> directEditService.directEdit(eventId, request, 1L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode())
                 .isEqualTo(EventErrorCode.VERSION_NOT_FOUND);
@@ -124,7 +126,7 @@ class DirectEditServiceTest {
     void directEdit_before불일치_409() {
         Long eventId = 1L;
         Long sourceVersionId = 12L;
-        Event event = mock(Event.class);
+        Event event = ownedEvent();
         String baseHtml = TEMPLATES.find("template_1_sports_cheer").orElseThrow().html();
 
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event));
@@ -135,7 +137,7 @@ class DirectEditServiceTest {
                 List.of(new TextEdit(0, "전혀 다른 옛날 문구", "새문구")),
                 null);
 
-        assertThatThrownBy(() -> directEditService.directEdit(eventId, request))
+        assertThatThrownBy(() -> directEditService.directEdit(eventId, request, 1L))
                 .isInstanceOf(DirectEditException.class)
                 .extracting(ex -> ((DirectEditException) ex).getErrorCode())
                 .isEqualTo(DirectEditErrorCode.BEFORE_TEXT_MISMATCH);
@@ -150,5 +152,27 @@ class DirectEditServiceTest {
                 .isInstanceOf(DirectEditException.class)
                 .extracting(ex -> ((DirectEditException) ex).getErrorCode())
                 .isEqualTo(DirectEditErrorCode.EMPTY_EDIT_REQUEST);
+    }
+
+    @Test
+    @DisplayName("다른 관리자의 이벤트는 기준 HTML 조회나 새 버전 저장 전에 거부한다")
+    void directEdit_다른_관리자_거부() {
+        Long eventId = 1L;
+        Event event = ownedEvent();
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event));
+        DirectEditRequest request = new DirectEditRequest(12L,
+                List.of(new TextEdit(0, "이전", "변경")), null);
+
+        assertThatThrownBy(() -> directEditService.directEdit(eventId, request, 2L))
+                .isInstanceOf(AccessDeniedException.class);
+        verifyNoInteractions(versionStore);
+    }
+
+    private static Event ownedEvent() {
+        Event event = mock(Event.class);
+        Admin owner = mock(Admin.class);
+        when(event.getOwnerAdmin()).thenReturn(owner);
+        when(owner.getId()).thenReturn(1L);
+        return event;
     }
 }

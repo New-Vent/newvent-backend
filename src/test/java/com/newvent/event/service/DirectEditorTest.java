@@ -14,13 +14,43 @@ import com.newvent.event.dto.request.ButtonStyle;
 import com.newvent.event.dto.request.TextEdit;
 import com.newvent.event.exception.DirectEditErrorCode;
 import com.newvent.event.exception.DirectEditException;
+import com.newvent.generation.dto.PreviewResponse;
+import com.newvent.generation.service.GenerationService;
 import com.newvent.generation.service.ResourceTemplateLoader;
 import com.newvent.generation.service.TemplateLoader;
 import com.newvent.registry.Block;
+import com.newvent.registry.Slot;
+import com.newvent.registry.Slots;
 
 class DirectEditorTest {
 
     private static final TemplateLoader TEMPLATES = new ResourceTemplateLoader();
+
+    @Test
+    @DisplayName("템플릿 5종의 저장본과 기간을 채운 미리보기에서 편집 가능 문구의 인덱스가 같다")
+    void 미리보기와_저장본의_인덱스_일치() {
+        for (TemplateLoader.Source template : TEMPLATES.all()) {
+            String saved = Slots.clear(template.html());
+            String rendered = Slots.fill(saved, "2026.10.01 ~ 2026.10.31", "/join");
+            PreviewResponse preview = PreviewResponse.of(new GenerationService.Rendered(12L, 3, rendered));
+
+            assertEquals(DirectEditor.editableTexts(saved), preview.editableTexts(), template.code());
+            assertFalse(preview.editableTexts().stream()
+                    .anyMatch(t -> t.before().equals("2026.10.01 ~ 2026.10.31")), template.code());
+        }
+
+        String saved = Slots.clear(TEMPLATES.find("template_1_sports_cheer").orElseThrow().html());
+        String rendered = Slots.fill(saved, "2026.10.01 ~ 2026.10.31", "/join");
+        DirectEditor.EditableText prize = DirectEditor.editableTexts(rendered).stream()
+                .filter(t -> t.before().equals("🏆 경품"))
+                .findFirst().orElseThrow();
+
+        String edited = DirectEditor.applyTextEdits(saved,
+                List.of(new TextEdit(prize.index(), prize.before(), "🎁 선물")));
+        Document doc = Jsoup.parse(edited);
+        assertEquals("🎁 선물", doc.selectFirst(".sp-sb-row:has([data-slot=period]) + .sp-sb-row span").text());
+        assertEquals("", doc.selectFirst(Slot.PERIOD.selector()).text());
+    }
 
     @Test
     @DisplayName("템플릿 5종 전체에서 data-block 내부 텍스트는 수집되고 notices 블록은 제외된다")

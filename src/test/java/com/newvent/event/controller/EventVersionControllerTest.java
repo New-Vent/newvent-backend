@@ -1,6 +1,7 @@
 package com.newvent.event.controller;
 
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -15,9 +16,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import com.newvent.auth.dto.AuthUser;
 import com.newvent.event.dto.response.DirectEditResponse;
 import com.newvent.event.dto.response.EventVersionDetailResponse;
 import com.newvent.event.dto.response.EventVersionListResponse;
@@ -26,6 +30,9 @@ import com.newvent.event.service.EventVersionService;
 
 @ExtendWith(MockitoExtension.class)
 class EventVersionControllerTest {
+
+    private static final Authentication ADMIN =
+            new UsernamePasswordAuthenticationToken(AuthUser.admin(1L), null);
 
     @Mock
     private EventVersionService eventVersionService;
@@ -116,7 +123,8 @@ class EventVersionControllerTest {
     void directEdit_returnsSuccessWithNewVersion() throws Exception {
         Long eventId = 12L;
         DirectEditResponse response = new DirectEditResponse(103L, 3);
-        when(directEditService.directEdit(org.mockito.ArgumentMatchers.eq(eventId), org.mockito.ArgumentMatchers.any()))
+        when(directEditService.directEdit(org.mockito.ArgumentMatchers.eq(eventId),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(1L)))
                 .thenReturn(response);
 
         String requestJson = """
@@ -139,6 +147,7 @@ class EventVersionControllerTest {
                 """;
 
         mockMvc.perform(post("/api/admin/events/{eventId}/versions/direct-edit", eventId)
+                        .principal(ADMIN)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content(requestJson))
                 .andExpect(status().isOk())
@@ -146,13 +155,15 @@ class EventVersionControllerTest {
                 .andExpect(jsonPath("$.data.versionId").value(103))
                 .andExpect(jsonPath("$.data.versionNo").value(3));
 
-        verify(directEditService).directEdit(org.mockito.ArgumentMatchers.eq(eventId), org.mockito.ArgumentMatchers.any());
+        verify(directEditService).directEdit(org.mockito.ArgumentMatchers.eq(eventId),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(1L));
     }
 
     @Test
     void directEdit_whenBeforeTextMismatch_returnsConflict409() throws Exception {
         Long eventId = 12L;
-        when(directEditService.directEdit(org.mockito.ArgumentMatchers.eq(eventId), org.mockito.ArgumentMatchers.any()))
+        when(directEditService.directEdit(org.mockito.ArgumentMatchers.eq(eventId),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(1L)))
                 .thenThrow(new com.newvent.event.exception.DirectEditException(
                         com.newvent.event.exception.DirectEditErrorCode.BEFORE_TEXT_MISMATCH));
 
@@ -170,11 +181,27 @@ class EventVersionControllerTest {
                 """;
 
         mockMvc.perform(post("/api/admin/events/{eventId}/versions/direct-edit", eventId)
+                        .principal(ADMIN)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content(requestJson))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(com.newvent.event.exception.DirectEditErrorCode.BEFORE_TEXT_MISMATCH.getCode()))
                 .andExpect(jsonPath("$.message").value(com.newvent.event.exception.DirectEditErrorCode.BEFORE_TEXT_MISMATCH.getMessage()));
+    }
+
+    @Test
+    void directEdit_whenPrincipalIsNotAdmin_returnsForbidden403() throws Exception {
+        String requestJson = """
+                {"sourceVersionId": 102, "edits": [{"index": 0, "before": "이전", "after": "새 문구"}]}
+                """;
+
+        mockMvc.perform(post("/api/admin/events/{eventId}/versions/direct-edit", 12L)
+                        .principal(new UsernamePasswordAuthenticationToken(AuthUser.user(2L), null))
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(directEditService);
     }
 
     @Test

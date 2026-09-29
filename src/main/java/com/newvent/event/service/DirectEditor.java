@@ -19,6 +19,7 @@ import com.newvent.event.dto.request.TextEdit;
 import com.newvent.event.exception.DirectEditErrorCode;
 import com.newvent.event.exception.DirectEditException;
 import com.newvent.registry.Block;
+import com.newvent.registry.Slot;
 
 /**
  * 에디터 직접 편집 적용기.
@@ -31,6 +32,19 @@ import com.newvent.registry.Block;
 public final class DirectEditor {
 
     private DirectEditor() {}
+
+    /** 미리보기 HTML과 저장본에 공통으로 적용하는 편집 가능 문구 순서. */
+    public record EditableText(int index, String before) {}
+
+    public static List<EditableText> editableTexts(String html) {
+        Objects.requireNonNull(html, "html은 필수입니다.");
+        List<TextNode> nodes = collectTextNodes(Jsoup.parse(html));
+        List<EditableText> result = new ArrayList<>(nodes.size());
+        for (int i = 0; i < nodes.size(); i++) {
+            result.add(new EditableText(i, nodes.get(i).text().trim()));
+        }
+        return List.copyOf(result);
+    }
 
     /**
      * 원본 HTML에 텍스트 편집 및 버튼 스타일을 일괄 적용한다.
@@ -56,7 +70,7 @@ public final class DirectEditor {
      * <p>
      * 규칙:
      * 1. [data-block] 내부의 텍스트 노드를 문서 순서로 수집 (공백만 있는 노드 제외)
-     * 2. data-block="notices" (서버 소유 블록)는 수집에서 제외
+     * 2. data-block="notices" 및 서버가 미리보기에 채우는 period 슬롯은 수집에서 제외
      * 3. index로 찾아 before와 대조, 불일치 시 409 Conflict 예외 발생
      * 4. TextNode.text(after)로 치환하여 자동 이스케이프 (XSS 방지)
      *
@@ -187,11 +201,15 @@ public final class DirectEditor {
 
         NodeTraversor.traverse(new NodeVisitor() {
             private int noticeDepth = 0;
+            private int periodDepth = 0;
             private int blockDepth = 0;
 
             @Override
             public void head(Node node, int depth) {
                 if (node instanceof Element el) {
+                    if (el.is(Slot.PERIOD.selector())) {
+                        periodDepth++;
+                    }
                     if (el.hasAttr("data-block")) {
                         blockDepth++;
                         if (el.is(Block.NOTICES.selector())) {
@@ -199,7 +217,7 @@ public final class DirectEditor {
                         }
                     }
                 } else if (node instanceof TextNode tn) {
-                    if (blockDepth > 0 && noticeDepth == 0) {
+                    if (blockDepth > 0 && noticeDepth == 0 && periodDepth == 0) {
                         if (!isIgnoredParent(tn) && !tn.isBlank()) {
                             result.add(tn);
                         }
@@ -210,6 +228,9 @@ public final class DirectEditor {
             @Override
             public void tail(Node node, int depth) {
                 if (node instanceof Element el) {
+                    if (el.is(Slot.PERIOD.selector())) {
+                        periodDepth--;
+                    }
                     if (el.hasAttr("data-block")) {
                         if (el.is(Block.NOTICES.selector())) {
                             noticeDepth--;
