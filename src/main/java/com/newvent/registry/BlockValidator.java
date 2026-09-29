@@ -205,7 +205,7 @@ public class BlockValidator {
     	// ★ 둘 다 늘지 않았으면 통과 (삭제 허용 — "복주머니 2개" 유지)
     	if (nowMust <= wasMust && nowKids <= wasKids) return;
 
-    	f.add(new Failure("item_added_" + target.key(),
+    	f.add(Failure.of(FailureCode.ITEM_ADDED, target.key(),
     	        target.key() + " 항목이 늘었습니다. " +
     	        "항목 추가는 서버만 합니다. 문구만 고치세요."));
     }
