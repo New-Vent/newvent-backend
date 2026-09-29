@@ -22,8 +22,11 @@ import com.newvent.event.domain.EventVersion;
 import com.newvent.event.repository.EventVersionRepository;
 
 /**
- * compose PG 실측 테스트.
+ * compose PG 실측 테스트. <b>도커가 떠 있어야 돈다</b> (안 떠 있으면 SQL State 08001).
  *
+ * ★ @DataJpaTest 는 @Service 를 안 올린다. JpaVersionStore 를 @Import 로 직접 넣는다.
+ * ★ ddl-auto=validate — Flyway 가 만든 스키마와 엔티티가 어긋나면 여기서 죽는다.
+ *   그게 이 테스트의 절반이다.
  */
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -144,15 +147,37 @@ class JpaVersionStoreTest {
     // ── 조회 ─────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("latest 는 마지막 버전의 HTML, latestVersion 은 그 신분을 준다")
-    void 마지막_버전을_읽는다() {
+    @DisplayName("latest 는 마지막 버전의 id·번호·HTML 을 한 번에 준다")
+    void 최신_버전의_신분과_내용을_함께_준다() {
         Long eventId = seedEvent("여름 이벤트");
-        store.save(eventId, "<section>옛것</section>", null);
+
+        store.save(eventId, "<section>예전</section>", null);
         VersionStore.Saved v2 = store.save(eventId, "<section>새것</section>", null);
 
-        assertEquals("<section>새것</section>", store.latest(eventId).orElseThrow());
-        assertEquals(v2.versionId(), store.latestVersion(eventId).orElseThrow().versionId());
-        assertEquals(2, store.latestVersion(eventId).orElseThrow().versionNo());
+        VersionStore.Snapshot latest = store.latest(eventId).orElseThrow();
+
+        assertEquals(v2.versionId(), latest.versionId());
+        assertEquals(2, latest.versionNo());
+        assertEquals("<section>새것</section>", latest.html());
+    }
+
+    @Test
+    @DisplayName("★ latest 의 id 와 HTML 은 같은 행에서 나온다 — 짝이 어긋나지 않는다")
+    void 최신_버전의_id와_html이_같은_행에서_나온다() {
+        Long eventId = seedEvent("여름 이벤트");
+
+        store.save(eventId, "<section>v1</section>", null);
+        store.save(eventId, "<section>v2</section>", null);
+        VersionStore.Saved v3 = store.save(eventId, "<section>v3</section>", null);
+
+        VersionStore.Snapshot latest = store.latest(eventId).orElseThrow();
+
+        // id 로 다시 꺼낸 HTML 이 latest 가 준 HTML 과 같아야 한다.
+        // 예전처럼 latest(html) 와 latestVersion(id) 를 따로 부르면
+        // 그 사이에 새 버전이 저장될 때 이 단정이 깨진다.
+        assertEquals(latest.html(),
+                store.htmlOf(eventId, latest.versionId()).orElseThrow());
+        assertEquals(v3.versionId(), latest.versionId());
     }
 
     @Test
@@ -184,7 +209,6 @@ class JpaVersionStoreTest {
         Long eventId = seedEvent("아직 안 만든 이벤트");
 
         assertTrue(store.latest(eventId).isEmpty());
-        assertTrue(store.latestVersion(eventId).isEmpty());
     }
 
     // ── 서버 재시작을 넘는가 (이 구현의 존재 이유) ─────────────────
@@ -199,7 +223,7 @@ class JpaVersionStoreTest {
         tem.clear();
 
         assertEquals("<section data-block=\"hero\"><h1>제목</h1></section>",
-                store.latest(eventId).orElseThrow());
+                store.latest(eventId).orElseThrow().html());
     }
 
     // ── 유니크 제약 ───────────────────────────────────────────────
