@@ -104,7 +104,7 @@ public class RetryService {
             boolean truncated) {
 
         public boolean passed() {
-            return failures.isEmpty();
+            return failures.stream().noneMatch(Failure::isBlocking);
         }
     }
 
@@ -116,7 +116,14 @@ public class RetryService {
         }
 
         public List<Failure> lastFailures() {
-            return traces.isEmpty() ? List.of() : traces.get(traces.size() - 1).failures();
+            return traces.isEmpty() ? List.of() : traces.get(traces.size() - 1).failures().stream()
+                    .filter(Failure::isBlocking).toList();
+        }
+
+        /** 마지막 시도의 경고. 성공 결과에서도 관리자에게 안내할 수 있다. */
+        public List<Failure> lastWarnings() {
+            return traces.isEmpty() ? List.of() : traces.get(traces.size() - 1).failures().stream()
+                    .filter(Failure::isWarning).toList();
         }
     }
 
@@ -205,7 +212,7 @@ public class RetryService {
             traces.add(new Trace(attempt, res.content(), List.copyOf(fails),
                     res.inputTokens(), res.outputTokens(), res.wallMs(), res.truncated()));
 
-            if (fails.isEmpty()) {
+            if (fails.stream().noneMatch(Failure::isBlocking)) {
                 return new Result(true, html, List.copyOf(traces));
             }
             nextUser = retryPrompt(user, html, fails);
@@ -222,7 +229,9 @@ public class RetryService {
     private String retryPrompt(String originalUser, String lastHtml, List<Failure> fails) {
         StringBuilder problems = new StringBuilder();
         for (Failure f : fails) {
-            problems.append("- ").append(f.message()).append('\n');
+            if (f.isBlocking()) {
+                problems.append("- ").append(f.message()).append('\n');
+            }
         }
         return """
                 %s

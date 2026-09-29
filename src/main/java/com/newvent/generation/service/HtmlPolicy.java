@@ -1,10 +1,12 @@
 package com.newvent.generation.service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.newvent.registry.Block;
 import com.newvent.registry.BlockValidator;
 import com.newvent.registry.BlockValidator.Failure;
+import com.newvent.registry.ValueCheck;
 
 /**
  * "모델 출력을 어떻게 다듬고, 무엇을 합격으로 볼 것인가" 한 벌.
@@ -45,8 +47,14 @@ public interface HtmlPolicy {
     /**
      * 수정 — 요청한 블록 하나만 와야 하고, 원본의 data-slot 이 그대로여야 한다.
      *
+     * @param target     수정 대상 블록
+     * @param before     수정 전 그 블록의 HTML (서버가 갖고 있는 것)
+     * @param userPrompt 사용자 요청 원문 — ValueCheck 가 여기 나온 숫자는 허용한다
      */
-    static HtmlPolicy edit(Block target, String before) {
+    static HtmlPolicy edit(Block target, String before, String userPrompt) {
+        // ★ 람다 캡처를 위해 effectively-final 지역 변수로 받는다
+        final String beforeSnap = before;
+        final String promptSnap = userPrompt;
         return new HtmlPolicy() {
             @Override
             public String clean(String raw) {
@@ -55,7 +63,11 @@ public interface HtmlPolicy {
 
             @Override
             public List<Failure> validate(String html) {
-                return BlockValidator.validateEdited(target, before, html);
+                List<Failure> f = new ArrayList<>(
+                        BlockValidator.validateEdited(target, beforeSnap, html));
+                // REQ-LLM-41 — 없던 수치가 생겼나 (value_added → 실패, warning_value_removed → 경고)
+                f.addAll(ValueCheck.diff(beforeSnap, html, promptSnap));
+                return f;
             }
         };
     }

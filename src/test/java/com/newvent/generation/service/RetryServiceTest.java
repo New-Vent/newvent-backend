@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import com.newvent.infra.llm.LlmCallException;
 import com.newvent.infra.llm.LlmClient;
 import com.newvent.infra.llm.MockLlmClient;
+import com.newvent.registry.Block;
 import com.newvent.registry.PromptBuilder;
 
 /**
@@ -250,5 +251,92 @@ class RetryServiceTest {
 
         assertTrue(r.ok(), "정책이 통과시켰는데 서비스가 자체 판단으로 막았습니다.");
         assertEquals(1, r.attempts());
+    }
+
+    @Test
+    @DisplayName("수정 중 요청하지 않은 금액이 생기면 재시도하고 원본 수치를 지킨다")
+    void 수정_값추가는_재시도한다() {
+        String before = "<section data-block=\"hero\"><h1>구매 금액 10% 페이백</h1></section>";
+        String invented = "<section data-block=\"hero\"><h1>최대 3만원 페이백</h1></section>";
+        String corrected = "<section data-block=\"hero\"><h1>구매 금액 10% 페이백! 더 큰 설렘</h1></section>";
+        String request = "혜택 문구를 더 크고 파격적으로";
+        ScriptedLlm llm = new ScriptedLlm(invented, corrected);
+
+        RetryService.Result r = new RetryService(llm, 2).run(
+                "system", request, HtmlPolicy.edit(Block.HERO, before, request));
+
+        assertTrue(r.ok());
+        assertEquals(2, r.attempts());
+        assertFalse(r.traces().get(0).passed());
+        assertTrue(r.traces().get(0).failures().stream().anyMatch(f -> f.code().startsWith("value_added_")));
+        assertTrue(llm.received.get(1).contains("3만원"), "재시도 요청에 문제 수치가 빠졌습니다.");
+        assertFalse(llm.received.get(1).contains("수정 후 빠졌습니다"), "삭제 경고까지 수정 지시로 보냈습니다.");
+        assertTrue(r.html().contains("10% 페이백"));
+    }
+
+    @Test
+    @DisplayName("요청한 수치 변경은 삭제 경고가 남아도 한 번에 통과한다")
+    void 수정_요청한_수치로_변경하면_통과한다() {
+        String before = "<section data-block=\"hero\"><h1>기본 제공 데이터 10GB</h1></section>";
+        String after = "<section data-block=\"hero\"><h1>기본 제공 데이터 20GB</h1></section>";
+        String request = "10GB를 20GB로 바꿔줘";
+        ScriptedLlm llm = new ScriptedLlm(after);
+
+        RetryService.Result r = new RetryService(llm, 2).run(
+                "system", request, HtmlPolicy.edit(Block.HERO, before, request));
+
+        assertTrue(r.ok());
+        assertEquals(1, r.attempts());
+        assertTrue(r.traces().get(0).passed());
+        assertTrue(r.traces().get(0).failures().stream().allMatch(f -> f.isWarning()));
+    }
+
+    @Test
+    @DisplayName("수치 삭제 경고는 남기되 재시도하지 않는다")
+    void 수정_값삭제는_경고만_남긴다() {
+        String before = "<section data-block=\"hero\"><h1>100% 캐시미어 소재</h1></section>";
+        String after = "<section data-block=\"hero\"><h1>캐시미어 소재</h1></section>";
+        String request = "짧게 요약해줘";
+        ScriptedLlm llm = new ScriptedLlm(after);
+
+        RetryService.Result r = new RetryService(llm, 2).run(
+                "system", request, HtmlPolicy.edit(Block.HERO, before, request));
+
+        assertTrue(r.ok());
+        assertEquals(1, r.attempts());
+        assertTrue(r.traces().get(0).passed());
+        assertTrue(r.traces().get(0).failures().stream()
+                .anyMatch(f -> f.code().startsWith("warning_value_removed_")));
+        assertTrue(r.lastFailures().isEmpty());
+        assertEquals(1, r.lastWarnings().size(), "삭제 경고를 관리자에게 안내할 수 있어야 합니다.");
+    }
+
+    @Test
+    @DisplayName("수정 정화는 버튼과 id를 보존하고 스크립트를 제거한다")
+    void 수정_정화는_버튼과_id_보존() {
+        String before = "<section data-block=\"cta\"><button id=\"join\" class=\"cta-btn\" type=\"button\">참여하기</button></section>";
+        String after = "<section data-block=\"cta\"><button id=\"join\" class=\"cta-btn\" type=\"button\">응모하기</button><script>alert(1)</script></section>";
+
+        RetryService.Result r = new RetryService(new ScriptedLlm(after), 0).run(
+                "system", "버튼 문구 바꿔줘", HtmlPolicy.edit(Block.CTA, before, "버튼 문구 바꿔줘"));
+
+        assertTrue(r.ok());
+        assertTrue(r.html().contains("<button"));
+        assertTrue(r.html().contains("id=\"join\""));
+        assertFalse(r.html().contains("<script"));
+    }
+
+    @Test
+    @DisplayName("수정 정책을 거쳐도 기간 슬롯과 id를 그대로 보존한다")
+    void 수정_정화는_슬롯_보존() {
+        String before = "<section data-block=\"hero\"><h1 id=\"headline\" class=\"title\">원래 제목</h1><p data-slot=\"period\" class=\"period\">기간</p></section>";
+        String after = "<section data-block=\"hero\"><h1 id=\"headline\" class=\"title\">새 제목</h1><p data-slot=\"period\" class=\"period\">기간</p></section>";
+
+        RetryService.Result r = new RetryService(new ScriptedLlm(after), 0).run(
+                "system", "제목 바꿔줘", HtmlPolicy.edit(Block.HERO, before, "제목 바꿔줘"));
+
+        assertTrue(r.ok());
+        assertTrue(r.html().contains("data-slot=\"period\""));
+        assertTrue(r.html().contains("id=\"headline\""));
     }
 }
