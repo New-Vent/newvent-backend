@@ -141,12 +141,9 @@ public class BlockValidator {
     }
 
     /**
-     * 항목 개수가 바뀌었나. **컨테이너 안에서 must() 로 센다.**
-     *
-     *  ★ 직계 자식(childreN)으로 세지 않는다.
-     *    template_1 benefits 는 카드 2개가 래퍼 안에 중첩돼 있고,
-     *    template_3 steps 는 구분선 2개가 섞여 있다. 직계로 세면 틀린다.
-     *    must() 는 "ul li, .benefit-card"라 백지도 템플릿도 같은 코드로 센다.
+	 * ★ 직계 자식(children)으로 센다. must() 로 세면 틀린 클래스가 안 잡힌다.
+	 *   template_1 benefits 는 래퍼 중첩, template_3 steps 는 구분선이 섞여 있어
+	 *   절대값은 템플릿마다 다르다. 그래서 고정 숫자와 비교하지 않고 전후만 비교한다.
      *
      *  ★ container() 가 null 인 블록(hero·notices·cta)은 검사하지 않는다.
      */
@@ -158,9 +155,9 @@ public class BlockValidator {
     	Element afterBox = el.selectFirst(target.container());
     	if (beforeBox == null || afterBox == null) return;				// 없으면 shape 쪽에서 잡음
 
-    	int was = beforeBox.select(target.must()).size();
-    	int now = afterBox.select(target.must()).size();
-    	if(was == now) return;
+    	int was = beforeBox.children().size();
+    	int now = afterBox.children().size();
+    	if (was == now) return;
 
     	f.add(new Failure((now > was ? "item_added_" : "item_removed_") + target.key(),
     			target.key() + " 항목 개수가 " + was + "개에서 " + now + "개로 바뀌었습니다. " +
