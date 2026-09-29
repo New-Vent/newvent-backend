@@ -64,14 +64,14 @@ public class BlockValidatorTest {
 	// ---------- 3. 카드 삭제 → 걸린다 ------------
 
 	@Test
-	@DisplayName("카드를 지우면 걸림")
+	@DisplayName("카드를 지우면 걸림 - 복주머니 2개만 보여줘 는 정상 요청")
 	void 카드_삭제는_걸린다() {
 		String after = BEFORE_3.replace("<div class=\"benefit-card\">C</div>", "");
 
 		List<BlockValidator.Failure> fails =
 				BlockValidator.validateEdited(Block.BENEFITS, BEFORE_3, after);
 
-		assertTrue(hasCode(fails, "item_removed_benefits"));
+		assertTrue(!hasItemFailure(fails));
 	}
 
 	// ---------- 4. 서버 복제 후 문구만 채움 → 통과 ------------

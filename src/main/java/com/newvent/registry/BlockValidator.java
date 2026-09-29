@@ -141,9 +141,9 @@ public class BlockValidator {
     }
 
     /**
-	 * ★ 직계 자식(children)으로 센다. must() 로 세면 틀린 클래스가 안 잡힌다.
-	 *   template_1 benefits 는 래퍼 중첩, template_3 steps 는 구분선이 섞여 있어
-	 *   절대값은 템플릿마다 다르다. 그래서 고정 숫자와 비교하지 않고 전후만 비교한다.
+	 * ★ 늘어난 것만 본다. 줄어든 것은 허용한다.
+	 *   "복주머니를 2개만 보여줘" 는 정상 요청이다 (TemplateRoundTripTest).
+	 *   전멸은 minItems(few_키)가 잡는다.
      *
      *  ★ container() 가 null 인 블록(hero·notices·cta)은 검사하지 않는다.
      */
@@ -157,11 +157,11 @@ public class BlockValidator {
 
     	int was = beforeBox.children().size();
     	int now = afterBox.children().size();
-    	if (was == now) return;
+    	if (was <= now) return;
 
-    	f.add(new Failure((now > was ? "item_added_" : "item_removed_") + target.key(),
-    			target.key() + " 항목 개수가 " + was + "개에서 " + now + "개로 바뀌었습니다. " +
-    			"항목 수는 서버만 바꿉니다. 문구만 고치세요."));
+    	f.add(new Failure("item_added_" + target.key(),
+    	        target.key() + " 항목 개수가 " + was + "개에서 " + now + "개로 늘었습니다. " +
+    	        "항목 추가는 서버만 합니다. 문구만 고치세요."));
     }
 
     // ── 보존 검사 ──────────────────────────────────────────────────
