@@ -1,0 +1,28 @@
+# 이미지 빌드 문맥에서 뺄 것
+# 이게 없으면 build/ · .git/ 까지 통째로 Docker 데몬에 전송된다.
+# 빌드가 느려지고, 로컬에서 만든 build/ 가 컨테이너 안 빌드를 덮을 수도 있다.
+
+.git
+.github
+.gitignore
+
+build
+bin
+out
+.gradle
+
+.idea
+*.iml
+.vscode
+.DS_Store
+
+# 로컬 비밀값이 이미지에 섞여 들어가면 안 된다
+.env
+*.env
+**/application-local.yml
+**/application-local.yaml
+
+# 문서·산출물
+*.md
+docs
+diagrams

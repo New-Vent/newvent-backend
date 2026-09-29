@@ -114,6 +114,11 @@ jobs:
       - name: Build
         run: ./gradlew build
 
+      # 이미지가 실제로 빌드되는지 확인한다.
+      # push는 배포 워크플로에서.
+      - name: Docker 이미지 빌드 확인
+        run: docker build -t newvent-backend:ci .
+
       - name: 테스트 리포트 저장
         if: always()
         uses: actions/upload-artifact@v4
