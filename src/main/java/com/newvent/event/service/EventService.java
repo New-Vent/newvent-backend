@@ -12,6 +12,7 @@ import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventTemplate;
 import com.newvent.event.dto.request.EventCreateRequest;
+import com.newvent.event.dto.request.EventUpdateRequest;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
 import com.newvent.event.dto.response.PageResponse;
@@ -73,9 +74,7 @@ public class EventService {
     }
 
     public EventDetailResponse findAdminEvent(Long id) {
-        Event event = eventRepository.findById(id)
-                .filter(found -> !found.deleted())
-                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        Event event = findActiveEvent(id);
         return EventDetailResponse.from(event, closingSoon(event));
     }
 
@@ -95,6 +94,39 @@ public class EventService {
         draft.touchUpdatedAt(OffsetDateTime.now(clock));
         Event saved = eventRepository.save(draft);
         return EventDetailResponse.from(saved, closingSoon(saved));
+    }
+
+    /** 보낸 필드만 바꾼다. null 은 기존 값 유지, templateKey 가 빈 문자열이면 템플릿을 해제한다. */
+    public EventDetailResponse update(Long id, EventUpdateRequest request) {
+        Event event = findActiveEvent(id);
+        if (event.ended()) {
+            throw new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
+        }
+
+        OffsetDateTime startAt = request.startAt() != null ? request.startAt() : event.getStartDate();
+        OffsetDateTime endAt = request.endAt() != null ? request.endAt() : event.getEndDate();
+        if (startAt != null && endAt != null && !endAt.isAfter(startAt)) {
+            throw new EventException(EventErrorCode.INVALID_PERIOD);
+        }
+        EventTemplate template = request.templateKey() != null
+                ? resolveTemplate(request.templateKey())
+                : event.getTemplate();
+
+        event.updateInfo(
+                request.name() != null ? request.name().trim() : event.getTitle(),
+                template,
+                startAt,
+                endAt,
+                request.grade() != null ? request.grade() : event.getGrade());
+        event.touchUpdatedAt(OffsetDateTime.now(clock));
+        Event saved = eventRepository.save(event);
+        return EventDetailResponse.from(saved, closingSoon(saved));
+    }
+
+    private Event findActiveEvent(Long id) {
+        return eventRepository.findById(id)
+                .filter(found -> !found.deleted())
+                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
     }
 
     boolean closingSoon(Event event) {

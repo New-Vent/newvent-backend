@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.request.EventCreateRequest;
+import com.newvent.event.dto.request.EventUpdateRequest;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
 import com.newvent.event.dto.response.PageResponse;
@@ -222,6 +223,100 @@ class EventServiceTest {
                 null);
 
         assertThatThrownBy(() -> eventService.create(request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.TEMPLATE_NOT_FOUND.getCode());
+    }
+
+    @Test
+    @DisplayName("수정은 보낸 필드만 바꾸고 나머지는 유지한다")
+    void 이름만_수정하면_나머지는_유지된다() {
+        EventDetailResponse updated = eventService.update(2L, new EventUpdateRequest(
+                "  월드컵 승부 예측  ", null, null, null, null));
+
+        assertThat(updated.name()).isEqualTo("월드컵 승부 예측");
+        assertThat(updated.status()).isEqualTo(EventStatus.DRAFT);
+        assertThat(updated.grade()).isEqualTo(MembershipGrade.EXCELLENT);
+        assertThat(updated.startAt()).isEqualTo(OffsetDateTime.parse("2026-07-01T00:00:00+09:00"));
+        assertThat(updated.endAt()).isEqualTo(OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
+        assertThat(updated.updatedAt()).isEqualTo(OffsetDateTime.parse("2026-09-16T01:00:00+09:00"));
+        assertThat(eventService.findAdminEvent(2L).name()).isEqualTo("월드컵 승부 예측");
+    }
+
+    @Test
+    @DisplayName("기간·템플릿·등급을 함께 수정한다")
+    void 기간과_템플릿과_등급을_수정한다() {
+        EventDetailResponse updated = eventService.update(2L, new EventUpdateRequest(
+                null,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-10T23:59:59+09:00"),
+                "sports_cheer",
+                MembershipGrade.BEST));
+
+        assertThat(updated.startAt()).isEqualTo(OffsetDateTime.parse("2026-10-01T00:00:00+09:00"));
+        assertThat(updated.endAt()).isEqualTo(OffsetDateTime.parse("2026-10-10T23:59:59+09:00"));
+        assertThat(updated.template()).isEqualTo("sports_cheer");
+        assertThat(updated.grade()).isEqualTo(MembershipGrade.BEST);
+        assertThat(updated.name()).isEqualTo("월드컵 스코어 맞추기");
+    }
+
+    @Test
+    @DisplayName("templateKey 가 빈 문자열이면 템플릿을 해제한다")
+    void 빈_템플릿_키는_템플릿을_해제한다() {
+        eventService.update(2L, new EventUpdateRequest(null, null, null, "sports_cheer", null));
+
+        EventDetailResponse updated = eventService.update(2L, new EventUpdateRequest(null, null, null, "", null));
+
+        assertThat(updated.template()).isNull();
+    }
+
+    @Test
+    @DisplayName("종료일시만 보내도 기존 시작일시와 비교해 EVENT400-0 을 던진다")
+    void 수정_후_기간이_역전되면_400을_던진다() {
+        EventUpdateRequest request = new EventUpdateRequest(
+                null, null, OffsetDateTime.parse("2026-06-30T00:00:00+09:00"), null, null);
+
+        assertThatThrownBy(() -> eventService.update(2L, request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.INVALID_PERIOD.getCode());
+        assertThat(eventService.findAdminEvent(2L).endAt())
+                .isEqualTo(OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
+    }
+
+    @Test
+    @DisplayName("종료(ENDED)된 이벤트는 수정할 수 없고 EVENT409-0 을 던진다")
+    void 종료된_이벤트는_수정할_수_없다() {
+        EventUpdateRequest request = new EventUpdateRequest("이름 변경", null, null, null, null);
+
+        assertThatThrownBy(() -> eventService.update(6L, request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_ENDED_NOT_EDITABLE.getCode());
+        assertThat(eventService.findAdminEvent(6L).name()).isEqualTo("여름 데이터 대방출");
+    }
+
+    @Test
+    @DisplayName("없거나 삭제된 이벤트 수정은 EVENT404-0 이다")
+    void 없는_이벤트_수정은_404를_던진다() {
+        EventUpdateRequest request = new EventUpdateRequest("이름 변경", null, null, null, null);
+
+        assertThatThrownBy(() -> eventService.update(999L, request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
+        assertThatThrownBy(() -> eventService.update(99L, request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
+    }
+
+    @Test
+    @DisplayName("없는 템플릿 키로 수정하면 EVENT404-1 이다")
+    void 없는_템플릿으로_수정하면_404를_던진다() {
+        EventUpdateRequest request = new EventUpdateRequest(null, null, null, "없는키", null);
+
+        assertThatThrownBy(() -> eventService.update(2L, request))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.TEMPLATE_NOT_FOUND.getCode());

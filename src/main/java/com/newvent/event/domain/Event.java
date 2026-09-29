@@ -109,6 +109,24 @@ public class Event extends BaseTimeEntity {
         return event;
     }
 
+    /** 관리자 수정 API — 부분 수정 병합과 검증은 서비스가 끝낸 값을 받는다. */
+    public void updateInfo(
+            String title,
+            EventTemplate template,
+            OffsetDateTime startDate,
+            OffsetDateTime endDate,
+            MembershipGrade grade) {
+        this.title = title;
+        this.template = template;
+        this.startDate = startDate;
+        this.endDate = endDate;
+        this.grade = grade;
+    }
+
+    public boolean ended() {
+        return status == EventStatus.ENDED;
+    }
+
     /** 인메모리 시드·테스트용. */
     public static Event reconstitute(
             Long id,
