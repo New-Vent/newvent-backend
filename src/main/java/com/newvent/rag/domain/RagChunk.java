@@ -13,6 +13,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.Type;
+
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventVersion;
 
@@ -61,6 +63,7 @@ public class RagChunk {
 	private String embeddingModel;
 
 	@Column(nullable = false, columnDefinition = "vector(1024)")
+	@Type(VectorType.class)
 	private String embedding;
 
 	@Column(name = "created_at", nullable = false, updatable = false)
