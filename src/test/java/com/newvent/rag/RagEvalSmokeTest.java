@@ -1,0 +1,172 @@
+package com.newvent.rag;
+
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import jakarta.persistence.EntityManager;
+
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIf;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.yaml.snakeyaml.Yaml;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.newvent.event.domain.Event;
+import com.newvent.rag.domain.RagChunk;
+import com.newvent.rag.domain.Vectors;
+import com.newvent.rag.repository.RagChunkRepository;
+import com.newvent.rag.service.BedrockEmbeddingClient;
+import com.newvent.rag.service.EmbeddingClient;
+import com.newvent.rag.service.OllamaEmbeddingClient;
+
+/**
+ * 임베딩 모델 비교 평가. 단언 없음 — 점수표 보고 사람이 정한다.
+ *
+ * ★ RAG_EVAL=1 일 때만 돈다. CI에서는 스킵된다.
+ * ★ RAG_EVAL_AWS=1 이면 Bedrock 2종도 돈다 (키 필요).
+ * ★ @DataJpaTest라 끝나면 롤백된다. 평가용 벡터가 남지 않는다.
+ */
+@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+class RagEvalSmokeTest {
+
+    @Autowired
+    private RagChunkRepository repo;
+
+    @Autowired
+    private TestEntityManager tem;
+
+    record EvalQuery(String query, String expectedBlock) {}
+
+    static boolean 스모크_켜짐() {
+        return "1".equals(System.getenv("RAG_EVAL"));
+    }
+
+    private static String text(String path) throws Exception {
+        try (InputStream in = RagEvalSmokeTest.class.getClassLoader()
+                .getResourceAsStream(path)) {
+            if (in == null) throw new IllegalStateException(path + " 없음");
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static List<EvalQuery> loadQuestions() throws Exception {
+        Yaml yaml = new Yaml();
+        Map<String, Object> doc;
+        try (InputStream in = RagEvalSmokeTest.class.getClassLoader()
+                .getResourceAsStream("rag/eval-questions.yaml")) {
+            doc = yaml.load(in);
+        }
+        List<Map<String, String>> list =
+                (List<Map<String, String>>) doc.get("questions");
+        List<EvalQuery> out = new ArrayList<>();
+        for (Map<String, String> m : list) {
+            out.add(new EvalQuery(m.get("query"), m.get("expectedBlock")));
+        }
+        return out;
+    }
+
+    private Event seedEvent() {
+        EntityManager em = tem.getEntityManager();
+        Long adminId = ((Number) em.createNativeQuery(
+                        "INSERT INTO admins (login_id, password_hash, name) VALUES (?1,?2,?3) RETURNING id")
+                .setParameter(1, "admin-eval")
+                .setParameter(2, "x")
+                .setParameter(3, "관리자")
+                .getSingleResult()).longValue();
+        Long eventId = ((Number) em.createNativeQuery(
+                        "INSERT INTO events (owner_admin_id, title, grade) VALUES (?1,?2,?3) RETURNING id")
+                .setParameter(1, adminId)
+                .setParameter(2, "평가용")
+                .setParameter(3, "NORMAL")
+                .getSingleResult()).longValue();
+        return em.getReference(Event.class, eventId);
+    }
+
+    /** 템플릿 5종 → 블록 통째로 임베딩 (청킹 없음 — 비교용이라 형식을 맞춘다) */
+    private void indexTemplates(EmbeddingClient embedding, Event event) throws Exception {
+        JsonNode index = new ObjectMapper().readTree(text("templates/templates.json"));
+        for (JsonNode n : index) {
+            String html = text("templates/" + n.path("code").asText() + ".html");
+            Document doc = Jsoup.parseBodyFragment(html);
+            int i = 0;
+            for (Element section : doc.select("section[data-block]")) {
+                String key = section.attr("data-block");
+                String content = section.text();
+                repo.save(RagChunk.create(event, null, key, i++,
+                        content, embedding.modelName(),
+                        embedding.embed(content), Instant.now()));
+            }
+        }
+    }
+
+    private void evaluate(String model, EmbeddingClient embedding,
+            Event event, List<EvalQuery> questions) {
+        int score = 0;
+        for (EvalQuery q : questions) {
+            List<RagChunk> hits = repo.findSimilar(
+                    Vectors.toDb(embedding.embed(q.query())),
+                    model, -1L, 0.4, 3);
+            boolean ok = q.expectedBlock() == null
+                    ? hits.isEmpty()
+                    : hits.stream().anyMatch(h -> h.getBlockKey().equals(q.expectedBlock()));
+            if (ok) score++;
+
+            System.out.printf("[%s] Q=%s 기대=%s → %s%n",
+                    model, q.query(), q.expectedBlock(), ok ? "O" : "X");
+            for (RagChunk h : hits) {
+                System.out.printf("    - (%s) %s%n", h.getBlockKey(), h.getContent());
+            }
+        }
+        System.out.printf("== %s: %d/%d%n", model, score, questions.size());
+    }
+
+    private void tryEvaluate(String model, EmbeddingClient embedding,
+            Event event, List<EvalQuery> questions) {
+        try {
+            evaluate(model, embedding, event, questions);
+        } catch (Exception e) {
+            System.out.printf("== %s: SKIP (%s)%n", model, e.getMessage());
+        }
+    }
+
+    @Test
+    @EnabledIf("스모크_켜짐")
+    @DisplayName("모델별 색인 → 검색 → 점수 출력.")
+    void 모델별_평가() throws Exception {
+        List<EvalQuery> questions = loadQuestions();
+        Event event = seedEvent();
+        String ollamaUrl = System.getenv().getOrDefault("OLLAMA_URL", "http://localhost:11434");
+
+        tryEvaluate("bge-m3",
+                new OllamaEmbeddingClient(ollamaUrl, "bge-m3"), event, questions);
+        tryEvaluate("mxbai-embed-large",
+                new OllamaEmbeddingClient(ollamaUrl, "mxbai-embed-large"), event, questions);
+        tryEvaluate("snowflake-arctic-embed",
+                new OllamaEmbeddingClient(ollamaUrl, "snowflake-arctic-embed"), event, questions);
+
+        if ("1".equals(System.getenv("RAG_EVAL_AWS"))) {
+            String region = System.getenv().getOrDefault("AWS_REGION", "us-east-1");
+            tryEvaluate("amazon.titan-embed-text-v2:0",
+                    new BedrockEmbeddingClient(region, "amazon.titan-embed-text-v2:0"),
+                    event, questions);
+            tryEvaluate("cohere.embed-multilingual-v3",
+                    new BedrockEmbeddingClient(region, "cohere.embed-multilingual-v3"),
+                    event, questions);
+        } else {
+            System.out.println("== Bedrock 2종 SKIP (RAG_EVAL_AWS=1 필요)");
+        }
+    }
+}
