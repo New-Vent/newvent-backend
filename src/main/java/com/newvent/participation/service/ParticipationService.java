@@ -55,8 +55,10 @@ public class ParticipationService {
                     .build();
 
         } catch (DataIntegrityViolationException exception) {
-            // 동시에 들어온 요청이 (event_id, user_id) 제약에 걸린 경우
-            throw new ParticipationException(ParticipationErrorCode.ALREADY_PARTICIPATED);
+            if (isDuplicateParticipation(exception)) {
+                throw new ParticipationException(ParticipationErrorCode.ALREADY_PARTICIPATED);
+            }
+            throw exception;
         }
     }
 
@@ -66,5 +68,19 @@ public class ParticipationService {
             case EXCELLENT -> 1;
             case BEST -> 2;
         };
+    }
+
+    private boolean isDuplicateParticipation(DataIntegrityViolationException exception) {
+        Throwable cause = exception;
+
+        while (cause != null) {
+            if (cause instanceof org.hibernate.exception.ConstraintViolationException violation
+                    && "uk_event_participations_event_user".equals(violation.getConstraintName())) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+
+        return false;
     }
 }

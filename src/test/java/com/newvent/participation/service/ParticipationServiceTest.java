@@ -1,10 +1,18 @@
 package com.newvent.participation.service;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -37,6 +45,7 @@ class ParticipationServiceTest {
     void 참여하면_사용자와_이벤트를연결하고_빈JSON데이터로저장한다() {
         Event event = event(EventStatus.PUBLISHED, MembershipGrade.EXCELLENT);
         User user = user(MembershipGrade.BEST);
+
         when(publicEventService.getPublicEvent(1L)).thenReturn(event);
         when(userService.getById(7L)).thenReturn(user);
         when(participationRepository.saveAndFlush(any(EventParticipation.class)))
@@ -51,7 +60,8 @@ class ParticipationServiceTest {
         assertEquals(30L, result.participationId());
         assertEquals(1L, result.eventId());
 
-        var captor = org.mockito.ArgumentCaptor.forClass(EventParticipation.class);
+        ArgumentCaptor<EventParticipation> captor =
+                ArgumentCaptor.forClass(EventParticipation.class);
         verify(participationRepository).saveAndFlush(captor.capture());
 
         EventParticipation saved = captor.getValue();
@@ -92,12 +102,19 @@ class ParticipationServiceTest {
     }
 
     @Test
-    void 동시요청으로_저장시_유일제약에걸리면_중복참여로처리한다() {
+    void 참여유일제약에걸리면_중복참여로처리한다() {
         when(publicEventService.getPublicEvent(1L))
                 .thenReturn(event(EventStatus.PUBLISHED, MembershipGrade.NORMAL));
         when(userService.getById(7L)).thenReturn(user(MembershipGrade.NORMAL));
+
+        ConstraintViolationException constraintViolation =
+                mock(ConstraintViolationException.class);
+        when(constraintViolation.getConstraintName())
+                .thenReturn("uk_event_participations_event_user");
+
         when(participationRepository.saveAndFlush(any(EventParticipation.class)))
-                .thenThrow(new DataIntegrityViolationException("unique constraint"));
+                .thenThrow(new DataIntegrityViolationException(
+                        "참여 유일 제약 위반", constraintViolation));
 
         ParticipationException exception = assertThrows(
                 ParticipationException.class,
@@ -107,11 +124,39 @@ class ParticipationServiceTest {
     }
 
     @Test
+    void 다른DB제약위반은_중복참여로바꾸지않는다() {
+        when(publicEventService.getPublicEvent(1L))
+                .thenReturn(event(EventStatus.PUBLISHED, MembershipGrade.NORMAL));
+        when(userService.getById(7L)).thenReturn(user(MembershipGrade.NORMAL));
+
+        ConstraintViolationException constraintViolation =
+                mock(ConstraintViolationException.class);
+        when(constraintViolation.getConstraintName())
+                .thenReturn("some_other_constraint");
+
+        DataIntegrityViolationException databaseException =
+                new DataIntegrityViolationException(
+                        "다른 DB 제약 위반", constraintViolation);
+
+        when(participationRepository.saveAndFlush(any(EventParticipation.class)))
+                .thenThrow(databaseException);
+
+        DataIntegrityViolationException thrown = assertThrows(
+                DataIntegrityViolationException.class,
+                () -> service.participate(1L, 7L));
+
+        assertSame(databaseException, thrown);
+    }
+
+    @Test
     void 접근할수없는이벤트는_참여할수없다() {
         when(publicEventService.getPublicEvent(1L))
                 .thenThrow(new EventNotAccessibleException());
 
-        assertThrows(EventNotAccessibleException.class, () -> service.participate(1L, 7L));
+        assertThrows(
+                EventNotAccessibleException.class,
+                () -> service.participate(1L, 7L));
+
         verify(participationRepository, never()).saveAndFlush(any(EventParticipation.class));
     }
 
