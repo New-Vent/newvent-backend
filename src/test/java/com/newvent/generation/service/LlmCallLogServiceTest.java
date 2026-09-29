@@ -32,7 +32,6 @@ import com.newvent.generation.domain.LlmCallLog;
 import com.newvent.generation.exception.LlmDailyLimitExceededException;
 import com.newvent.generation.repository.LlmCallLogRepository;
 import com.newvent.registry.BlockValidator.Failure;
-import com.newvent.registry.FailureCode;
 
 // LlmCallLogService 단위 테스트 - 스프링 컨텍스트 · DB 를 띄우지 않는다.
 // Event/EventVersion 은 생성 수단이 없어 mock 으로 대체 - 서비스가 내부 값을 읽지 않아 안전.
@@ -84,8 +83,8 @@ public class LlmCallLogServiceTest {
 	@DisplayName("검증 실패 시도는 callOk=true·validOk=false + VALIDATION_FAIL 로 기록된다")
 	void 검증_실패_VALIDATION_FAIL_기록() {
 		RetryService.Trace t = new RetryService.Trace(1, "raw",
-				List.of(Failure.of(FailureCode.LOST_BLOCK, "benefits", "benefits 영역 없음"),
-						Failure.of(FailureCode.FEW_ITEMS, "benefits", "benefits 항목이 1개 입니다. 2개 이상 필요")),
+				List.of(new Failure("lost_benefits", "benefits 영역 없음"),
+						new Failure("few_benefits", "benefits 항목이 1개 입니다. 2개 이상 필요")),
 				100, 200, 10L, false);
 		Event event = mock(Event.class);
 
@@ -106,8 +105,8 @@ public class LlmCallLogServiceTest {
 		// RetryService.run() 은 잘림을 fails 맨 앞(0 번)에 "truncated" 코드로 넣고
 		// Trace.truncated=true 로 남긴다. 실물과 같은 구조로 재현한다.
 		RetryService.Trace t = new RetryService.Trace(1, "raw",
-				List.of(Failure.of(FailureCode.TRUNCATED, "출력이 너무 길어 중간에 잘림. 항목 수와 문장을 줄여 더 짧게 만드세요."),
-						Failure.of(FailureCode.LOST_BLOCK, "benefits", "benefits 영역이 없음")),
+				List.of(new Failure("truncated", "출력이 너무 길어 중간에 잘림. 항목 수와 문장을 줄여 더 짧게 만드세요."),
+						new Failure("lost_benefits", "benefits 영역이 없음")),
 				100, 200, 10L, true);
 		Event event = mock(Event.class);
 
@@ -126,8 +125,8 @@ public class LlmCallLogServiceTest {
 		// 방어 변형 - 기록 경로가 바뀌어 플래그가 유실되어도 코드 기준으로 판정.
 		// 정규화로 플래그도 true 가 되므로 boolean·enum 어긋남 없음.
 		RetryService.Trace t = new RetryService.Trace(1, "raw",
-				List.of(Failure.of(FailureCode.LOST_BLOCK, "benefits", "benefits 영역이 없습니다."),
-						Failure.of(FailureCode.TRUNCATED, "출력이 너무 길어 중간에 잘림. 항목 수와 문장을 줄여 더 짧게 만드세요.")),
+				List.of(new Failure("lost_benefits", "benefits 영역이 없습니다."),
+						new Failure("truncated", "출력이 너무 길어 중간에 잘림. 항목 수와 문장을 줄여 더 짧게 만드세요.")),
 				100, 200, 10L, false);
 		Event event = mock(Event.class);
 
@@ -145,7 +144,7 @@ public class LlmCallLogServiceTest {
 		Event event = mock(Event.class);
 		EventVersion version = mock(EventVersion.class);
 		RetryService.Trace fail = new RetryService.Trace(1, "raw",
-				List.of(Failure.of(FailureCode.LOST_BLOCK, "benefits", "benefits 영역이 없음")), 100, 200, 10L, false);
+				List.of(new Failure("lost_benefits", "benefits 영역이 없음")), 100, 200, 10L, false);
 		RetryService.Trace pass = new RetryService.Trace(2, "raw", List.of(), 100, 200, 10L, false);
 		RetryService.Result r = new RetryService.Result(true, "<section>", List.of(fail, pass));
 
@@ -173,9 +172,9 @@ public class LlmCallLogServiceTest {
 		Event event = mock(Event.class);
 		EventVersion version = mock(EventVersion.class);
 		RetryService.Trace fail1 = new RetryService.Trace(1, "raw",
-				List.of(Failure.of(FailureCode.LOST_BLOCK, "benefits", "benefits 영역이 없음.")), 100, 200, 10L, false);
+				List.of(new Failure("lost_benefits", "benefits 영역이 없음.")), 100, 200, 10L, false);
 		RetryService.Trace fail2 = new RetryService.Trace(2, "raw",
-				List.of(Failure.of(FailureCode.LOST_BLOCK, "benefits", "benefits 영역이 없음.")), 100, 200, 10L, false);
+				List.of(new Failure("lost_benefits", "benefits 영역이 없음.")), 100, 200, 10L, false);
 		RetryService.Result r = new RetryService.Result(false, null, List.of(fail1, fail2));
 
 		List<LlmCallLog> rows = newService().record(r, event, version, REQ, "qwen2.5:7b", PROVIDER);

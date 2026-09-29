@@ -13,8 +13,6 @@ import org.springframework.context.annotation.Configuration;
  * shape 를 시켰으면 must 도 있어야 하고,
  * SERVER 블록에는 shape 가 있으면 안 되고,
  * minItems 를 세려면 must 가 필요하다 — 전부 Block.assertConsistent() 안에 있다.
- *
- * 실패 코드의 심각도와 대응이 짝이 맞는지, key 가 겹치지 않는지 — FailureCode.assertConsistent().
  */
 @Configuration
 public class RegistryConfig {
@@ -22,6 +20,5 @@ public class RegistryConfig {
     @PostConstruct
     void 레지스트리_정합성_검사() {
         Block.assertConsistent();
-        FailureCode.assertConsistent();
     }
 }

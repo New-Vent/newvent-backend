@@ -19,7 +19,6 @@ import com.newvent.generation.domain.LlmCallLog;
 import com.newvent.generation.exception.LlmDailyLimitExceededException;
 import com.newvent.generation.repository.LlmCallLogRepository;
 import com.newvent.infra.llm.LlmProps;
-import com.newvent.registry.FailureCode;
 
 /**
  * llm_call_logs 쓰기 전담
@@ -63,7 +62,7 @@ public class LlmCallLogService {
 
     // 잘림 판정 - 플래그와 코드 중 하나라도 있으면 잘림. boolean과 enum 이 어긋나지 않게 단일 계산
     static boolean isTruncated(RetryService.Trace t) {
-    	return t.truncated() || t.failures().stream().anyMatch(f -> f.kind() == FailureCode.TRUNCATED);
+    	return t.truncated() || t.failures().stream().anyMatch(f -> f.code().equals("truncated"));
     }
 
     /** TRUNCATED 우선 — 잘림은 done_reason 이라는 별개 사실이라 검증 실패보다 위 */
