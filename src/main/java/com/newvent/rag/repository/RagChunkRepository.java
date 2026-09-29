@@ -23,7 +23,7 @@ public interface RagChunkRepository extends JpaRepository<RagChunk, Long>{
 	@Query(value = """
 			select * from rag_chunks
 			 where embedding_model = :model
-			   and evet_id <> :excludeEventId
+			   and event_id <> :excludeEventId
 			   and embedding <=> cast(:query as vector) <= :maxDistance
 			 order by embedding <=> cast(:query as vector)
 			 limit :limit
