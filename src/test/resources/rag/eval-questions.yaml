@@ -1,0 +1,21 @@
+questions:
+  - query: "신규 가입 혜택"
+    expectedBlock: benefits
+  - query: "참여 방법"
+    expectedBlock: steps
+  - query: "이벤트 기간"
+    expectedBlock: hero
+  - query: "참여 버튼 문구"
+    expectedBlock: cta
+  - query: "할인 쿠폰"
+    expectedBlock: benefits
+  - query: "경품 응모 방법"
+    expectedBlock: steps
+  - query: "이벤트 제목 추천"
+    expectedBlock: hero
+  - query: "유의사항"
+    expectedBlock:
+  - query: "존재하지 않는 내용 xyz123"
+    expectedBlock:
+  - query: "무료 배송"
+    expectedBlock: benefits
