@@ -8,6 +8,7 @@ import java.util.Set;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.nodes.TextNode;
 import org.jsoup.safety.Safelist;
 
 /**
@@ -155,12 +156,15 @@ public class BlockValidator {
     	Element afterBox = el.selectFirst(target.container());
     	if (beforeBox == null || afterBox == null) return;				// 없으면 shape 쪽에서 잡음
 
-    	int was = beforeBox.children().size();
-    	int now = afterBox.children().size();
-    	if (now <= was) return;
+    	int wasMust = beforeBox.select(target.must()).size();
+    	int nowMust = afterBox.select(target.must()).size();
+    	int wasKids = beforeBox.children().size();
+    	int nowKids = afterBox.children().size();
+    	// ★ 둘 다 늘지 않았으면 통과 (삭제 허용 — "복주머니 2개" 유지)
+    	if (nowMust <= wasMust && nowKids <= wasKids) return;
 
     	f.add(new Failure("item_added_" + target.key(),
-    	        target.key() + " 항목 개수가 " + was + "개에서 " + now + "개로 늘었습니다. " +
+    	        target.key() + " 항목이 늘었습니다. " +
     	        "항목 추가는 서버만 합니다. 문구만 고치세요."));
     }
 
@@ -341,9 +345,12 @@ public class BlockValidator {
     	Element box = doc.body().selectFirst(target.container());
     	if(box == null || box.children().isEmpty()) return html;
 
-    	Element copy = box.children().last().clone();
-    	copy.text("");
-    	box.appendChild(copy);
+    	Element src = box.select(target.must()).last(); // 이후
+    	if (src == null) return html;
+
+    	Element copy = src.clone();
+    	emptyText(copy);
+    	src.parent().appendChild(copy);
     	return doc.body().html();
     }
 
@@ -392,5 +399,16 @@ public class BlockValidator {
     public static String blockOf(String doc, Block target) {
         Element el = Jsoup.parseBodyFragment(doc).body().selectFirst(target.selector());
         return el == null ? "" : el.outerHtml();
+    }
+
+    /**
+     * ★ 글자만 비운다. 자식 태그·속성은 둔다.
+     *   text("")는 자식 요소까지 지워서 버튼 등이 사라진다.
+     */
+    private static void emptyText(Element el) {
+        for (TextNode t : new ArrayList<>(el.textNodes())) t.remove();
+        for (Element d : el.select("*")) {
+            for (TextNode t : new ArrayList<>(d.textNodes())) t.remove();
+        }
     }
 }

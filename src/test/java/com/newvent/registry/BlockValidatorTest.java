@@ -1,5 +1,6 @@
 package com.newvent.registry;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.InputStream;
@@ -8,6 +9,7 @@ import java.util.List;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +26,13 @@ public class BlockValidatorTest {
 			+ "<div class=\"benefit-card\">B</div>"
 			+ "<div class=\"benefit-card\">C</div>"
 			+ "</div></section>";
+
+	private static String text(String path) throws Exception {
+	    try (InputStream in = BlockValidatorTest.class.getClassLoader()
+	            .getResourceAsStream(path)) {
+	        return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+	    }
+	}
 
 	private static boolean hasCode(List<BlockValidator.Failure> fails, String code) {
 		return fails.stream().anyMatch(f -> f.code().equals(code));
@@ -65,7 +74,7 @@ public class BlockValidatorTest {
 
 	@Test
 	@DisplayName("카드를 지우면 걸림 - 복주머니 2개만 보여줘 는 정상 요청")
-	void 카드_삭제는_걸린다() {
+	void 카드_삭제는_통과한다() {
 		String after = BEFORE_3.replace("<div class=\"benefit-card\">C</div>", "");
 
 		List<BlockValidator.Failure> fails =
@@ -116,4 +125,66 @@ public class BlockValidatorTest {
 			}
 		}
 	}
+
+	// ---------- 6. 래퍼 안에 추가해도 걸린다 ------------
+
+    @Test
+    @DisplayName("래퍼 안에 추가해도 걸린다 - template_1 중첩 구조.")
+    void 중첩_추가도_걸린다() {
+        String wrapper =
+            "<section data-block=\"benefits\"><div class=\"benefits-list\">"
+            + "<div class=\"benefit-card\">A</div>"
+            + "<div class=\"sp-prize-sub-row\">"
+            + "<div class=\"benefit-card\">B</div>"
+            + "<div class=\"benefit-card\">C</div>"
+            + "</div></div></section>";
+        // ★ 래퍼 안, C 뒤에 넣는다. 리스트 닫힘 밖에 넣으면 다른 테스트가 된다.
+        String after = wrapper.replace("C</div>",
+            "C</div><div class=\"benefit-card\">D</div>");
+
+        List<BlockValidator.Failure> fails =
+                BlockValidator.validateEdited(Block.BENEFITS, wrapper, after);
+
+        assertTrue(hasCode(fails, "item_added_benefits"));
+    }
+
+    // ---------- 7. 구분선이 아니라 카드를 복제한다 ------------
+
+    @Test
+    @DisplayName("구분선이 아니라 카드를 복제한다 - template_3 steps.")
+    void 구분선이_아니라_카드를_복제() {
+        String steps =
+            "<section data-block=\"steps\"><div class=\"steps-list\">"
+            + "<div class=\"step-card\">1</div>"
+            + "<div class=\"vp-step-divider\"></div>"
+            + "<div class=\"step-card\">2</div>"
+            + "<div class=\"vp-step-divider\"></div>"
+            + "<div class=\"step-card\">3</div>"
+            + "</div></section>";
+
+        String dup = BlockValidator.duplicateCard(steps, Block.STEPS);
+        Document doc = Jsoup.parseBodyFragment(dup);
+
+        // ★ 카드는 3→4, 구분선은 2 그대로여야 한다.
+        assertEquals(4, doc.select(".step-card").size());
+        assertEquals(2, doc.select(".vp-step-divider").size());
+        assertEquals("", doc.select(".step-card").last().text());
+    }
+
+    // ---------- 8. 실제 템플릿 카드 구조 유지 ------------
+
+    @Test
+    @DisplayName("실제 템플릿 카드는 구조를 유지하고 글자만 비운다.")
+    void 실제_카드_구조_유지() throws Exception {
+        String html = text("templates/template_3_member_appreciation.html");
+        String block = BlockValidator.blockOf(html, Block.STEPS);
+
+        String dup = BlockValidator.duplicateCard(block, Block.STEPS);
+        Document doc = Jsoup.parseBodyFragment(dup);
+
+        Element last = doc.select(".step-card").last();
+        assertTrue(last.selectFirst(".step-title") != null);   // 태그 유지
+        assertTrue(last.selectFirst(".step-desc") != null);
+        assertEquals("", last.text());                          // 글자는 빔
+    }
 }
