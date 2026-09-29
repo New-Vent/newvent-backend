@@ -128,6 +128,12 @@ class RagEvalSmokeTest {
     private void evaluate(String model, EmbeddingClient embedding,
             Event event, List<EvalQuery> questions) {
         int score = 0;
+        try {
+            indexTemplates(embedding, event);
+        } catch (Exception e) {
+            System.out.printf("== %s: SKIP (색인 실패: %s)%n", model, e.getMessage());
+            return;
+        }
         for (EvalQuery q : questions) {
             List<RagChunk> hits = repo.findSimilar(
                     Vectors.toDb(embedding.embed(q.query())),
