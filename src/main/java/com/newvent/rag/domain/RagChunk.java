@@ -30,7 +30,7 @@ import lombok.NoArgsConstructor;
  */
 @Getter
 @Entity
-@Table(name = "rag_chunk")
+@Table(name = "rag_chunks")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class RagChunk {
 
