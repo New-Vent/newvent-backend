@@ -187,4 +187,19 @@ public class BlockValidatorTest {
         assertTrue(last.selectFirst(".step-desc") != null);
         assertEquals("", last.text());                          // 글자는 빔
     }
+
+    // ---------- 9. 복제 카드 안내문구는 지운다 ------------
+    @Test
+    @DisplayName("복제된 카드에는 data-demo-msg 가 남지 않는다.")
+    void 복제_카드_안내문구_제거() throws Exception {
+        String html = text("templates/template_3_member_appreciation.html");
+        String block = BlockValidator.blockOf(html, Block.BENEFITS);
+
+        String dup = BlockValidator.duplicateCard(block, Block.BENEFITS);
+        Document doc = Jsoup.parseBodyFragment(dup);
+
+        Element last = doc.select(".benefit-card").last();
+        assertTrue(last.select("button").size() > 0);          // 버튼은 유지
+        assertTrue(last.select("[data-demo-msg]").isEmpty());  // 문구는 제거
+    }
 }

@@ -402,13 +402,17 @@ public class BlockValidator {
     }
 
     /**
-     * ★ 글자만 비운다. 자식 태그·속성은 둔다.
+     * ★ 글자와 내용성 속성값을 비운다. 자식 태그·속성 구조는 둔다.
      *   text("")는 자식 요소까지 지워서 버튼 등이 사라진다.
+     *   data-demo-msg 는 카드별 문구라 복사하면 원본 안내가 뜬다.
+     *   없으면 프론트가 '(데모)' 를 보여준다.
      */
     private static void emptyText(Element el) {
         for (TextNode t : new ArrayList<>(el.textNodes())) t.remove();
         for (Element d : el.select("*")) {
             for (TextNode t : new ArrayList<>(d.textNodes())) t.remove();
+            d.removeAttr("data-demo-msg");   // 추가
         }
+        el.removeAttr("data-demo-msg");      // 추가 (자기 자신도)
     }
 }
