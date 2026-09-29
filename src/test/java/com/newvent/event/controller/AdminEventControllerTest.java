@@ -3,7 +3,9 @@ package com.newvent.event.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -159,5 +161,76 @@ class AdminEventControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("COMMON400-0"));
+    }
+
+    @Test
+    @DisplayName("수정 골격은 501 을 반환한다")
+    void 이벤트_수정_골격은_501이다() throws Exception {
+        mockMvc.perform(patch("/api/admin/events/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "이름만 변경" }
+                                """))
+                .andExpect(status().isNotImplemented());
+    }
+
+    @Test
+    @DisplayName("수정 요청의 이벤트명이 공백만 있으면 400 과 COMMON400-0 을 반환한다")
+    void 이벤트_수정_이름이_공백뿐이면_400을_반환한다() throws Exception {
+        mockMvc.perform(patch("/api/admin/events/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "   " }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400-0"));
+    }
+
+    @Test
+    @DisplayName("수정 요청의 이벤트명이 빈 문자열이면 400 과 COMMON400-0 을 반환한다")
+    void 이벤트_수정_이름이_빈_문자열이면_400을_반환한다() throws Exception {
+        mockMvc.perform(patch("/api/admin/events/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "" }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400-0"));
+    }
+
+    @Test
+    @DisplayName("수정 요청에 이벤트명이 없으면 검증을 통과한다")
+    void 이벤트_수정_이름이_없으면_검증을_통과한다() throws Exception {
+        mockMvc.perform(patch("/api/admin/events/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "endAt": "2026-10-20T23:59:59+09:00" }
+                                """))
+                .andExpect(status().isNotImplemented());
+    }
+
+    @Test
+    @DisplayName("삭제 골격은 501 을 반환한다")
+    void 이벤트_삭제_골격은_501이다() throws Exception {
+        mockMvc.perform(delete("/api/admin/events/1"))
+                .andExpect(status().isNotImplemented());
+    }
+
+    @Test
+    @DisplayName("상태 변경 골격은 501 을 반환한다")
+    void 이벤트_상태변경_골격은_501이다() throws Exception {
+        mockMvc.perform(patch("/api/admin/events/1/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "status": "PUBLISHED" }
+                                """))
+                .andExpect(status().isNotImplemented());
+    }
+
+    @Test
+    @DisplayName("게시 골격은 501 을 반환한다")
+    void 이벤트_게시_골격은_501이다() throws Exception {
+        mockMvc.perform(post("/api/admin/events/1/publish"))
+                .andExpect(status().isNotImplemented());
     }
 }
