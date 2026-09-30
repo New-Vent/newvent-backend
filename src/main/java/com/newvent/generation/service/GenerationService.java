@@ -19,6 +19,7 @@ import com.newvent.generation.exception.GenerationErrorCode;
 import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmCallException;
 import com.newvent.registry.Block;
+import com.newvent.registry.PageShell;
 import com.newvent.registry.PromptBuilder;
 import com.newvent.registry.Slot;
 import com.newvent.registry.Slots;
@@ -246,8 +247,10 @@ public class GenerationService {
             return null;
         }
         checkFormValues(cmd, res.html());
-        return plantPeriodSlot(res.html());
-    }
+        // ★ 저장 직전에 껍데기를 보장한다 — 래퍼 · 유의사항.
+        //   백지는 템플릿이 없으므로 테마를 고를 근거가 없다 → null.
+        //   event.css 의 :root 기본값이 쓰인다. 무스타일이 아니다.
+        return PageShell.plant(plantPeriodSlot(res.html()), null);    }
 
     /**
      * 이벤트 값과 어긋나는지 본다.

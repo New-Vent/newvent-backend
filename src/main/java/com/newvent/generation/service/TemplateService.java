@@ -2,9 +2,12 @@ package com.newvent.generation.service;
 
 import java.util.List;
 
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Service;
 
 import com.newvent.registry.BlockValidator;
+import com.newvent.registry.PageShell;
 import com.newvent.registry.Slots;
 
 /**
@@ -62,15 +65,30 @@ public class TemplateService {
      * 이 템플릿으로 시작할 때 event_versions 1번에 들어갈 HTML.
      *
      * 순서가 중요하다:
-     *   ① 재정화 (비내장만)  ② 슬롯 비우기
+     *   ① 재정화 (비내장만)  ② 슬롯 비우기  ③ head 잔재 제거  ④ 래퍼·테마 보강
      *
      * ②를 먼저 하면 재정화가 빈 슬롯을 지울 수 있다. 정화는 항상 먼저다.
+     * ④를 마지막에 둔다. 재정화는 모델 출력용 규칙이라 래퍼를 지울 수 있다.
      */
     public String initialHtml(String code) {
         TemplateLoader.Source t = loader.find(code).orElseThrow(
                 () -> new IllegalArgumentException("없는 템플릿입니다: " + code));
 
-        return Slots.clear(sanitizeIfNeeded(t));
+        // ★ 템플릿에는 래퍼와 notices 가 이미 있다. plant() 는 멱등이라 건드리지 않고,
+        //   빠져 있는 테마 클래스만 붙인다. <body class="theme-*"> 는 저장 조각에
+        //   남을 수 없으므로 래퍼가 유일하게 성립하는 자리다.
+        return PageShell.plant(stripHead(Slots.clear(sanitizeIfNeeded(t))), code);
+    }
+
+    /**
+     * 템플릿 파일에서 새어 나온 &lt;head&gt; 잔재를 걷어낸다.
+     */
+    private static String stripHead(String html) {
+        Document doc = Jsoup.parseBodyFragment(html);
+        // ★ 공백을 그대로 둔다. 여기서 재정렬하면 버전 diff 가 통째로 번진다.
+        doc.outputSettings().prettyPrint(false);
+        doc.body().select("meta, title, link, base").remove();
+        return doc.body().html();
     }
 
     /**

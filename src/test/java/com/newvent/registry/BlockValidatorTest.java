@@ -106,11 +106,11 @@ public class BlockValidatorTest {
 	@DisplayName("템플릿 5종은 항목 개수 검사에 걸리지 않음")
 	void 템플릿_5종은_통과() throws Exception{
 		String[] files = {
-				"templates/template_1_sports_cheer.html",
-				"templates/template_2_holiday_gift.html",
-				"templates/template_3_member_appreciation.html",
-				"templates/template_4_flash_sale.html",
-				"templates/template_5_pre_registration.html",
+				"templates/sports_cheer.html",
+				"templates/holiday_gift.html",
+				"templates/member_appreciation.html",
+				"templates/flash_sale.html",
+				"templates/pre_registration.html",
 		};
 		for(String file : files) {
 			String html;
@@ -176,7 +176,7 @@ public class BlockValidatorTest {
     @Test
     @DisplayName("실제 템플릿 카드는 구조를 유지하고 글자만 비운다.")
     void 실제_카드_구조_유지() throws Exception {
-        String html = text("templates/template_3_member_appreciation.html");
+        String html = text("templates/member_appreciation.html");
         String block = BlockValidator.blockOf(html, Block.STEPS);
 
         String dup = BlockValidator.duplicateCard(block, Block.STEPS);
@@ -192,7 +192,7 @@ public class BlockValidatorTest {
     @Test
     @DisplayName("복제된 카드에는 data-demo-msg 가 남지 않는다.")
     void 복제_카드_안내문구_제거() throws Exception {
-        String html = text("templates/template_3_member_appreciation.html");
+        String html = text("templates/member_appreciation.html");
         String block = BlockValidator.blockOf(html, Block.BENEFITS);
 
         String dup = BlockValidator.duplicateCard(block, Block.BENEFITS);
