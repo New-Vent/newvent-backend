@@ -1,0 +1,35 @@
+# 컨테이너를 **Bedrock 으로** 띄울 때만 겹쳐 쓴다.
+#
+#   mock (기본)  docker compose -f docker-compose.yml -f docker-compose.app.yml up --build
+#   bedrock      docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.bedrock.yml up --build
+#
+# mock 으로 쓰는 사람은 이 파일을 아예 몰라도 된다. 기존 명령이 그대로 돈다.
+#
+#   LLM_PROVIDER 와 자격증명을 한 파일에 묶은 이유
+#   따로 두면 provider 만 bedrock 으로 바꾸고 키는 안 넣은 **절반 설정**이 생긴다.
+#   그러면 컨테이너가 뜬 뒤 첫 생성 요청에서 SDK 예외로 죽는데,
+#   그때는 로그가 자격증명 얘기를 하지 않아서 원인을 찾기 어렵다.
+#   둘을 묶어 두면 절반만 켜는 게 불가능하다.
+#
+#   `:?` 는 값이 없으면 **컨테이너를 만들기 전에** 이 메시지로 멈춘다.
+#   `${AWS_ACCESS_KEY_ID}` 로 두면 빈 문자열이 컨테이너에 들어가고,
+#   SDK 는 "환경변수에 키가 있다" 고 믿었다가 40초 뒤에 터진다.
+#
+#   AWS_REGION 은 넘기지 않는다.
+#   BedrockClient 가 .region(BEDROCK_REGION) 을 직접 지정하므로 SDK 기본 리전을
+#   볼 일이 없다. 두 군데서 리전을 정하면 어느 쪽이 이겼는지 헷갈린다.
+
+services:
+  app:
+    environment:
+      LLM_PROVIDER: bedrock
+
+      #   기본값을 박아 둔다. 팀이 쓰는 모델은 하나뿐이고(gemma-3-27b),
+      #   IAM 정책도 이 모델만 허용한다. 오타로 다른 모델을 부르면 AccessDenied 다.
+      LLM_MODEL: "${LLM_MODEL:-google.gemma-3-27b-it}"
+
+      #   gemma 는 ap-northeast-2 에 없다. 서울로 두면 ValidationException 이 난다.
+      BEDROCK_REGION: "${BEDROCK_REGION:-us-east-1}"
+
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:?Bedrock 으로 띄우려면 .env 에 AWS_ACCESS_KEY_ID 가 있어야 합니다}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:?Bedrock 으로 띄우려면 .env 에 AWS_SECRET_ACCESS_KEY 가 있어야 합니다}"

@@ -255,6 +255,40 @@ aws configure
 모델 접근 권한은 AWS 콘솔에서 별도로 신청해야 합니다. 권한이 없으면 호출 시점에
 실패하며, 어떤 관문이 남았는지는 오류 메시지에 나옵니다.
 
+### 컨테이너로 Bedrock을 쓸 때 (예외)
+
+위의 "환경변수에 넣지 않습니다"는 IDE나 `gradlew bootRun`으로 **호스트에서** 실행할 때의 이야기입니다.
+컨테이너는 호스트의 `~/.aws`를 볼 수 없으므로 이 경우에만 환경변수로 전달합니다.
+
+`.env`에 두 줄을 추가합니다. `.env`는 Git에 포함되지 않습니다.
+
+```text
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+```
+
+그리고 `docker-compose.bedrock.yml`을 겹쳐서 띄웁니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.bedrock.yml up --build
+```
+
+`mock`으로 쓰는 경우에는 이 파일이 필요하지 않습니다. 기존 명령이 그대로 동작합니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.app.yml up --build
+```
+
+내릴 때는 `docker-compose.bedrock.yml`을 **빼고** 실행합니다. 포함하면 AWS 키가 없는 셸에서
+`down`조차 막힙니다(키를 필수로 검사하기 때문입니다).
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.app.yml down
+```
+
+`~/.aws`를 컨테이너에 마운트하는 방법도 있지만 쓰지 않습니다. 그 사람의 **모든** 프로파일이
+컨테이너에 노출되기 때문입니다. Bedrock 전용 키만 넘기는 쪽이 최소권한에 맞습니다.
+
 ### 실제 모델로 스모크 테스트
 
 애플리케이션을 띄우지 않고 모델만 확인합니다. DB도 필요하지 않습니다.
