@@ -8,8 +8,8 @@ import jakarta.validation.constraints.Size;
 import com.newvent.user.domain.MembershipGrade;
 
 /**
- * 관리자 이벤트 부분 수정 요청. (골격 — 본구현 전)
- * null 필드는 변경하지 않는다.
+ * 관리자 이벤트 부분 수정 요청.
+ * null 필드는 변경하지 않는다. templateKey 가 빈 문자열이면 템플릿을 해제한다.
  */
 public record EventUpdateRequest(
         /** null 이면 유지. 값이 오면 생성 요청의 @NotBlank 와 같은 기준으로 공백만 있는 이름을 거부한다. */

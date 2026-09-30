@@ -34,7 +34,7 @@
 - 인증/인가 (Security 미사용. `/api/admin/**` 도 토큰 없이 호출됨)
 - JPA/Flyway — 지금은 메모리 더미 (이벤트 시드 6건 · 템플릿 5종)
 - 템플릿 `baseContent`(HTML 조각) — 메타데이터만 제공
-- 수정·삭제·상태변경·게시 **본구현** (엔드포인트 자리만 501)
+- 삭제·상태변경·게시 **본구현** (엔드포인트 자리만 501)
 - 공개 조회 `/api/public/events`
 - LLM HTML 생성 (생성 API 는 DRAFT 메타만 저장)
 
@@ -203,26 +203,52 @@ Content-Type: application/json
 
 ---
 
+## `PATCH /api/admin/events/{id}`
+
+관리자 이벤트 정보·기간 수정 (REQ-EVT-04, 09, 10). 보낸 필드만 바꾸고, 생략하거나 `null` 인 필드는 기존 값을 유지한다.
+상태는 바꾸지 않는다. 종료(`ENDED`)됐거나, 게시(`PUBLISHED`) 중이면서 기존 종료일시가 지난 이벤트는 수정할 수 없다.
+`DRAFT` 는 게시 전이라 기간이 지나도 다시 잡을 수 있다.
+
+### Request body
+
+| 필드 | 필수 | 설명 |
+| --- | --- | --- |
+| `name` | X | 1~100자. 생략하면 유지. 값이 오면 공백만 있는 값(`""`, `"   "`)은 400 (`COMMON400-0`). 앞뒤 공백은 제거해 저장 |
+| `startAt` | X | 생략하면 유지 |
+| `endAt` | X | 생략하면 유지. 수정 후 기간(보낸 값 + 기존 값)이 `endAt` > `startAt` 이어야 함 |
+| `templateKey` | X | 생략하면 유지. 빈 문자열(`""`)이면 템플릿 해제. 값이 있으면 활성 템플릿이어야 함. 게시 중에는 지금과 다른 값(해제 포함)을 보내면 409 |
+| `grade` | X | `NORMAL` / `EXCELLENT` / `BEST`. 생략하면 유지 |
+
+```json
+{ "name": "가을 멤버십 더블 혜택", "endAt": "2026-11-30T23:59:59+09:00" }
+```
+
+### 200
+
+생성 API 와 같은 `EventDetailResponse`. `updatedAt` 은 수정 시각으로 바뀐다.
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| 검증 실패 (이벤트명 공백뿐·100자 초과) | 400 | `COMMON400-0` |
+| 수정 후 `endAt` ≤ `startAt` | 400 | `EVENT400-0` |
+| 없거나 삭제된 이벤트 | 404 | `EVENT404-0` |
+| 없는·비활성 `templateKey` | 404 | `EVENT404-1` |
+| 종료(`ENDED`)됐거나, 게시 중이면서 기존 종료일시가 지난 이벤트 | 409 | `EVENT409-1` |
+| 게시 중인 이벤트의 템플릿 변경·해제 | 409 | `EVENT409-4` |
+
+---
+
 ## 쓰기 골격 (501 Not Implemented)
 
 본구현 전. 자리만 잡혀 있고 호출하면 `501` 을 반환한다.
 
 | Method | Path | Request | 비고 |
 | --- | --- | --- | --- |
-| `PATCH` | `/api/admin/events/{id}` | `EventUpdateRequest` | null 필드는 미변경 |
 | `DELETE` | `/api/admin/events/{id}` | — | 소프트 삭제 (`deletedAt`) |
 | `PATCH` | `/api/admin/events/{id}/status` | `EventStatusChangeRequest` | `DRAFT` → `PUBLISHED` → `ENDED` |
 | `POST` | `/api/admin/events/{id}/publish` | — | `DRAFT` → `PUBLISHED` |
-
-### `EventUpdateRequest`
-
-| 필드 | 필수 | 설명 |
-| --- | --- | --- |
-| `name` | X | 1~100자. null(생략)이면 유지. 값이 오면 공백만 있는 값(`""`, `"   "`)은 400 (`COMMON400-0`) |
-| `startAt` | X | null 이면 유지 |
-| `endAt` | X | null 이면 유지 |
-| `templateKey` | X | null 이면 유지 |
-| `grade` | X | `NORMAL` / `EXCELLENT` / `BEST`. null 이면 유지 |
 
 ### `EventStatusChangeRequest`
 

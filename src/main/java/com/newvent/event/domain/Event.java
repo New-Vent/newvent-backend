@@ -115,4 +115,30 @@ public class Event extends BaseTimeEntity {
         event.grade = grade == null ? MembershipGrade.NORMAL : grade;
         return event;
     }
+
+    /** 관리자 수정 API — 부분 수정 병합과 검증은 서비스가 끝낸 값을 받는다. */
+    public void updateInfo(
+            String title,
+            EventTemplate template,
+            OffsetDateTime startDate,
+            OffsetDateTime endDate,
+            MembershipGrade grade) {
+        this.title = title;
+        this.template = template;
+        this.startDate = startDate;
+        this.endDate = endDate;
+        this.grade = grade;
+    }
+
+    /** DRAFT 는 게시 전이라 기간이 지나도 다시 잡을 수 있게 잠그지 않는다. */
+    public boolean editLocked(OffsetDateTime now) {
+        if (status == EventStatus.ENDED) {
+            return true;
+        }
+        return status == EventStatus.PUBLISHED && endDate != null && !now.isBefore(endDate);
+    }
+
+    public boolean published() {
+        return status == EventStatus.PUBLISHED;
+    }
 }
