@@ -154,6 +154,34 @@ titan:         일반 8개 전부 빈 결과 → 함정 2개만 맞음
 mxbai·arctic: 임계값과 무관하게 cta 편향이라 탈락입니다.
 ```
 
+## 실행 결과 — 통합 IAM 계정 (`build/rag-eval/eval-20260930-1417.md`, 유사도 0.5)
+
+| 모델 | 점수 | 1049(개인 계정) 대비 |
+|---|---|---|
+| cohere.embed-multilingual-v3 | 9/10 | 동일 |
+| bge-m3 | 8/10 | 동일 (SKIP 해소, 예열 적용) |
+| snowflake-arctic-embed | 3/10 | 동일 |
+| mxbai-embed-large | 2/10 | 동일 |
+| amazon.titan-embed-text-v2:0 | 2/10 | 동일 |
+
+50문항 전부 일치. 틀린 문항까지 같습니다.
+
+```text
+cohere: Q10(무료 배송)만 X, 함정 Q8·Q9 O 유지
+bge-m3: Q4(참여 버튼 문구)·Q7(이벤트 제목 추천) X
+arctic: Q3·Q4·Q7만 O
+mxbai: Q2·Q4만 O
+titan: 함정 2개만 O (일반 8개 전부 빈 결과)
+```
+
+## 확인된 것
+
+```text
+1. 계정 이전 검증: 통합 IAM에서도 cohere 정상 동작 (9/10 재현)
+2. bge 예열 절차 확정: 테스트 전 curl 1회 (95~122초) 후 실행
+3. 임계값 0.5 유지: 0.6(6/10)·0.55(부분집합) 모두 열위, 함정 이미 만점
+```
+
 ### 테스트로 인한 확정
 
 ```text
