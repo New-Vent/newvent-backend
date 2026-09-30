@@ -122,7 +122,15 @@ public class Event extends BaseTimeEntity {
         this.grade = grade;
     }
 
-    public boolean ended() {
-        return status == EventStatus.ENDED;
+    /** DRAFT 는 게시 전이라 기간이 지나도 다시 잡을 수 있게 잠그지 않는다. */
+    public boolean editLocked(OffsetDateTime now) {
+        if (status == EventStatus.ENDED) {
+            return true;
+        }
+        return status == EventStatus.PUBLISHED && endDate != null && !now.isBefore(endDate);
+    }
+
+    public boolean published() {
+        return status == EventStatus.PUBLISHED;
     }
 }

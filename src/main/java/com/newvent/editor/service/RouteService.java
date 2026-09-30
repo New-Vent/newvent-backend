@@ -12,6 +12,7 @@ import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmCallGateway;
 import com.newvent.infra.llm.LlmClient;
 import com.newvent.registry.BlockValidator.Failure;
+import com.newvent.registry.FailureCode;
 import com.newvent.registry.PromptBuilder;
 
 /**
@@ -35,11 +36,11 @@ public class RouteService {
 
     /** 잘림 — done_reason 이라는 별개 사실. LlmCallLog.failureType 이 TRUNCATED 가 된다 */
     private static final Failure TRUNCATED =
-            new Failure("truncated", "요청이 너무 복잡해 라우터 출력이 잘렸습니다.");
+            Failure.of(FailureCode.TRUNCATED, "요청이 너무 복잡해 라우터 출력이 잘렸습니다.");
 
     /** 출력이 규격이 아니다 — VALIDATION_FAIL */
     private static final Failure UNPARSABLE =
-            new Failure("router_parse", "라우터 출력이 규격에 맞지 않습니다.");
+            Failure.of(FailureCode.ROUTER_PARSE, "라우터 출력이 규격에 맞지 않습니다.");
 
     private final LlmCallGateway gateway;
     private final LlmCallRecorder recorder;

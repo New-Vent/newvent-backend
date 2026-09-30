@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -101,8 +102,11 @@ public class EventService {
     @Transactional
     public EventDetailResponse update(Long id, EventUpdateRequest request) {
         Event event = findActiveEvent(id);
-        if (event.ended()) {
+        if (event.editLocked(OffsetDateTime.now(clock))) {
             throw new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
+        }
+        if (event.published() && templateChanged(event, request.templateKey())) {
+            throw new EventException(EventErrorCode.PUBLISHED_EVENT_TEMPLATE_NOT_EDITABLE);
         }
 
         OffsetDateTime startAt = request.startAt() != null ? request.startAt() : event.getStartDate();
@@ -139,6 +143,14 @@ public class EventService {
             return false;
         }
         return !now.isBefore(event.getEndDate().minus(CLOSING_SOON_WINDOW));
+    }
+
+    private boolean templateChanged(Event event, String templateKey) {
+        if (templateKey == null) {
+            return false;
+        }
+        String requested = templateKey.isBlank() ? null : templateKey.trim();
+        return !Objects.equals(requested, event.templateCode());
     }
 
     private EventTemplate resolveTemplate(String templateKey) {

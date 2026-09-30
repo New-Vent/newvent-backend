@@ -206,7 +206,8 @@ Content-Type: application/json
 ## `PATCH /api/admin/events/{id}`
 
 관리자 이벤트 정보·기간 수정 (REQ-EVT-04, 09, 10). 보낸 필드만 바꾸고, 생략하거나 `null` 인 필드는 기존 값을 유지한다.
-상태는 바꾸지 않는다. 종료(`ENDED`)된 이벤트는 수정할 수 없다.
+상태는 바꾸지 않는다. 종료(`ENDED`)됐거나, 게시(`PUBLISHED`) 중이면서 기존 종료일시가 지난 이벤트는 수정할 수 없다.
+`DRAFT` 는 게시 전이라 기간이 지나도 다시 잡을 수 있다.
 
 ### Request body
 
@@ -215,7 +216,7 @@ Content-Type: application/json
 | `name` | X | 1~100자. 생략하면 유지. 값이 오면 공백만 있는 값(`""`, `"   "`)은 400 (`COMMON400-0`). 앞뒤 공백은 제거해 저장 |
 | `startAt` | X | 생략하면 유지 |
 | `endAt` | X | 생략하면 유지. 수정 후 기간(보낸 값 + 기존 값)이 `endAt` > `startAt` 이어야 함 |
-| `templateKey` | X | 생략하면 유지. 빈 문자열(`""`)이면 템플릿 해제. 값이 있으면 활성 템플릿이어야 함 |
+| `templateKey` | X | 생략하면 유지. 빈 문자열(`""`)이면 템플릿 해제. 값이 있으면 활성 템플릿이어야 함. 게시 중에는 지금과 다른 값(해제 포함)을 보내면 409 |
 | `grade` | X | `NORMAL` / `EXCELLENT` / `BEST`. 생략하면 유지 |
 
 ```json
@@ -234,7 +235,8 @@ Content-Type: application/json
 | 수정 후 `endAt` ≤ `startAt` | 400 | `EVENT400-0` |
 | 없거나 삭제된 이벤트 | 404 | `EVENT404-0` |
 | 없는·비활성 `templateKey` | 404 | `EVENT404-1` |
-| 종료(`ENDED`)된 이벤트 | 409 | `EVENT409-1` |
+| 종료(`ENDED`)됐거나, 게시 중이면서 기존 종료일시가 지난 이벤트 | 409 | `EVENT409-1` |
+| 게시 중인 이벤트의 템플릿 변경·해제 | 409 | `EVENT409-3` |
 
 ---
 

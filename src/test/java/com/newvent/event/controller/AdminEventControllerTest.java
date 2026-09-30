@@ -211,6 +211,21 @@ class AdminEventControllerTest {
     }
 
     @Test
+    @DisplayName("게시 중인 이벤트의 템플릿 변경은 409 와 EVENT409-3 을 반환한다")
+    void 게시중_템플릿_변경은_409를_반환한다() throws Exception {
+        given(eventService.update(eq(4L), any(EventUpdateRequest.class)))
+                .willThrow(new EventException(EventErrorCode.PUBLISHED_EVENT_TEMPLATE_NOT_EDITABLE));
+
+        mockMvc.perform(patch("/api/admin/events/4")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "templateKey": "sports_cheer" }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-3"));
+    }
+
+    @Test
     @DisplayName("수정 후 기간이 역전되면 400 과 EVENT400-0 을 반환한다")
     void 수정_기간이_역전되면_400을_반환한다() throws Exception {
         given(eventService.update(eq(2L), any(EventUpdateRequest.class)))
