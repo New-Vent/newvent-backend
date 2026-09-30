@@ -282,7 +282,7 @@ Content-Type: application/json
     {
       "templateKey": "sports_cheer",
       "name": "스포츠 응원",
-      "description": "월드컵 승부예측 투표와 스코어 맞추기. template_1_sports_cheer.html",
+      "description": "월드컵 승부예측 투표와 스코어 맞추기. sports_cheer.html",
       "theme": "theme-sports",
       "active": true
     }
@@ -293,11 +293,11 @@ Content-Type: application/json
 
 | templateKey | name | theme | 파일 |
 | --- | --- | --- | --- |
-| `sports_cheer` | 스포츠 응원 | `theme-sports` | template_1_sports_cheer.html |
-| `holiday_gift` | 한가위 선물 | `theme-holiday` | template_2_holiday_gift.html |
-| `member_appreciation` | 회원 감사 | `theme-vip` | template_3_member_appreciation.html |
-| `flash_sale` | 72h 특가 | `theme-sale` | template_4_flash_sale.html |
-| `pre_registration` | 사전예약 | `theme-launch` | template_5_pre_registration.html |
+| `sports_cheer` | 스포츠 응원 | `theme-sports` | sports_cheer.html |
+| `holiday_gift` | 한가위 선물 | `theme-holiday` | holiday_gift.html |
+| `member_appreciation` | 회원 감사 | `theme-vip` | member_appreciation.html |
+| `flash_sale` | 72h 특가 | `theme-sale` | flash_sale.html |
+| `pre_registration` | 사전예약 | `theme-launch` | pre_registration.html |
 
 ```text
 http://localhost:8080/api/admin/templates
