@@ -35,7 +35,7 @@ public class EventVersionService {
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
 
         List<EventVersionSummaryResponse> versions = eventVersionRepository
-                .findByEventIdAndCheckpointTrueOrderByVersionNoDesc(eventId)
+                .findByEventIdOrderByVersionNoDesc(eventId)
                 .stream()
                 .map(version -> EventVersionSummaryResponse.from(version, event))
                 .toList();
@@ -79,13 +79,7 @@ public class EventVersionService {
     }
 
     public EventVersionDetailResponse getVersion(Long eventId, Long versionId) {
-        eventRepository.findByIdAndDeletedAtIsNull(eventId)
-                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
-
-        EventVersion version = eventVersionRepository
-                .findByIdAndEventIdAndCheckpointTrue(versionId, eventId)
-                .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
-
+        EventVersion version = findVersion(eventId, versionId);
         return EventVersionDetailResponse.from(version);
     }
 }
