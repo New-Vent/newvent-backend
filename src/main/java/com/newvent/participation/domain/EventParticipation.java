@@ -62,4 +62,11 @@ public class EventParticipation {
             foreignKey = @ForeignKey(name = "fk_event_participations_event")
     )
     private Event event;
+
+    public static EventParticipation create(Event event, User user) {
+        EventParticipation participation = new EventParticipation();
+        participation.event = event;
+        participation.user = user;
+        return participation;
+    }
 }
