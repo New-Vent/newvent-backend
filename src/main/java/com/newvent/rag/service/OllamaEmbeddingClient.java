@@ -36,7 +36,7 @@ public class OllamaEmbeddingClient implements EmbeddingClient {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.model = model;
         this.dimension = dimension;
-        this.timeout = Duration.ofSeconds(60);
+        this.timeout = Duration.ofSeconds(300);
         this.http = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
