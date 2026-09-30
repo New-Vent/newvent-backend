@@ -134,7 +134,7 @@ class RagEvalSmokeTest {
         try {
             indexTemplates(embedding, event);
         } catch (Exception e) {
-            System.out.printf("== %s: SKIP (색인 실패: %s)%n", model, e.getMessage());
+            note("== %s: SKIP (색인 실패: %s)".formatted(model, e.getMessage()));
             return;
         }
         for (EvalQuery q : questions) {
