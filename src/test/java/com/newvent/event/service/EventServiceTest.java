@@ -32,6 +32,7 @@ import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventTemplate;
 import com.newvent.event.domain.EventVersion;
 import com.newvent.event.dto.request.EventCreateRequest;
+import com.newvent.event.dto.request.EventUpdateRequest;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
 import com.newvent.event.dto.response.PageResponse;
@@ -39,6 +40,8 @@ import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.event.repository.EventTemplateRepository;
+import com.newvent.generation.service.GenerationJob;
+import com.newvent.generation.service.GenerationJobStore;
 import com.newvent.user.domain.MembershipGrade;
 
 /**
@@ -53,9 +56,10 @@ class EventServiceTest {
     private final EventRepository eventRepository = mock(EventRepository.class);
     private final EventTemplateRepository eventTemplateRepository = mock(EventTemplateRepository.class);
     private final AdminRepository adminRepository = mock(AdminRepository.class);
+    private final GenerationJobStore generationJobStore = mock(GenerationJobStore.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-09-16T01:00:00+09:00"), SEOUL);
     private final EventService eventService =
-            new EventService(eventRepository, eventTemplateRepository, adminRepository, clock);
+            new EventService(eventRepository, eventTemplateRepository, adminRepository, generationJobStore, clock);
 
     @Test
     @DisplayName("목록 조회는 리포지토리 결과를 마감임박과 함께 매핑한다")
@@ -157,6 +161,128 @@ class EventServiceTest {
     }
 
     @Test
+    @DisplayName("휴지통 목록 조회는 리포지토리 결과를 매핑한다")
+    void 휴지통_목록_조회에_성공한다() {
+        Event event = newEvent(99L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
+        Page<Event> page = new PageImpl<>(List.of(event), PageRequest.of(0, 10), 1);
+        when(eventRepository.findDeletedEvents(eq(PageRequest.of(0, 10)))).thenReturn(page);
+
+        PageResponse<EventSummaryResponse> result = eventService.findDeletedEvents(0, 10);
+
+        assertThat(result.totalElements()).isEqualTo(1);
+        assertThat(result.content().get(0).id()).isEqualTo(99L);
+    }
+
+    @Test
+    @DisplayName("게시 중인 이벤트는 삭제할 수 없다")
+    void 게시중인_이벤트는_삭제할_수_없다() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.delete(1L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.PUBLISHED_EVENT_DELETE_FORBIDDEN.getCode());
+        assertThat(event.deleted()).isFalse();
+    }
+
+    @Test
+    @DisplayName("DRAFT/ENDED 이벤트는 휴지통으로 이동한다")
+    void 이벤트를_삭제하면_deletedAt이_설정된다() {
+        Event event = newEvent(2L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(event));
+
+        eventService.delete(2L);
+
+        assertThat(event.deleted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("없거나 이미 삭제된 이벤트를 삭제하려 하면 EVENT404-0 이다")
+    void 없는_이벤트_삭제는_404를_던진다() {
+        when(eventRepository.findByIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventService.delete(999L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
+    }
+
+    @Test
+    @DisplayName("생성 작업이 진행 중인 이벤트는 삭제할 수 없다")
+    void 생성중인_이벤트는_삭제할_수_없다() {
+        Event event = newEvent(2L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(event));
+        when(generationJobStore.ofEvent(2L)).thenReturn(Optional.of(new GenerationJob(2L)));
+
+        assertThatThrownBy(() -> eventService.delete(2L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_GENERATING_DELETE_FORBIDDEN.getCode());
+        assertThat(event.deleted()).isFalse();
+    }
+
+    @Test
+    @DisplayName("휴지통에서 영구 삭제하면 리포지토리 delete 가 호출된다")
+    void 영구_삭제에_성공한다() {
+        Event event = newEvent(99L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(99L)).thenReturn(Optional.of(event));
+
+        eventService.hardDelete(99L);
+
+        verify(eventRepository).delete(event);
+    }
+
+    @Test
+    @DisplayName("삭제되지 않은 이벤트를 영구 삭제하려 하면 EVENT404-0 이다")
+    void 삭제되지_않은_이벤트_영구삭제는_404를_던진다() {
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventService.hardDelete(1L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
+    }
+
+    @Test
+    @DisplayName("복구하면 deletedAt 이 해제되고 상세를 반환한다")
+    void 이벤트를_복구한다() {
+        Event event = newEvent(99L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(99L)).thenReturn(Optional.of(event));
+
+        EventDetailResponse restored = eventService.restore(99L);
+
+        assertThat(event.deleted()).isFalse();
+        assertThat(restored.id()).isEqualTo(99L);
+    }
+
+    @Test
+    @DisplayName("삭제되지 않은 이벤트를 복구하려 하면 EVENT404-0 이다")
+    void 삭제되지_않은_이벤트_복구는_404를_던진다() {
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventService.restore(1L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
+    }
+
+    @Test
     @DisplayName("생성은 DRAFT 로 저장되고 로그인한 관리자를 소유자로 지정한다")
     void 이벤트_생성에_성공한다() {
         EventCreateRequest request = new EventCreateRequest(
@@ -230,6 +356,221 @@ class EventServiceTest {
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.TEMPLATE_NOT_FOUND.getCode());
+    }
+
+    @Test
+    @DisplayName("수정은 보낸 필드만 바꾸고 나머지는 유지한다")
+    void 이름만_수정하면_나머지는_유지된다() {
+        Event event = draftWorldCupEvent();
+
+        EventDetailResponse updated = eventService.update(2L, new EventUpdateRequest(
+                "  월드컵 승부 예측  ", null, null, null, null));
+
+        assertThat(updated.name()).isEqualTo("월드컵 승부 예측");
+        assertThat(updated.status()).isEqualTo(EventStatus.DRAFT);
+        assertThat(updated.grade()).isEqualTo(MembershipGrade.EXCELLENT);
+        assertThat(updated.startAt()).isEqualTo(OffsetDateTime.parse("2026-07-01T00:00:00+09:00"));
+        assertThat(updated.endAt()).isEqualTo(OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
+        assertThat(event.getTitle()).isEqualTo("월드컵 승부 예측");
+        verify(eventRepository).flush();
+    }
+
+    @Test
+    @DisplayName("기간·템플릿·등급을 함께 수정한다")
+    void 기간과_템플릿과_등급을_수정한다() {
+        draftWorldCupEvent();
+        when(eventTemplateRepository.findByKey("sports_cheer")).thenReturn(
+                Optional.of(EventTemplate.seed("sports_cheer", "스포츠 응원", "설명", "<html/>", true)));
+
+        EventDetailResponse updated = eventService.update(2L, new EventUpdateRequest(
+                null,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-10T23:59:59+09:00"),
+                "sports_cheer",
+                MembershipGrade.BEST));
+
+        assertThat(updated.startAt()).isEqualTo(OffsetDateTime.parse("2026-10-01T00:00:00+09:00"));
+        assertThat(updated.endAt()).isEqualTo(OffsetDateTime.parse("2026-10-10T23:59:59+09:00"));
+        assertThat(updated.template()).isEqualTo("sports_cheer");
+        assertThat(updated.grade()).isEqualTo(MembershipGrade.BEST);
+        assertThat(updated.name()).isEqualTo("월드컵 스코어 맞추기");
+    }
+
+    @Test
+    @DisplayName("templateKey 가 빈 문자열이면 템플릿을 해제한다")
+    void 빈_템플릿_키는_템플릿을_해제한다() {
+        Event event = draftWorldCupEvent();
+        ReflectionTestUtils.setField(event, "template",
+                EventTemplate.seed("sports_cheer", "스포츠 응원", "설명", "<html/>", true));
+
+        EventDetailResponse updated = eventService.update(2L, new EventUpdateRequest(null, null, null, "", null));
+
+        assertThat(updated.template()).isNull();
+        verifyNoInteractions(eventTemplateRepository);
+    }
+
+    @Test
+    @DisplayName("종료일시만 보내도 기존 시작일시와 비교해 EVENT400-0 을 던진다")
+    void 수정_후_기간이_역전되면_400을_던진다() {
+        Event event = draftWorldCupEvent();
+        EventUpdateRequest request = new EventUpdateRequest(
+                null, null, OffsetDateTime.parse("2026-06-30T00:00:00+09:00"), null, null);
+
+        assertThatThrownBy(() -> eventService.update(2L, request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.INVALID_PERIOD.getCode());
+        assertThat(event.getEndDate()).isEqualTo(OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
+    }
+
+    @Test
+    @DisplayName("종료(ENDED)된 이벤트는 수정할 수 없고 EVENT409-1 을 던진다")
+    void 종료된_이벤트는_수정할_수_없다() {
+        Event event = newEvent(6L, EventStatus.ENDED,
+                OffsetDateTime.parse("2026-08-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-08-31T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "title", "여름 데이터 대방출");
+        when(eventRepository.findAdminEventById(6L)).thenReturn(Optional.of(event));
+        EventUpdateRequest request = new EventUpdateRequest("이름 변경", null, null, null, null);
+
+        assertThatThrownBy(() -> eventService.update(6L, request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_ENDED_NOT_EDITABLE.getCode());
+        assertThat(event.getTitle()).isEqualTo("여름 데이터 대방출");
+    }
+
+    @Test
+    @DisplayName("게시 중이어도 기존 종료일시가 지났으면 수정할 수 없고 EVENT409-1 을 던진다")
+    void 종료일시가_지난_게시_이벤트는_수정할_수_없다() {
+        Event event = newEvent(5L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-09-15T23:59:59+09:00"));
+        when(eventRepository.findAdminEventById(5L)).thenReturn(Optional.of(event));
+        EventUpdateRequest request = new EventUpdateRequest(
+                null, null, OffsetDateTime.parse("2026-09-30T23:59:59+09:00"), null, null);
+
+        assertThatThrownBy(() -> eventService.update(5L, request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_ENDED_NOT_EDITABLE.getCode());
+        assertThat(event.getEndDate()).isEqualTo(OffsetDateTime.parse("2026-09-15T23:59:59+09:00"));
+    }
+
+    @Test
+    @DisplayName("진행 중인 게시 이벤트는 정보·기간을 수정할 수 있다")
+    void 진행중인_게시_이벤트는_수정할_수_있다() {
+        Event event = publishedEventWithTemplate();
+
+        EventDetailResponse updated = eventService.update(4L, new EventUpdateRequest(
+                "추석 특가", null, OffsetDateTime.parse("2026-10-05T23:59:59+09:00"), null, null));
+
+        assertThat(updated.name()).isEqualTo("추석 특가");
+        assertThat(updated.endAt()).isEqualTo(OffsetDateTime.parse("2026-10-05T23:59:59+09:00"));
+        assertThat(event.templateCode()).isEqualTo("flash_sale");
+    }
+
+    @Test
+    @DisplayName("기간이 지난 DRAFT 는 게시 전이라 기간을 다시 잡을 수 있다")
+    void 기간이_지난_DRAFT는_기간을_다시_잡을_수_있다() {
+        draftWorldCupEvent();
+
+        EventDetailResponse updated = eventService.update(2L, new EventUpdateRequest(
+                null,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"),
+                null,
+                null));
+
+        assertThat(updated.startAt()).isEqualTo(OffsetDateTime.parse("2026-10-01T00:00:00+09:00"));
+        assertThat(updated.endAt()).isEqualTo(OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+    }
+
+    @Test
+    @DisplayName("게시 중인 이벤트의 템플릿을 다른 템플릿으로 바꾸면 EVENT409-4 를 던진다")
+    void 게시중_템플릿_변경은_409를_던진다() {
+        Event event = publishedEventWithTemplate();
+        EventUpdateRequest request = new EventUpdateRequest(null, null, null, "sports_cheer", null);
+
+        assertThatThrownBy(() -> eventService.update(4L, request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.PUBLISHED_EVENT_TEMPLATE_NOT_EDITABLE.getCode());
+        assertThat(event.templateCode()).isEqualTo("flash_sale");
+        verifyNoInteractions(eventTemplateRepository);
+    }
+
+    @Test
+    @DisplayName("게시 중인 이벤트의 템플릿을 해제하면 EVENT409-4 를 던진다")
+    void 게시중_템플릿_해제는_409를_던진다() {
+        Event event = publishedEventWithTemplate();
+        EventUpdateRequest request = new EventUpdateRequest(null, null, null, "", null);
+
+        assertThatThrownBy(() -> eventService.update(4L, request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.PUBLISHED_EVENT_TEMPLATE_NOT_EDITABLE.getCode());
+        assertThat(event.templateCode()).isEqualTo("flash_sale");
+    }
+
+    @Test
+    @DisplayName("게시 중이어도 지금과 같은 템플릿 키를 보내면 수정된다")
+    void 게시중_같은_템플릿_키는_허용한다() {
+        publishedEventWithTemplate();
+        when(eventTemplateRepository.findByKey("flash_sale")).thenReturn(
+                Optional.of(EventTemplate.seed("flash_sale", "타임 특가", "설명", "<html/>", true)));
+
+        EventDetailResponse updated = eventService.update(4L, new EventUpdateRequest(
+                "추석 특가", null, null, " flash_sale ", null));
+
+        assertThat(updated.name()).isEqualTo("추석 특가");
+        assertThat(updated.template()).isEqualTo("flash_sale");
+    }
+
+    @Test
+    @DisplayName("없거나 삭제된 이벤트 수정은 EVENT404-0 이다")
+    void 없는_이벤트_수정은_404를_던진다() {
+        when(eventRepository.findAdminEventById(999L)).thenReturn(Optional.empty());
+        EventUpdateRequest request = new EventUpdateRequest("이름 변경", null, null, null, null);
+
+        assertThatThrownBy(() -> eventService.update(999L, request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
+    }
+
+    @Test
+    @DisplayName("없는 템플릿 키로 수정하면 EVENT404-1 이다")
+    void 없는_템플릿으로_수정하면_404를_던진다() {
+        draftWorldCupEvent();
+        when(eventTemplateRepository.findByKey("없는키")).thenReturn(Optional.empty());
+        EventUpdateRequest request = new EventUpdateRequest(null, null, null, "없는키", null);
+
+        assertThatThrownBy(() -> eventService.update(2L, request))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.TEMPLATE_NOT_FOUND.getCode());
+    }
+
+    private Event draftWorldCupEvent() {
+        Event event = newEvent(2L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "title", "월드컵 스코어 맞추기");
+        ReflectionTestUtils.setField(event, "grade", MembershipGrade.EXCELLENT);
+        when(eventRepository.findAdminEventById(2L)).thenReturn(Optional.of(event));
+        return event;
+    }
+
+    private Event publishedEventWithTemplate() {
+        Event event = newEvent(4L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-09-10T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-09-30T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "title", "가을 타임 특가");
+        ReflectionTestUtils.setField(event, "template",
+                EventTemplate.seed("flash_sale", "타임 특가", "설명", "<html/>", true));
+        when(eventRepository.findAdminEventById(4L)).thenReturn(Optional.of(event));
+        return event;
     }
 
     private Event newEvent(Long id, EventStatus status, OffsetDateTime startDate, OffsetDateTime endDate) {

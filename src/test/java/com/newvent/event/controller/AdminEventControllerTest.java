@@ -4,6 +4,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -31,6 +33,7 @@ import com.newvent.common.config.SecurityConfig;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.request.EventCreateRequest;
+import com.newvent.event.dto.request.EventUpdateRequest;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
 import com.newvent.event.dto.response.PageResponse;
@@ -171,14 +174,72 @@ class AdminEventControllerTest {
     }
 
     @Test
-    @DisplayName("수정 골격은 501 을 반환한다")
-    void 이벤트_수정_골격은_501이다() throws Exception {
-        mockMvc.perform(patch("/api/admin/events/1")
+    @DisplayName("수정 API 는 200 과 수정된 이벤트를 반환한다")
+    void 이벤트_수정에_성공한다() throws Exception {
+        EventDetailResponse updated = new EventDetailResponse(
+                2L, "이름만 변경", EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-07-31T23:59:59+09:00"),
+                OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
+                null, null, MembershipGrade.EXCELLENT,
+                null, false);
+        given(eventService.update(eq(2L), any(EventUpdateRequest.class))).willReturn(updated);
+
+        mockMvc.perform(patch("/api/admin/events/2")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "이름만 변경" }
                                 """))
-                .andExpect(status().isNotImplemented());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(2))
+                .andExpect(jsonPath("$.data.name").value("이름만 변경"))
+                .andExpect(jsonPath("$.data.grade").value("EXCELLENT"));
+    }
+
+    @Test
+    @DisplayName("종료된 이벤트 수정은 409 와 EVENT409-1 을 반환한다")
+    void 종료된_이벤트_수정은_409를_반환한다() throws Exception {
+        given(eventService.update(eq(6L), any(EventUpdateRequest.class)))
+                .willThrow(new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE));
+
+        mockMvc.perform(patch("/api/admin/events/6")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "이름 변경" }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-1"));
+    }
+
+    @Test
+    @DisplayName("게시 중인 이벤트의 템플릿 변경은 409 와 EVENT409-4 를 반환한다")
+    void 게시중_템플릿_변경은_409를_반환한다() throws Exception {
+        given(eventService.update(eq(4L), any(EventUpdateRequest.class)))
+                .willThrow(new EventException(EventErrorCode.PUBLISHED_EVENT_TEMPLATE_NOT_EDITABLE));
+
+        mockMvc.perform(patch("/api/admin/events/4")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "templateKey": "sports_cheer" }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-4"));
+    }
+
+    @Test
+    @DisplayName("수정 후 기간이 역전되면 400 과 EVENT400-0 을 반환한다")
+    void 수정_기간이_역전되면_400을_반환한다() throws Exception {
+        given(eventService.update(eq(2L), any(EventUpdateRequest.class)))
+                .willThrow(new EventException(EventErrorCode.INVALID_PERIOD));
+
+        mockMvc.perform(patch("/api/admin/events/2")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "endAt": "2026-06-30T00:00:00+09:00" }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("EVENT400-0"));
     }
 
     @Test
@@ -213,14 +274,117 @@ class AdminEventControllerTest {
                         .content("""
                                 { "endAt": "2026-10-20T23:59:59+09:00" }
                                 """))
-                .andExpect(status().isNotImplemented());
+                .andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("삭제 골격은 501 을 반환한다")
-    void 이벤트_삭제_골격은_501이다() throws Exception {
+    @DisplayName("삭제 API 는 200 을 반환한다")
+    void 이벤트_삭제에_성공한다() throws Exception {
         mockMvc.perform(delete("/api/admin/events/1"))
-                .andExpect(status().isNotImplemented());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(eventService).delete(1L);
+    }
+
+    @Test
+    @DisplayName("게시 중인 이벤트 삭제는 409 와 EVENT409-2 를 반환한다")
+    void 게시중인_이벤트_삭제는_409를_반환한다() throws Exception {
+        willThrow(new EventException(EventErrorCode.PUBLISHED_EVENT_DELETE_FORBIDDEN))
+                .given(eventService).delete(1L);
+
+        mockMvc.perform(delete("/api/admin/events/1"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-2"));
+    }
+
+    @Test
+    @DisplayName("없는 이벤트 삭제는 404 와 EVENT404-0 을 반환한다")
+    void 없는_이벤트_삭제는_404를_반환한다() throws Exception {
+        willThrow(new EventException(EventErrorCode.EVENT_NOT_FOUND))
+                .given(eventService).delete(999L);
+
+        mockMvc.perform(delete("/api/admin/events/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("EVENT404-0"));
+    }
+
+    @Test
+    @DisplayName("생성 중인 이벤트 삭제는 409 와 EVENT409-3 을 반환한다")
+    void 생성중인_이벤트_삭제는_409를_반환한다() throws Exception {
+        willThrow(new EventException(EventErrorCode.EVENT_GENERATING_DELETE_FORBIDDEN))
+                .given(eventService).delete(1L);
+
+        mockMvc.perform(delete("/api/admin/events/1"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-3"));
+    }
+
+    @Test
+    @DisplayName("영구 삭제 API 는 200 을 반환한다")
+    void 이벤트_영구삭제에_성공한다() throws Exception {
+        mockMvc.perform(delete("/api/admin/events/99/permanent"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(eventService).hardDelete(99L);
+    }
+
+    @Test
+    @DisplayName("삭제되지 않은 이벤트 영구삭제는 404 와 EVENT404-0 을 반환한다")
+    void 삭제되지_않은_이벤트_영구삭제는_404를_반환한다() throws Exception {
+        willThrow(new EventException(EventErrorCode.EVENT_NOT_FOUND))
+                .given(eventService).hardDelete(1L);
+
+        mockMvc.perform(delete("/api/admin/events/1/permanent"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("EVENT404-0"));
+    }
+
+    @Test
+    @DisplayName("휴지통 목록 API 는 ApiResponse 로 감싼다")
+    void 휴지통_목록_조회에_성공한다() throws Exception {
+        EventSummaryResponse row = new EventSummaryResponse(
+                99L, "삭제된 이벤트", EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-01-10T23:59:59+09:00"),
+                OffsetDateTime.parse("2026-01-11T00:00:00+09:00"),
+                null, null, MembershipGrade.NORMAL, false);
+        given(eventService.findDeletedEvents(0, 10))
+                .willReturn(PageResponse.of(List.of(row), 0, 10, 1));
+
+        mockMvc.perform(get("/api/admin/events/trash"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.content[0].id").value(99))
+                .andExpect(jsonPath("$.data.content[0].name").value("삭제된 이벤트"));
+    }
+
+    @Test
+    @DisplayName("복구 API 는 복구된 이벤트 상세를 반환한다")
+    void 이벤트_복구에_성공한다() throws Exception {
+        EventDetailResponse restored = new EventDetailResponse(
+                99L, "삭제된 이벤트", EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-01-10T23:59:59+09:00"),
+                OffsetDateTime.parse("2026-01-11T00:00:00+09:00"),
+                null, null, MembershipGrade.NORMAL, null, false);
+        given(eventService.restore(99L)).willReturn(restored);
+
+        mockMvc.perform(post("/api/admin/events/99/restore"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(99));
+    }
+
+    @Test
+    @DisplayName("삭제되지 않은 이벤트 복구는 404 와 EVENT404-0 을 반환한다")
+    void 삭제되지_않은_이벤트_복구는_404를_반환한다() throws Exception {
+        given(eventService.restore(1L)).willThrow(new EventException(EventErrorCode.EVENT_NOT_FOUND));
+
+        mockMvc.perform(post("/api/admin/events/1/restore"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("EVENT404-0"));
     }
 
     @Test

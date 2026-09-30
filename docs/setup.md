@@ -255,6 +255,72 @@ aws configure
 모델 접근 권한은 AWS 콘솔에서 별도로 신청해야 합니다. 권한이 없으면 호출 시점에
 실패하며, 어떤 관문이 남았는지는 오류 메시지에 나옵니다.
 
+### 컨테이너로 Bedrock을 쓸 때 (예외)
+
+위의 "환경변수에 넣지 않습니다"는 IDE나 `gradlew bootRun`으로 **호스트에서** 실행할 때의 이야기입니다.
+컨테이너는 호스트의 `~/.aws`를 볼 수 없으므로 이 경우에만 환경변수로 전달합니다.
+
+`.env`에 두 줄을 추가합니다. `.env`는 Git에 포함되지 않습니다.
+
+```text
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+```
+
+그리고 `docker-compose.bedrock.yml`을 겹쳐서 띄웁니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.bedrock.yml up --build
+```
+
+`mock`으로 쓰는 경우에는 이 파일이 필요하지 않습니다. 기존 명령이 그대로 동작합니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.app.yml up --build
+```
+
+내릴 때는 `--remove-orphans`를 붙입니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.app.yml down --remove-orphans
+```
+
+`docker compose down`으로 줄여 쓰면 **앱 컨테이너가 고아로 남습니다.** 기본 파일에 `app` 정의가
+없어서 Compose가 자기 것으로 보지 않기 때문입니다. 경고도 뜨지 않고
+`Network ... Resource is still in use`라는 간접적인 메시지만 남습니다.
+`mock`으로 쓰는 경우에도 똑같이 적용됩니다.
+
+`~/.aws`를 컨테이너에 마운트하는 방법도 있지만 쓰지 않습니다. 그 사람의 **모든** 프로파일이
+컨테이너에 노출되기 때문입니다. Bedrock 전용 키만 넘기는 쪽이 최소권한에 맞습니다.
+
+### 자격증명이 없으면 기동에서 막힙니다
+
+`LLM_PROVIDER=bedrock`인데 자격증명이 없으면 `BedrockCredentialCheck`가 애플리케이션 기동을
+실패시킵니다. 컨테이너는 `healthy`가 되지 못하고 `restart: unless-stopped` 때문에 **재시작을
+반복합니다.** `docker ps`에 `Restarting (1)` · `unhealthy`로 보입니다.
+
+같은 스택이 여러 번 쌓이므로 로그는 앞부분만 보면 됩니다.
+
+```bash
+docker logs newvent-app 2>&1 | head -40
+```
+
+거기에 다음이 뜹니다.
+
+```text
+llm.provider=bedrock 인데 AWS 자격증명을 찾지 못했습니다.
+컨테이너면 .env 의 AWS_ACCESS_KEY_ID·AWS_SECRET_ACCESS_KEY 를,
+호스트면 AWS_PROFILE 또는 ~/.aws/credentials 를 확인하세요.
+```
+
+이 검사가 없으면 앱은 정상으로 뜨고, 관리자가 실제로 생성을 누를 때
+`"페이지 생성 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요."`로 실패합니다.
+설정 누락인데 일시적 장애로 읽히고, 재시도가 돌면서 `llm_call_logs`에 실패 행이 쌓여
+하루 상한(`llm.daily-limit`)을 깎습니다. 그래서 기동에서 막습니다.
+
+확인하는 것은 **키의 존재**뿐입니다. 키가 틀렸거나 모델 접근 권한이 없으면 첫 호출에서
+걸립니다. 네트워크 호출을 하지 않으므로 과금되지 않습니다.
+
 ### 실제 모델로 스모크 테스트
 
 애플리케이션을 띄우지 않고 모델만 확인합니다. DB도 필요하지 않습니다.
