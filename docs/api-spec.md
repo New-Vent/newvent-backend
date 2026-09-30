@@ -1,8 +1,8 @@
 # API 명세
 
-관리자 이벤트 조회 API의 현재 구현을 적는다. 인증/인가·JPA·쓰기 API는 이 문서 범위 밖이다.
+관리자 이벤트·템플릿 API의 현재 구현을 적는다. `/api/admin/**` 는 관리자 로그인(ADMIN)이 필요하다.
 
-> Status: Draft — `feat/event-admin-query`
+> Status: Draft
 
 ## 공통
 
@@ -31,12 +31,8 @@
 
 ## 아직 안 한 것
 
-- 인증/인가 (Security 미사용. `/api/admin/**` 도 토큰 없이 호출됨)
-- JPA/Flyway — 지금은 메모리 더미 (이벤트 시드 6건 · 템플릿 5종)
-- 템플릿 `baseContent`(HTML 조각) — 메타데이터만 제공
-- 삭제·상태변경·게시 **본구현** (엔드포인트 자리만 501)
-- 공개 조회 `/api/public/events`
-- LLM HTML 생성 (생성 API 는 DRAFT 메타만 저장)
+- 게시 `POST /api/admin/events/{id}/publish` — 자리만 있음 (501)
+- 템플릿 HTML 본문 — 템플릿 API 는 메타데이터만 제공
 
 ## 이벤트 상태
 
@@ -251,21 +247,54 @@ Content-Type: application/json
 
 ---
 
-## 쓰기 골격 (501 Not Implemented)
+## `PATCH /api/admin/events/{id}/status`
 
-본구현 전. 자리만 잡혀 있고 호출하면 `501` 을 반환한다.
+관리자 이벤트 종료 (REQ-EVT-07). 지금은 종료(`PUBLISHED` → `ENDED`)만 받는다. 게시는 `POST /{id}/publish` 로 한다.
+상태는 `DRAFT` → `PUBLISHED` → `ENDED` 단방향이고, 종료한 이벤트는 수정할 수 없다. 게시 버전(`completedHtml`)은 그대로 남는다.
 
-| Method | Path | Request | 비고 |
-| --- | --- | --- | --- |
-| `DELETE` | `/api/admin/events/{id}` | — | 소프트 삭제 (`deletedAt`) |
-| `PATCH` | `/api/admin/events/{id}/status` | `EventStatusChangeRequest` | `DRAFT` → `PUBLISHED` → `ENDED` |
-| `POST` | `/api/admin/events/{id}/publish` | — | `DRAFT` → `PUBLISHED` |
-
-### `EventStatusChangeRequest`
+### Request body
 
 | 필드 | 필수 | 설명 |
 | --- | --- | --- |
-| `status` | O | `DRAFT` / `PUBLISHED` / `ENDED` |
+| `status` | O | `ENDED` 만 허용 |
+
+```json
+{ "status": "ENDED" }
+```
+
+### 200
+
+`EventDetailResponse`. `status` 는 `ENDED`, `closingSoon` 은 `false`.
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| `status` 누락·없는 값 | 400 | `COMMON400-0` |
+| `ENDED` 가 아닌 상태 요청 | 400 | `EVENT400-2` |
+| 없거나 삭제된 이벤트 | 404 | `EVENT404-0` |
+| 게시 중(`PUBLISHED`)이 아닌 이벤트 | 409 | `EVENT409-5` |
+
+---
+
+## 삭제·휴지통
+
+| Method | Path | 설명 | 오류 |
+| --- | --- | --- | --- |
+| `DELETE` | `/api/admin/events/{id}` | 휴지통으로 보낸다 (`deletedAt` 기록). 응답 `data` 없음 | 404 `EVENT404-0` · 게시 중 409 `EVENT409-2` · 생성 작업 중 409 `EVENT409-3` |
+| `GET` | `/api/admin/events/trash` | 휴지통 목록. `page`·`size` 는 목록 API 와 같음. 삭제일 내림차순 | — |
+| `POST` | `/api/admin/events/{id}/restore` | 휴지통에서 복구. 복구된 `EventDetailResponse` | 휴지통에 없으면 404 `EVENT404-0` |
+| `DELETE` | `/api/admin/events/{id}/permanent` | 휴지통에서 영구 삭제. 되돌릴 수 없음 | 휴지통에 없으면 404 `EVENT404-0` |
+
+---
+
+## 게시 (501 Not Implemented)
+
+본구현 전. 자리만 잡혀 있고 호출하면 `501` 을 반환한다.
+
+| Method | Path | 비고 |
+| --- | --- | --- |
+| `POST` | `/api/admin/events/{id}/publish` | `DRAFT` → `PUBLISHED` |
 
 ---
 

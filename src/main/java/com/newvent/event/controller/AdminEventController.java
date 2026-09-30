@@ -102,12 +102,12 @@ public class AdminEventController {
         return ResponseEntity.ok(ApiResponse.successNoData());
     }
 
-    /** 골격 — DRAFT → PUBLISHED → ENDED. 본구현 전. */
+    /** 종료(PUBLISHED → ENDED)만 받는다. 게시는 POST /{id}/publish. */
     @PatchMapping("/{id}/status")
-    public ResponseEntity<ApiResponse<EventDetailResponse>> changeStatus(
+    public ApiResponse<EventDetailResponse> changeStatus(
             @PathVariable Long id,
             @Valid @RequestBody EventStatusChangeRequest request) {
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        return ApiResponse.success(eventService.changeStatus(id, request.status()));
     }
 
     /** 골격 — DRAFT 게시(PUBLISHED). 본구현 전. */

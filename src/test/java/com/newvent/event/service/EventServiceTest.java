@@ -552,6 +552,73 @@ class EventServiceTest {
                 .isEqualTo(EventErrorCode.TEMPLATE_NOT_FOUND.getCode());
     }
 
+    @Test
+    @DisplayName("게시 중인 이벤트를 종료하면 ENDED 가 되고 게시 버전은 유지된다")
+    void 게시중_이벤트를_종료한다() {
+        Event event = publishedEventWithTemplate();
+        EventVersion version = BeanUtils.instantiateClass(EventVersion.class);
+        ReflectionTestUtils.setField(event, "publishedVersion", version);
+
+        EventDetailResponse ended = eventService.changeStatus(4L, EventStatus.ENDED);
+
+        assertThat(ended.status()).isEqualTo(EventStatus.ENDED);
+        assertThat(ended.closingSoon()).isFalse();
+        assertThat(event.getStatus()).isEqualTo(EventStatus.ENDED);
+        assertThat(event.getPublishedVersion()).isSameAs(version);
+        verify(eventRepository).flush();
+    }
+
+    @Test
+    @DisplayName("DRAFT 이벤트는 종료할 수 없고 EVENT409-5 를 던진다")
+    void DRAFT_이벤트는_종료할_수_없다() {
+        Event event = draftWorldCupEvent();
+
+        assertThatThrownBy(() -> eventService.changeStatus(2L, EventStatus.ENDED))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_NOT_ENDABLE.getCode());
+        assertThat(event.getStatus()).isEqualTo(EventStatus.DRAFT);
+    }
+
+    @Test
+    @DisplayName("이미 종료된 이벤트를 다시 종료하면 EVENT409-5 를 던진다")
+    void 종료된_이벤트는_다시_종료할_수_없다() {
+        Event event = newEvent(6L, EventStatus.ENDED,
+                OffsetDateTime.parse("2026-08-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-08-31T23:59:59+09:00"));
+        when(eventRepository.findAdminEventById(6L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.changeStatus(6L, EventStatus.ENDED))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_NOT_ENDABLE.getCode());
+    }
+
+    @Test
+    @DisplayName("상태 변경으로 PUBLISHED·DRAFT 를 요청하면 EVENT400-2 를 던진다")
+    void 종료가_아닌_상태_요청은_400을_던진다() {
+        Event event = publishedEventWithTemplate();
+
+        for (EventStatus target : List.of(EventStatus.PUBLISHED, EventStatus.DRAFT)) {
+            assertThatThrownBy(() -> eventService.changeStatus(4L, target))
+                    .isInstanceOf(EventException.class)
+                    .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                    .isEqualTo(EventErrorCode.UNSUPPORTED_STATUS_CHANGE.getCode());
+        }
+        assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+    }
+
+    @Test
+    @DisplayName("없거나 삭제된 이벤트 종료는 EVENT404-0 이다")
+    void 없는_이벤트_종료는_404를_던진다() {
+        when(eventRepository.findAdminEventById(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventService.changeStatus(999L, EventStatus.ENDED))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
+    }
+
     private Event draftWorldCupEvent() {
         Event event = newEvent(2L, EventStatus.DRAFT,
                 OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
