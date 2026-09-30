@@ -20,7 +20,7 @@ import com.newvent.registry.Block;
  *   "유의사항 지워줘" 를 조용히 수정으로 바꾸면 관리자는 지운 줄 앎. 거부하고 이유를 말해야 함.
  *
  * ★ 판정 순서가 정본
- *   (target -> op -> SERVER -> 항목유무 -> 교정 순서로 감)
+ *   (target -> op -> SERVER -> 삭제금지 -> 폼값항목 -> 항목유무 -> 교정 순서로 감)
  *   순서를 바꾸면 다른 결과가 출력
  */
 public class Gate {
@@ -52,8 +52,6 @@ public class Gate {
 		}
 
 		// 2. ★ op 확인이 SERVER 판정보다 먼저다.
-        //    Block.denyReason(String) 은 switch(op) 를 하므로 null 이면 죽는다.
-        //    RouteParser 는 {"ops":[{}] } 를 성공으로 통과시킨다.
         Op op = Op.find(raw.op()).orElse(null);
         if (op == null) {
             return new Decision.Reject(RouterErrorCode.UNKNOWN_OP,
@@ -61,37 +59,36 @@ public class Gate {
         }
 
 	    // 3. ★ 서버 소유 — op 과 무관하게 거부한다.
-		//      Block.denyReason() 에도 SERVER 분기가 있지만, 여기서 끊어야
-		//      "String target 이 Block 이 되는 유일한 지점" 이 유지된다.
         if (block.source() == Block.Source.SERVER) {
             return new Decision.Reject(RouterErrorCode.NOT_ALLOWED,
                     block.desc() + " 영역은 시스템이 관리합니다. 채팅으로 바꿀 수 없습니다.");
         }
 
     	// 4. 필수 영역은 지울 수 없음.
-        //     ★ 삭제라는 의도에 맞는 canDelete() 를 쓴다.
-        //       canCreate() 여도 결과는 같지만 "만들 수 있나" 와 "지울 수 있나" 는
-        //       다른 질문이다. 후자다.
 		if(!block.canDelete() && op == Op.DELETE) {
 			String why = block.denyReason(op.name());
 			return new Decision.Reject(RouterErrorCode.NOT_ALLOWED,
 					why != null ? why : block.key() + " 영역은 지울 수 없습니다.");
 		}
 
-		// 5. 항목 추가인데 내용이 없다 → 되묻는다. 교정보다 먼저.
-        //    benefits 는 required 라 6번에서 EDIT 으로 바뀌어 버리면
-        //    content == null 이 그대로 실행돼서 빈 항목이 생긴다.
+		// 5. ★ 항목이 폼 값인 영역에 ADD → 거절한다. **되묻기보다 먼저다.**
+		if (op == Op.ADD && block.itemsAreFormValues()) {
+			return new Decision.Reject(RouterErrorCode.NOT_ALLOWED,
+					"혜택 항목은 채팅으로 늘리거나 줄일 수 없습니다. "
+					+ "이미 있는 항목의 문구를 다듬는 것만 됩니다.");
+		}
+
+		// 6. 항목 추가인데 내용이 없다 → 되묻는다. 교정보다 먼저.
         if (op == Op.ADD && (raw.content() == null || raw.content().isBlank())) {
             return new Decision.AskBack(askBackQuestion(block));
         }
 
-		// 6. 필수 영역에 ADD 하면 EDIT 으로 교정
-		//	  canCreate() false = SERVER 이거나 필수
+		// 7. 필수 영역에 ADD 하면 EDIT 으로 교정
 		if (op == Op.ADD && !block.canCreate()) {
 			return new Decision.Run(block, Op.EDIT, raw.content());
 		}
 
-		// 7. 나머지는 통과
+		// 8. 나머지는 통과
 		return new Decision.Run(block, op, raw.content());
 	}
 }

@@ -102,4 +102,21 @@ class BlockMergeTest {
         assertEquals("<section data-block='hero' class='a'><h1>실제</h1></section>", section);
         assertEquals(html, BlockMerge.merge(html, Block.HERO, section));
     }
+
+    @Test
+    @DisplayName("section 이 아닌 태그도 찾는다 — 검증기와 같은 선택자를 써야 한다")
+    void 섹션이_아닌_태그도_찾는다() {
+        // ★ validateEdited 는 target.selector() 만 본다. 여기서 "section" 을 덧붙이면
+        //   검증은 통과하고 병합에서 터지는 구멍이 생긴다
+        String html = "<div data-block=\"hero\"><h1>여름 이벤트</h1></div>\n"
+                + "<section data-block=\"cta\"><button>참여하기</button></section>";
+
+        assertEquals("<div data-block=\"hero\"><h1>여름 이벤트</h1></div>",
+                BlockMerge.extract(html, Block.HERO));
+
+        String merged = BlockMerge.merge(html, Block.HERO,
+                "<div data-block=\"hero\"><h1>가을 이벤트</h1></div>");
+        assertEquals("<div data-block=\"hero\"><h1>가을 이벤트</h1></div>\n"
+                + "<section data-block=\"cta\"><button>참여하기</button></section>", merged);
+    }
 }

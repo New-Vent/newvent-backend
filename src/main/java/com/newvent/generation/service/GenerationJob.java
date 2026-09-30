@@ -25,11 +25,32 @@ public final class GenerationJob {
     public enum Phase {
         QUEUED   ("대기 중",            0),
         PREPARING("준비 중",           10),
+
+        /**
+         * 수정에서만 쓴다 — 라우터가 "무엇을 어디에" 를 정하는 동안.
+         * 생성은 이 단계를 지나지 않는다.
+         */
+        ROUTING  ("요청을 이해하는 중", 20),
+
         CALLING  ("페이지를 만드는 중", 40),
         VALIDATING("확인하는 중",       80),
         SAVING   ("저장하는 중",        95),
         DONE     ("완료",             100),
         FAILED   ("실패",             100),
+
+        /**
+         * 되묻기. <b>실패가 아니다</b> — 관리자가 답만 하면 된다.
+         *
+         * ★ FAILED 로 보내면 안 되는 이유
+         *   화면에 빨간 "실패" 가 뜬다. 관리자는 잘못한 게 없다.
+         *   라우터가 못 알아들었거나, 항목 값을 관리자가 정해야 하는 경우다.
+         *
+         * ★ done() 에 <b>넣어야</b> 한다
+         *   안 넣으면 프론트가 영원히 폴링한다. 이 작업은 여기서 끝이고,
+         *   관리자의 답은 새 요청이다.
+         */
+        ASK_BACK ("확인 필요",         100),
+
         CANCELLED("중단됨",           100);
 
         private final String label;
@@ -39,7 +60,9 @@ public final class GenerationJob {
 
         public String label()  { return label; }
         public int percent()   { return percent; }
-        public boolean done()  { return this == DONE || this == FAILED || this == CANCELLED; }
+        public boolean done()  {
+            return this == DONE || this == FAILED || this == ASK_BACK || this == CANCELLED;
+        }
     }
 
     /**
@@ -82,7 +105,12 @@ public final class GenerationJob {
     /** 이 작업이 만든 버전의 id. 저장 전에는 null */
     public Long versionId()    { return versionId.get(); }
 
-    /** 관리자에게 보여줄 문장. 실패했을 때만 채워진다 */
+    /**
+     * 관리자에게 보여줄 문장.
+     *
+     * ★ 실패 문구이거나 되묻기 질문이다. 어느 쪽인지는 phase 가 말한다 —
+     *   FAILED · CANCELLED 면 사유, ASK_BACK 이면 질문이다. 그 밖에는 null 이다.
+     */
     public String message()    { return message.get(); }
 
     /**
@@ -105,6 +133,18 @@ public final class GenerationJob {
      */
     public void versionId(Long id) {
         versionId.set(id);
+    }
+
+    /**
+     * 관리자에게 되묻고 끝낸다. <b>실패로 기록하지 않는다.</b>
+     *
+     * ★ 질문을 message 에 담는다 — 필드를 새로 두지 않았다
+     *   프론트는 phase 로 갈라 읽는다. FAILED 면 오류 문구, ASK_BACK 이면 질문이다.
+     *   담는 자리가 같아도 뜻이 갈리는 건 phase 가 이미 말해 준다.
+     */
+    public void askBack(String question) {
+        message.set(question);
+        to(Phase.ASK_BACK);
     }
 
     public void fail(String userMessage) {
