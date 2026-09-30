@@ -251,6 +251,38 @@ class AdminEventControllerTest {
     }
 
     @Test
+    @DisplayName("생성 중인 이벤트 삭제는 409 와 EVENT409-3 을 반환한다")
+    void 생성중인_이벤트_삭제는_409를_반환한다() throws Exception {
+        willThrow(new EventException(EventErrorCode.EVENT_GENERATING_DELETE_FORBIDDEN))
+                .given(eventService).delete(1L);
+
+        mockMvc.perform(delete("/api/admin/events/1"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-3"));
+    }
+
+    @Test
+    @DisplayName("영구 삭제 API 는 200 을 반환한다")
+    void 이벤트_영구삭제에_성공한다() throws Exception {
+        mockMvc.perform(delete("/api/admin/events/99/permanent"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(eventService).hardDelete(99L);
+    }
+
+    @Test
+    @DisplayName("삭제되지 않은 이벤트 영구삭제는 404 와 EVENT404-0 을 반환한다")
+    void 삭제되지_않은_이벤트_영구삭제는_404를_반환한다() throws Exception {
+        willThrow(new EventException(EventErrorCode.EVENT_NOT_FOUND))
+                .given(eventService).hardDelete(1L);
+
+        mockMvc.perform(delete("/api/admin/events/1/permanent"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("EVENT404-0"));
+    }
+
+    @Test
     @DisplayName("휴지통 목록 API 는 ApiResponse 로 감싼다")
     void 휴지통_목록_조회에_성공한다() throws Exception {
         EventSummaryResponse row = new EventSummaryResponse(

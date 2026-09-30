@@ -39,6 +39,8 @@ import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.event.repository.EventTemplateRepository;
+import com.newvent.generation.service.GenerationJob;
+import com.newvent.generation.service.GenerationJobStore;
 import com.newvent.user.domain.MembershipGrade;
 
 /**
@@ -53,9 +55,10 @@ class EventServiceTest {
     private final EventRepository eventRepository = mock(EventRepository.class);
     private final EventTemplateRepository eventTemplateRepository = mock(EventTemplateRepository.class);
     private final AdminRepository adminRepository = mock(AdminRepository.class);
+    private final GenerationJobStore generationJobStore = mock(GenerationJobStore.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-09-16T01:00:00+09:00"), SEOUL);
     private final EventService eventService =
-            new EventService(eventRepository, eventTemplateRepository, adminRepository, clock);
+            new EventService(eventRepository, eventTemplateRepository, adminRepository, generationJobStore, clock);
 
     @Test
     @DisplayName("목록 조회는 리포지토리 결과를 마감임박과 함께 매핑한다")
@@ -206,6 +209,47 @@ class EventServiceTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> eventService.delete(999L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
+    }
+
+    @Test
+    @DisplayName("생성 작업이 진행 중인 이벤트는 삭제할 수 없다")
+    void 생성중인_이벤트는_삭제할_수_없다() {
+        Event event = newEvent(2L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(event));
+        when(generationJobStore.ofEvent(2L)).thenReturn(Optional.of(new GenerationJob(2L)));
+
+        assertThatThrownBy(() -> eventService.delete(2L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_GENERATING_DELETE_FORBIDDEN.getCode());
+        assertThat(event.deleted()).isFalse();
+    }
+
+    @Test
+    @DisplayName("휴지통에서 영구 삭제하면 리포지토리 delete 가 호출된다")
+    void 영구_삭제에_성공한다() {
+        Event event = newEvent(99L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(99L)).thenReturn(Optional.of(event));
+
+        eventService.hardDelete(99L);
+
+        verify(eventRepository).delete(event);
+    }
+
+    @Test
+    @DisplayName("삭제되지 않은 이벤트를 영구 삭제하려 하면 EVENT404-0 이다")
+    void 삭제되지_않은_이벤트_영구삭제는_404를_던진다() {
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventService.hardDelete(1L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());

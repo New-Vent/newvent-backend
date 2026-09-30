@@ -95,6 +95,13 @@ public class AdminEventController {
         return ApiResponse.success(eventService.restore(id));
     }
 
+    // 휴지통에서 영구 삭제. 복구 불가
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<ApiResponse<Void>> hardDelete(@PathVariable Long id) {
+        eventService.hardDelete(id);
+        return ResponseEntity.ok(ApiResponse.successNoData());
+    }
+
     /** 골격 — DRAFT → PUBLISHED → ENDED. 본구현 전. */
     @PatchMapping("/{id}/status")
     public ResponseEntity<ApiResponse<EventDetailResponse>> changeStatus(
