@@ -1,6 +1,5 @@
 # 로컬 Ollama 로 실제 모델을 돌릴 때.
 #
-#   SPRING_PROFILES_ACTIVE=ollama ./gradlew bootRun
 #
 
 
