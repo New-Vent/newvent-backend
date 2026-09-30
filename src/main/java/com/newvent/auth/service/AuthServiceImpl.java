@@ -1,5 +1,8 @@
 package com.newvent.auth.service;
 
+import java.time.Duration;
+import java.time.Instant;
+
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,6 +15,7 @@ import com.newvent.auth.exception.AuthException;
 import com.newvent.auth.exception.InvalidCredentialsException;
 import com.newvent.auth.exception.InvalidRefreshTokenException;
 import com.newvent.auth.jwt.JwtProvider;
+import com.newvent.auth.web.AccountType;
 import com.newvent.user.domain.User;
 import com.newvent.user.repository.UserRepository;
 import com.newvent.user.service.MembershipGradeService;
@@ -41,7 +45,7 @@ public class AuthServiceImpl implements AuthService {
     /** 로그인 시점에 멤버십 등급을 재계산해 저장한다 (MembershipGradeService 의 3개 재계산 시점 중 하나). */
     @Override
     @Transactional
-    public Issued loginUser(String loginId, String password) {
+    public Issued loginUser(String loginId, String password, String previousRefreshToken) {
         User user = userRepository.findByLoginId(loginId).orElse(null);
         if (!passwordMatches(password, user != null ? user.getPasswordHash() : null) || user == null) {
             throw new InvalidCredentialsException();
@@ -49,19 +53,21 @@ public class AuthServiceImpl implements AuthService {
 
         user.refreshMembershipGrade(MembershipGradeService.onLogin(user.getPlan(), user.joinedAt()));
 
+        logout(AccountType.USER, previousRefreshToken);
         return issue(AuthUser.user(user.getId()));
     }
 
     /** 비활성(is_active = false) 관리자는 비밀번호가 맞아도 거부한다 — 사유는 구분해서 알리지 않는다. */
     @Override
     @Transactional
-    public Issued loginAdmin(String loginId, String password) {
+    public Issued loginAdmin(String loginId, String password, String previousRefreshToken) {
         Admin admin = adminRepository.findByLoginId(loginId).orElse(null);
         if (!passwordMatches(password, admin != null ? admin.getPasswordHash() : null) || admin == null
                 || !admin.isActive()) {
             throw new InvalidCredentialsException();
         }
 
+        logout(AccountType.ADMIN, previousRefreshToken);
         return issue(AuthUser.admin(admin.getId()));
     }
 
@@ -77,12 +83,12 @@ public class AuthServiceImpl implements AuthService {
      */
     @Override
     @Transactional(noRollbackFor = AuthException.class)
-    public Issued refresh(String refreshToken) {
+    public Issued refresh(AccountType accountType, String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) {
             throw new InvalidRefreshTokenException();
         }
 
-        AuthUser owner = refreshTokens.consume(refreshToken);
+        AuthUser owner = refreshTokens.consume(refreshToken, accountType.admin());
         if (!canSignIn(owner)) {
             refreshTokens.revokeAll(owner);
             throw new InvalidRefreshTokenException();
@@ -93,9 +99,9 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public void logout(String refreshToken) {
+    public void logout(AccountType accountType, String refreshToken) {
         if (refreshToken != null && !refreshToken.isBlank()) {
-            refreshTokens.revoke(refreshToken);
+            refreshTokens.revoke(refreshToken, accountType.admin());
         }
     }
 
@@ -116,6 +122,9 @@ public class AuthServiceImpl implements AuthService {
 
     private TokenResponse accessTokenOf(AuthUser principal) {
         var access = jwtProvider.issue(principal);
-        return new TokenResponse(access.value(), access.expiresAt());
+        // 발급 직후 몇 ms 가 흘러 1799.99 초가 되므로 올림한다 (버리면 30분 TTL 이 1799 로 나간다)
+        long remainingMs = Duration.between(Instant.now(), access.expiresAt()).toMillis();
+        long expiresIn = Math.max(0, (remainingMs + 999) / 1000);
+        return new TokenResponse(access.value(), access.expiresAt(), expiresIn);
     }
 }
