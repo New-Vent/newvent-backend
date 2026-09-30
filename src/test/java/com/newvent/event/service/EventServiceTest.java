@@ -157,6 +157,87 @@ class EventServiceTest {
     }
 
     @Test
+    @DisplayName("휴지통 목록 조회는 리포지토리 결과를 매핑한다")
+    void 휴지통_목록_조회에_성공한다() {
+        Event event = newEvent(99L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
+        Page<Event> page = new PageImpl<>(List.of(event), PageRequest.of(0, 10), 1);
+        when(eventRepository.findDeletedEvents(eq(PageRequest.of(0, 10)))).thenReturn(page);
+
+        PageResponse<EventSummaryResponse> result = eventService.findDeletedEvents(0, 10);
+
+        assertThat(result.totalElements()).isEqualTo(1);
+        assertThat(result.content().get(0).id()).isEqualTo(99L);
+    }
+
+    @Test
+    @DisplayName("게시 중인 이벤트는 삭제할 수 없다")
+    void 게시중인_이벤트는_삭제할_수_없다() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.delete(1L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.PUBLISHED_EVENT_DELETE_FORBIDDEN.getCode());
+        assertThat(event.deleted()).isFalse();
+    }
+
+    @Test
+    @DisplayName("DRAFT/ENDED 이벤트는 휴지통으로 이동한다")
+    void 이벤트를_삭제하면_deletedAt이_설정된다() {
+        Event event = newEvent(2L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(event));
+
+        eventService.delete(2L);
+
+        assertThat(event.deleted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("없거나 이미 삭제된 이벤트를 삭제하려 하면 EVENT404-0 이다")
+    void 없는_이벤트_삭제는_404를_던진다() {
+        when(eventRepository.findByIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventService.delete(999L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
+    }
+
+    @Test
+    @DisplayName("복구하면 deletedAt 이 해제되고 상세를 반환한다")
+    void 이벤트를_복구한다() {
+        Event event = newEvent(99L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(99L)).thenReturn(Optional.of(event));
+
+        EventDetailResponse restored = eventService.restore(99L);
+
+        assertThat(event.deleted()).isFalse();
+        assertThat(restored.id()).isEqualTo(99L);
+    }
+
+    @Test
+    @DisplayName("삭제되지 않은 이벤트를 복구하려 하면 EVENT404-0 이다")
+    void 삭제되지_않은_이벤트_복구는_404를_던진다() {
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventService.restore(1L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
+    }
+
+    @Test
     @DisplayName("생성은 DRAFT 로 저장되고 로그인한 관리자를 소유자로 지정한다")
     void 이벤트_생성에_성공한다() {
         EventCreateRequest request = new EventCreateRequest(

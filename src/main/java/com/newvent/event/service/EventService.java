@@ -78,6 +78,35 @@ public class EventService {
         return EventDetailResponse.from(event, closingSoon(event));
     }
 
+    @Transactional(readOnly = true)
+    public PageResponse<EventSummaryResponse> findDeletedEvents(int page, int size) {
+        Page<Event> result = eventRepository.findDeletedEvents(PageRequest.of(page, size));
+
+        List<EventSummaryResponse> content = result.getContent().stream()
+                .map(event -> EventSummaryResponse.from(event, closingSoon(event)))
+                .toList();
+        return PageResponse.of(content, page, size, result.getTotalElements());
+    }
+
+    // 게시 중인 이벤트는 휴지통으로 보낼 수 없다(먼저 게시를 종료해야 함)
+    @Transactional
+    public void delete(Long id) {
+        Event event = eventRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        if (event.getStatus() == EventStatus.PUBLISHED) {
+            throw new EventException(EventErrorCode.PUBLISHED_EVENT_DELETE_FORBIDDEN);
+        }
+        event.delete(OffsetDateTime.now(clock));
+    }
+
+    @Transactional
+    public EventDetailResponse restore(Long id) {
+        Event event = eventRepository.findByIdAndDeletedAtIsNotNull(id)
+                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        event.restore();
+        return EventDetailResponse.from(event, closingSoon(event));
+    }
+
     @Transactional
     public EventDetailResponse create(Long adminId, EventCreateRequest request) {
         if (!request.endAt().isAfter(request.startAt())) {

@@ -59,6 +59,13 @@ public class AdminEventController {
         return ApiResponse.success(eventService.findAdminEvent(id));
     }
 
+    @GetMapping("/trash")
+    public ApiResponse<PageResponse<EventSummaryResponse>> trash(
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(50) int size) {
+        return ApiResponse.success(eventService.findDeletedEvents(page, size));
+    }
+
     @PostMapping
     public ResponseEntity<ApiResponse<EventDetailResponse>> create(
             @AuthenticationPrincipal AuthUser principal,
@@ -75,10 +82,17 @@ public class AdminEventController {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
     }
 
-    /** 골격 — 소프트 삭제(deletedAt). 본구현 전. */
+    /** 소프트 삭제(deletedAt). 게시 중인 이벤트는 거부한다. */
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        eventService.delete(id);
+        return ResponseEntity.ok(ApiResponse.successNoData());
+    }
+
+    // 휴지통에서 복구(deletedAt 해제)
+    @PostMapping("/{id}/restore")
+    public ApiResponse<EventDetailResponse> restore(@PathVariable Long id) {
+        return ApiResponse.success(eventService.restore(id));
     }
 
     /** 골격 — DRAFT → PUBLISHED → ENDED. 본구현 전. */

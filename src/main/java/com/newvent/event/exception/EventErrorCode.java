@@ -11,7 +11,8 @@ public enum EventErrorCode implements ErrorCode {
     TEMPLATE_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-1", "템플릿을 찾을 수 없습니다."),
     EVENT_NOT_ACCESSIBLE(HttpStatus.NOT_FOUND, "EVENT404-2", "지금은 접근할 수 없는 이벤트입니다."),
     VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-3", "이벤트 버전을 찾을 수 없습니다."),
-    PUBLISHED_VERSION_CHECKPOINT_UNMARK_FORBIDDEN(HttpStatus.CONFLICT, "EVENT409-0", "현재 게시 중인 버전의 저장 지점은 해제할 수 없습니다.");
+    PUBLISHED_VERSION_CHECKPOINT_UNMARK_FORBIDDEN(HttpStatus.CONFLICT, "EVENT409-0", "현재 게시 중인 버전의 저장 지점은 해제할 수 없습니다."),
+    PUBLISHED_EVENT_DELETE_FORBIDDEN(HttpStatus.CONFLICT, "EVENT409-2", "게시 중인 이벤트는 삭제할 수 없습니다. 먼저 게시를 종료해주세요.");
 
     private final HttpStatus httpStatus;
     private final String code;
