@@ -9,10 +9,15 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.ObjectError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.newvent.common.exception.BaseException;
 import com.newvent.common.exception.code.CommonErrorCode;
@@ -24,6 +29,62 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    // 파라미터·경로 변수의 타입 변환 실패
+    // 예: ?status=FOO, /events/abc, ?page=abc
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleMethodArgumentTypeMismatchException(
+            MethodArgumentTypeMismatchException e
+    ) {
+        return createInvalidInputResponse("'" + e.getName() + "' 값의 형식이 올바르지 않습니다.");
+    }
+
+    // 필수 요청 파라미터 누락
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingServletRequestParameterException(
+            MissingServletRequestParameterException e
+    ) {
+        return createInvalidInputResponse("'" + e.getParameterName() + "' 파라미터는 필수입니다.");
+    }
+
+    // 존재하지 않는 경로
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFoundException() {
+        return createErrorResponse(CommonErrorCode.NOT_FOUND);
+    }
+
+    // 지원하지 않는 HTTP 메서드
+    // Spring이 제공하는 Allow 헤더도 함께 반환
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleHttpRequestMethodNotSupportedException(
+            HttpRequestMethodNotSupportedException e
+    ) {
+        CommonErrorCode errorCode = CommonErrorCode.METHOD_NOT_ALLOWED;
+
+        return ResponseEntity
+                .status(errorCode.getHttpStatus())
+                .headers(e.getHeaders())
+                .body(ErrorResponse.of(
+                        errorCode.getCode(),
+                        errorCode.getMessage()
+                ));
+    }
+
+    // 지원하지 않는 Content-Type
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMediaTypeNotSupportedException(
+            HttpMediaTypeNotSupportedException e
+    ) {
+        CommonErrorCode errorCode = CommonErrorCode.UNSUPPORTED_MEDIA_TYPE;
+
+        return ResponseEntity
+                .status(errorCode.getHttpStatus())
+                .headers(e.getHeaders())
+                .body(ErrorResponse.of(
+                        errorCode.getCode(),
+                        errorCode.getMessage()
+                ));
+    }
 
     // 도메인에서 의도적으로 발생시킨 예외를 처리
     // 예외가 가진 HTTP 상태, 에러 코드, 메시지를 그대로 응답

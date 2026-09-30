@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -18,6 +19,7 @@ import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventTemplate;
 import com.newvent.event.domain.EventVersion;
 import com.newvent.event.dto.request.EventCreateRequest;
+import com.newvent.event.dto.request.EventUpdateRequest;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
 import com.newvent.event.dto.response.PageResponse;
@@ -82,8 +84,7 @@ public class EventService {
 
     @Transactional(readOnly = true)
     public EventDetailResponse findAdminEvent(Long id) {
-        Event event = eventRepository.findAdminEventById(id)
-                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        Event event = findActiveEvent(id);
         return EventDetailResponse.from(event, closingSoon(event));
     }
 
@@ -164,6 +165,42 @@ public class EventService {
         return EventDetailResponse.from(saved, closingSoon(saved));
     }
 
+    /** 보낸 필드만 바꾼다. null 은 기존 값 유지, templateKey 가 빈 문자열이면 템플릿을 해제한다. */
+    @Transactional
+    public EventDetailResponse update(Long id, EventUpdateRequest request) {
+        Event event = findActiveEvent(id);
+        if (event.editLocked(OffsetDateTime.now(clock))) {
+            throw new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
+        }
+        if (event.published() && templateChanged(event, request.templateKey())) {
+            throw new EventException(EventErrorCode.PUBLISHED_EVENT_TEMPLATE_NOT_EDITABLE);
+        }
+
+        OffsetDateTime startAt = request.startAt() != null ? request.startAt() : event.getStartDate();
+        OffsetDateTime endAt = request.endAt() != null ? request.endAt() : event.getEndDate();
+        if (startAt != null && endAt != null && !endAt.isAfter(startAt)) {
+            throw new EventException(EventErrorCode.INVALID_PERIOD);
+        }
+        EventTemplate template = request.templateKey() != null
+                ? resolveTemplate(request.templateKey())
+                : event.getTemplate();
+
+        event.updateInfo(
+                request.name() != null ? request.name().trim() : event.getTitle(),
+                template,
+                startAt,
+                endAt,
+                request.grade() != null ? request.grade() : event.getGrade());
+        // updatedAt 은 flush 시점에 Auditing 이 채우므로, 응답에 새 수정일을 담으려면 먼저 flush 한다.
+        eventRepository.flush();
+        return EventDetailResponse.from(event, closingSoon(event));
+    }
+
+    private Event findActiveEvent(Long id) {
+        return eventRepository.findAdminEventById(id)
+                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+    }
+
     boolean closingSoon(Event event) {
         if (event.getStatus() != EventStatus.PUBLISHED || event.deleted()) {
             return false;
@@ -173,6 +210,14 @@ public class EventService {
             return false;
         }
         return !now.isBefore(event.getEndDate().minus(CLOSING_SOON_WINDOW));
+    }
+
+    private boolean templateChanged(Event event, String templateKey) {
+        if (templateKey == null) {
+            return false;
+        }
+        String requested = templateKey.isBlank() ? null : templateKey.trim();
+        return !Objects.equals(requested, event.templateCode());
     }
 
     private EventTemplate resolveTemplate(String templateKey) {

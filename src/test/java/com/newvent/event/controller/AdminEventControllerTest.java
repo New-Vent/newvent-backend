@@ -33,6 +33,7 @@ import com.newvent.common.config.SecurityConfig;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.request.EventCreateRequest;
+import com.newvent.event.dto.request.EventUpdateRequest;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
 import com.newvent.event.dto.response.PageResponse;
@@ -173,14 +174,72 @@ class AdminEventControllerTest {
     }
 
     @Test
-    @DisplayName("수정 골격은 501 을 반환한다")
-    void 이벤트_수정_골격은_501이다() throws Exception {
-        mockMvc.perform(patch("/api/admin/events/1")
+    @DisplayName("수정 API 는 200 과 수정된 이벤트를 반환한다")
+    void 이벤트_수정에_성공한다() throws Exception {
+        EventDetailResponse updated = new EventDetailResponse(
+                2L, "이름만 변경", EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-07-31T23:59:59+09:00"),
+                OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
+                null, null, MembershipGrade.EXCELLENT,
+                null, false);
+        given(eventService.update(eq(2L), any(EventUpdateRequest.class))).willReturn(updated);
+
+        mockMvc.perform(patch("/api/admin/events/2")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "이름만 변경" }
                                 """))
-                .andExpect(status().isNotImplemented());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(2))
+                .andExpect(jsonPath("$.data.name").value("이름만 변경"))
+                .andExpect(jsonPath("$.data.grade").value("EXCELLENT"));
+    }
+
+    @Test
+    @DisplayName("종료된 이벤트 수정은 409 와 EVENT409-1 을 반환한다")
+    void 종료된_이벤트_수정은_409를_반환한다() throws Exception {
+        given(eventService.update(eq(6L), any(EventUpdateRequest.class)))
+                .willThrow(new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE));
+
+        mockMvc.perform(patch("/api/admin/events/6")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "name": "이름 변경" }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-1"));
+    }
+
+    @Test
+    @DisplayName("게시 중인 이벤트의 템플릿 변경은 409 와 EVENT409-4 를 반환한다")
+    void 게시중_템플릿_변경은_409를_반환한다() throws Exception {
+        given(eventService.update(eq(4L), any(EventUpdateRequest.class)))
+                .willThrow(new EventException(EventErrorCode.PUBLISHED_EVENT_TEMPLATE_NOT_EDITABLE));
+
+        mockMvc.perform(patch("/api/admin/events/4")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "templateKey": "sports_cheer" }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-4"));
+    }
+
+    @Test
+    @DisplayName("수정 후 기간이 역전되면 400 과 EVENT400-0 을 반환한다")
+    void 수정_기간이_역전되면_400을_반환한다() throws Exception {
+        given(eventService.update(eq(2L), any(EventUpdateRequest.class)))
+                .willThrow(new EventException(EventErrorCode.INVALID_PERIOD));
+
+        mockMvc.perform(patch("/api/admin/events/2")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "endAt": "2026-06-30T00:00:00+09:00" }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("EVENT400-0"));
     }
 
     @Test
@@ -215,7 +274,7 @@ class AdminEventControllerTest {
                         .content("""
                                 { "endAt": "2026-10-20T23:59:59+09:00" }
                                 """))
-                .andExpect(status().isNotImplemented());
+                .andExpect(status().isOk());
     }
 
     @Test

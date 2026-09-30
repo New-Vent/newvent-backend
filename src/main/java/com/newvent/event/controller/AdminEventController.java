@@ -75,12 +75,12 @@ public class AdminEventController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(created));
     }
 
-    /** 골격 — 본구현 전. null 필드는 변경하지 않는다. */
+    /** null 필드는 변경하지 않는다. */
     @PatchMapping("/{id}")
-    public ResponseEntity<ApiResponse<EventDetailResponse>> update(
+    public ApiResponse<EventDetailResponse> update(
             @PathVariable Long id,
             @Valid @RequestBody EventUpdateRequest request) {
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        return ApiResponse.success(eventService.update(id, request));
     }
 
     /** 소프트 삭제(deletedAt). 게시 중인 이벤트는 거부한다. */

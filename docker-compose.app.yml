@@ -8,6 +8,18 @@
 #
 #   평소 개발   docker compose up                                     DB 만
 #   이미지 확인 docker compose -f ... -f docker-compose.app.yml up     전부
+#
+#     도커 내릴 때 --remove-orphans 를 붙인다.
+#
+#     docker compose -f docker-compose.yml -f docker-compose.app.yml down --remove-orphans
+#
+#     `docker compose down` 만 쓰면 **앱 컨테이너가 고아로 남는다.**
+#     compose 에게는 "넘긴 -f 파일들이 곧 프로젝트의 정의" 라서, 기본 파일만 주면
+#     app 을 자기 것으로 보지 않는다. 프로젝트 라벨은 같지만 정의에 없으므로
+#     고아로 분류하고, 함부로 지우지 않는다(의도적으로 스택을 쪼개는 경우가 있으니).
+#
+#     경고도 안 띄운다. 유일한 단서가 `Network ... Resource is still in use` 라는
+#     간접적인 실패 메시지다. "DB 는 내렸는데 8080 이 왜 살아 있지" 로 헤매게 된다.
 
 services:
   app:
