@@ -43,13 +43,26 @@ public record GenerateCommand(
     }
 
     /**
-     * ★ 요청이 고른 게 우선, 없으면 이벤트에 붙어 있는 것.
+     * 이번 생성이 쓸 템플릿 코드. <b>null 이면 백지 생성이다.</b>
+     *
+     * ★ null 과 "" 를 구분한다
+     *     null   미지정 → 이벤트에 붙어 있는 템플릿으로 폴백한다.
+     *            "같은 템플릿으로 다시 생성" 을 코드 없이 부를 수 있게 하는 길이다.
+     *     ""     <b>백지를 명시</b> → 폴백하지 않는다.
+     *
+     * ★ 왜 "" 가 필요한가 — <b>안 그러면 백지를 고를 방법이 없다</b>
+     *   이벤트를 만들 때 templateKey 를 고를 수 있다(EventCreateRequest).
+     *   그런 이벤트에서 "새로 만들기" 로 requestText 만 보내면 폴백이 걸려
+     *   템플릿 경로로 가고, <b>요청문은 통째로 버려진다.</b>
+     *   모델을 안 부르니 관리자는 AI 가 만든 줄 알고, 일일 상한에도 안 잡힌다.
+
      */
     private static String templateCode(Event event, String requested) {
-        if (requested != null && !requested.isBlank()) return requested.strip();
-
-        EventTemplate t = event.getTemplate();
-        return (t == null) ? null : t.getCode();
+        if (requested == null) {
+            EventTemplate t = event.getTemplate();
+            return (t == null) ? null : t.getCode();
+        }
+        return requested.isBlank() ? null : requested.strip();
     }
 
     /**

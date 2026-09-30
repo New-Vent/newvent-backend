@@ -18,7 +18,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  *
  *   src/main/resources/templates/
  *     templates.json                       메타데이터
- *     template_1_sports_cheer.html         본문
+ *     sports_cheer.html         본문
  *     ...
  *
  * ★ 기동할 때 한 번 다 읽어서 들고 있는다.

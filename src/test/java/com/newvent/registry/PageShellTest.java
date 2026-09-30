@@ -83,7 +83,7 @@ class PageShellTest {
     @Test
     @DisplayName("③ 템플릿 — 래퍼는 그대로 두고 테마 클래스만 보강한다")
     void 템플릿에_테마를_보강한다() {
-        String out = PageShell.ensureRoot(템플릿, "template_1_sports_cheer");
+        String out = PageShell.ensureRoot(템플릿, "sports_cheer");
 
         Element root = rootOf(out);
         assertTrue(root.hasClass("theme-sports"),
@@ -99,8 +99,8 @@ class PageShellTest {
     void 멱등이다() {
         // ★ 생성과 수정이 같은 조각을 여러 번 지나간다. 한 번 더 걸릴 때마다
         //   래퍼가 겹치거나 유의사항이 두 개가 되면 조용히 망가진다.
-        String 한번 = PageShell.plant(백지, "template_1_sports_cheer");
-        String 두번 = PageShell.plant(한번, "template_1_sports_cheer");
+        String 한번 = PageShell.plant(백지, "sports_cheer");
+        String 두번 = PageShell.plant(한번, "sports_cheer");
 
         assertEquals(한번, 두번, "두 번 심었습니다.");
     }
@@ -136,7 +136,7 @@ class PageShellTest {
     @Test
     @DisplayName("⑦ 템플릿의 유의사항은 덮어쓰지 않는다")
     void 이미_있으면_두지_않는다() {
-        String out = PageShell.plant(템플릿, "template_1_sports_cheer");
+        String out = PageShell.plant(템플릿, "sports_cheer");
 
         Document doc = Jsoup.parseBodyFragment(out);
         assertEquals(1, doc.body().select(Block.NOTICES.selector()).size(),

@@ -12,7 +12,7 @@
 #
 # 바꿔 쓸 수 있는 것
 #   OUT=.smoke/b2         결과 폴더 (여러 번 돌릴 때 안 덮어쓰려고)
-#   TEMPLATE=template_2_holiday_gift
+#   TEMPLATE=holiday_gift
 #   REQUEST="..."         백지 생성 요청문
 #   ASK="..."             채팅 수정 요청문
 #   CSS_SRC=<event.css 경로>
@@ -23,7 +23,7 @@ set -uo pipefail
 
 HOST=${HOST:-http://localhost:8080}
 MODE=${1:-template}
-TEMPLATE=${TEMPLATE:-template_1_sports_cheer}
+TEMPLATE=${TEMPLATE:-sports_cheer}
 OUT=${OUT:-.smoke}
 
 # ★ 혜택을 **둘** 적는다. 하나만 적으면 모델에게 거짓말을 시키게 된다.
