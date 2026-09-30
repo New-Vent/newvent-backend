@@ -16,6 +16,8 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     Optional<Event> findByIdAndDeletedAtIsNull(Long eventId);
 
+    Optional<Event> findByIdAndDeletedAtIsNotNull(Long eventId);
+
     // publishedVersion은 LAZY 연관관계이고 open-in-view: false라, 트랜잭션 안에서 fetch join으로 같이 가져온다.
     @Query("SELECT e FROM Event e LEFT JOIN FETCH e.publishedVersion "
             + "WHERE e.id = :id AND e.deletedAt IS NULL AND e.status <> :excludedStatus")
@@ -54,6 +56,13 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             @Param("periodFrom") OffsetDateTime periodFrom,
             @Param("periodTo") OffsetDateTime periodTo,
             Pageable pageable);
+
+    // 휴지통 목록 - 최근에 삭제된 순서로 보여준다(동률이면 id 내림차순)
+    @Query(
+            value = "SELECT e FROM Event e LEFT JOIN FETCH e.template WHERE e.deletedAt IS NOT NULL "
+                    + "ORDER BY e.deletedAt DESC, e.id DESC",
+            countQuery = "SELECT COUNT(e) FROM Event e WHERE e.deletedAt IS NOT NULL")
+    Page<Event> findDeletedEvents(Pageable pageable);
 
     // 카테고리(templateCode)/키워드(이벤트명)/진행상태(progress)는 전달되지 않으면(null) 조건에서 제외한다.
     // progress는 EventProgress.name() 문자열("UPCOMING"/"ONGOING"/"ENDED")을 그대로 받는다.
