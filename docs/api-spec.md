@@ -50,6 +50,17 @@
 
 `closingSoon`: 저장 컬럼이 아니다. `PUBLISHED` 이고 지금이 기간 안이며 종료 3일 전부터면 `true`.
 
+### 이벤트 자동 종료
+
+- 기본적으로 1분마다 종료 시각이 지난 게시 이벤트를 자동 종료한다.
+- `status = PUBLISHED`, `deletedAt = null`,
+  `endDate < 현재 시각`인 이벤트의 상태를 `ENDED`로 변경한다.
+- 종료 시각이 없는 이벤트와 `DRAFT`, `ENDED` 이벤트는 제외한다.
+- 시작일·종료일은 유지하고 상태와 `updatedAt`만 변경한다.
+- 스케줄러 실행 전에도 참여 API는 이벤트 기간을 검증한다.
+- 현재 공개 목록은 `PUBLISHED`만 조회하므로,
+  자동 종료된 이벤트는 공개 목록에서 제외된다.
+
 ---
 
 ## `GET /api/admin/events`
