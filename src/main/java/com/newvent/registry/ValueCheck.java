@@ -90,8 +90,7 @@ public final class ValueCheck {
         for (String t : tokensAfter) {
             String value = normalize(t);
             if (!valuesBefore.contains(value) && !valuesInReq.contains(value)) {
-                f.add(new Failure(
-                        "value_added_" + sanitizeCode(t),
+                f.add(Failure.of(FailureCode.VALUE_ADDED, sanitizeCode(t),
                         "\"" + t + "\" 는 원본에 없던 수치입니다. "
                         + "요청받지 않은 약속이 생기면 사고가 됩니다. "
                         + "원본에 있던 수치만 쓰거나, 지어낸 수치를 빼세요."));
@@ -101,8 +100,7 @@ public final class ValueCheck {
         // 있던 숫자가 빠졌다 — 경고(실패 아님)
         for (String t : tokensBefore) {
             if (!valuesAfter.contains(normalize(t))) {
-                f.add(new Failure(
-                        "warning_value_removed_" + sanitizeCode(t),
+                f.add(Failure.of(FailureCode.VALUE_REMOVED, sanitizeCode(t),
                         "\"" + t + "\" 가 수정 후 빠졌습니다. "
                         + "의도한 변경인지 확인하세요. (자동 실패는 아닙니다)"));
             }

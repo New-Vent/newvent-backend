@@ -3,8 +3,13 @@
 # newvent-backend — PR·푸시에서 빌드와 테스트를 돌립니다.
 #
 # ★ LLM 을 부르지 않습니다.
-#   application.yaml 기본값 provider: mock 
-#   이 워크플로에 SPRING_PROFILES_ACTIVE 를 넣지 마세요.
+#   application.yaml 기본값 provider: mock. 프로파일(dev/prod)은 LLM 설정을 바꾸지 않습니다.
+#   ollama 등 LLM 프로파일을 여기 넣지 마세요.
+#
+# ★ 프로파일 — main 대상일 때만 prod
+#   main 으로 가는 PR · main push   SPRING_PROFILES_ACTIVE=prod  (배포와 같은 설정으로 검증)
+#   그 밖 (develop 등)               SPRING_PROFILES_ACTIVE=dev
+#   prod 로 뜨면 ProdAuthGuard 가 Secure · 비밀키 · 허용 Origin 을 검사해 로컬 값이면 기동을 멈춘다.
 
 name: CI
 
@@ -43,6 +48,8 @@ jobs:
           --health-retries=5
 
     env:
+      # main 대상(PR 의 base 또는 push 한 브랜치)이면 prod, 아니면 dev
+      SPRING_PROFILES_ACTIVE: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && 'prod' || 'dev' }}
       DB_URL: jdbc:postgresql://localhost:5432/${{ secrets.DB_NAME }}
       DB_USERNAME: ${{ secrets.DB_USERNAME }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
@@ -91,6 +98,14 @@ jobs:
             [[ "$o" =~ ^https?://[^/]+$ ]] \
               || err "CORS_ALLOWED_ORIGINS 의 각 값은 https://도메인 형식이어야 합니다 (경로·끝 슬래시 없이)."
           done
+
+          # prod 로 검증할 때는 배포 값이어야 한다 — 로컬 주소가 섞이면 ProdAuthGuard 가 기동을 멈춘다
+          if [ "$SPRING_PROFILES_ACTIVE" = "prod" ]; then
+            case "$CORS_ALLOWED_ORIGINS" in
+              *localhost*|*127.0.0.1*) err "main(prod) 검증에는 CORS_ALLOWED_ORIGINS 에 로컬 주소를 넣을 수 없습니다." ;;
+            esac
+          fi
+          echo "프로파일: $SPRING_PROFILES_ACTIVE"
 
           exit $fail
 

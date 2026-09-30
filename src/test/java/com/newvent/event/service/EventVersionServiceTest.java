@@ -101,6 +101,50 @@ public class EventVersionServiceTest {
     }
 
     @Test
+    void unmarkCheckpoint_rejectsCurrentlyPublishedVersion() {
+        Long eventId = 12L;
+        Long versionId = 102L;
+        Event event = mock(Event.class);
+        EventVersion version = mock(EventVersion.class);
+
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId))
+                .thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventId(versionId, eventId))
+                .thenReturn(Optional.of(version));
+        when(event.getStatus()).thenReturn(EventStatus.PUBLISHED);
+        when(event.getPublishedVersion()).thenReturn(version);
+        when(version.getId()).thenReturn(versionId);
+
+        assertThatThrownBy(() -> eventVersionService.unmarkCheckpoint(eventId, versionId))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo("EVENT409-0");
+
+        verify(version, never()).unmarkCheckpoint();
+    }
+
+    @Test
+    void unmarkCheckpoint_allowsOtherVersionWhileEventIsPublished() {
+        Long eventId = 12L;
+        Long versionId = 102L;
+        Event event = mock(Event.class);
+        EventVersion version = mock(EventVersion.class);
+        EventVersion publishedVersion = mock(EventVersion.class);
+
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId))
+                .thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventId(versionId, eventId))
+                .thenReturn(Optional.of(version));
+        when(event.getStatus()).thenReturn(EventStatus.PUBLISHED);
+        when(event.getPublishedVersion()).thenReturn(publishedVersion);
+        when(publishedVersion.getId()).thenReturn(103L);
+
+        eventVersionService.unmarkCheckpoint(eventId, versionId);
+
+        verify(version).unmarkCheckpoint();
+    }
+
+    @Test
     void getVersions_throwsWhenEventDoesNotExistOrIsDeleted() {
         Long eventId = 12L;
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.empty());

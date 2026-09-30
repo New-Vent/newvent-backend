@@ -12,6 +12,7 @@ import com.newvent.infra.llm.LlmCallGateway;
 import com.newvent.infra.llm.LlmClient;
 import com.newvent.infra.llm.LlmProps;
 import com.newvent.registry.BlockValidator.Failure;
+import com.newvent.registry.FailureCode;
 
 /**
  * 검증을 통과한 HTML 이 나올 때까지 모델을 다시 부른다. — REQ-LLM-42, REQ-LLM-43
@@ -205,7 +206,7 @@ public class RetryService {
             //   중간에 끊겨도 Jsoup 이 태그를 자동으로 닫아버려서 검증은 통과할 수 있다.
             //   done_reason == "length" 를 의미 메시지로 바꿔서 강제로 재시도시킨다.
             if (res.truncated()) {
-                fails.add(0, new Failure("truncated",
+                fails.add(0, Failure.of(FailureCode.TRUNCATED,
                         "출력이 너무 길어 중간에 잘렸습니다. 항목 수와 문장을 줄여 더 짧게 만드세요."));
             }
 
