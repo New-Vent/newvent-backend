@@ -83,11 +83,20 @@ public class GateTest {
 	}
 
 	@Test
-	@DisplayName("필수 영역에 추가를 시키면 편집으로 교정 - benefits 도 필수")
-	void 필수_영역_추가는_혜택도_고정() {
-		Decision d= gate.decide(new RawRoute("ADD", "benefits", "와일드카드"));
+	@DisplayName("혜택 항목 추가는 거절한다 - 교정하면 모델에게 모순된 지시가 간다")
+	void 혜택_항목_추가는_거절() {
+		Decision d = gate.decide(new RawRoute("ADD", "benefits", "와일드카드"));
 
-		assertEquals(new Decision.Run(Block.BENEFITS, Op.EDIT, "와일드카드"), d);
+		Decision.Reject r = assertInstanceOf(Decision.Reject.class, d);
+		assertEquals(RouterErrorCode.NOT_ALLOWED, r.code());
+		assertTrue(r.message().contains("늘리거나 줄일 수 없습니다"));
+	}
+
+	@Test
+	@DisplayName("항목이 폼 값이 아닌 선택 영역은 그대로 추가로 통과")
+	void 폼값_아닌_영역_추가는_통과() {
+		assertEquals(new Decision.Run(Block.STEPS, Op.ADD, "앱 설치"),
+				gate.decide(new RawRoute("ADD", "steps", "앱 설치")));
 	}
 
 	// ----- 4 행 : 필수 영역 삭제 거부 -------
@@ -113,7 +122,7 @@ public class GateTest {
 	@Test
 	@DisplayName("항목 추가에 내용이 없으면 되묻는다 - 모델을 부르지 않는다.")
 	void 항목_추가는_내용이_없으면_되묻기() {
-		Decision d = gate.decide(new RawRoute("ADD", "benefits", null));
+		Decision d = gate.decide(new RawRoute("ADD", "steps", null));
 
 		Decision.AskBack a = assertInstanceOf(Decision.AskBack.class, d);
 		assertTrue(a.question().contains("어떤 내용을 추가할까요?"));
@@ -123,14 +132,22 @@ public class GateTest {
 	@DisplayName("빈 문자열도 내용이 없는 것으로 본다.")
 	void 항목_추가는_빈_문자열도_되묻기() {
 		assertInstanceOf(Decision.AskBack.class,
-				gate.decide(new RawRoute("ADD", "benefits", "     ")));
+				gate.decide(new RawRoute("ADD", "steps", "     ")));
 	}
 
 	@Test
-	@DisplayName("항목 추가는 교정보다 먼저 - benefits 가 편집으로 바뀌면 빈 항목이 생김")
+	@DisplayName("항목 추가는 교정보다 먼저 - 필수 영역이 편집으로 바뀌면 빈 항목이 생김")
 	void 항목_추가는_교정보다_먼저() {
 		assertInstanceOf(Decision.AskBack.class,
-				gate.decide(new RawRoute("ADD", "benefits", null)));
+				gate.decide(new RawRoute("ADD", "cta", null)));
+	}
+
+	@Test
+	@DisplayName("혜택 거절은 되묻기보다 먼저 - 두 번 물어보고 거절하면 안 된다")
+	void 혜택_거절은_되묻기보다_먼저() {
+		Decision d = gate.decide(new RawRoute("ADD", "benefits", null));
+
+		assertInstanceOf(Decision.Reject.class, d);
 	}
 
 	// ----- 6 행 : 그 외 통과 -------
@@ -140,13 +157,6 @@ public class GateTest {
 	void 일반_수정은_통과() {
 		assertEquals(new Decision.Run(Block.BENEFITS, Op.EDIT, "와일드카드 추가"),
 				gate.decide(new RawRoute("EDIT", "benefits", "와일드카드 추가")));
-	}
-
-	@Test
-	@DisplayName("선택 영역에 추가를 시키면 그대로 추가로 통과")
-	void 선택_영역_추가는_그대로_통과() {
-		assertEquals(new Decision.Run(Block.STEPS, Op.ADD, "앱 설치"),
-				gate.decide(new RawRoute("ADD", "steps", "앱 설치")));
 	}
 
 	// ----- 경계 -------

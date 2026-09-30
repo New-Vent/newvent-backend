@@ -76,6 +76,14 @@ public class Event extends BaseTimeEntity {
         return deletedAt != null;
     }
 
+    public void delete(OffsetDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+    }
+
+    public void restore() {
+        this.deletedAt = null;
+    }
+
     public String templateCode() {
         return template == null ? null : template.getCode();
     }
@@ -88,7 +96,7 @@ public class Event extends BaseTimeEntity {
         return publishedVersion == null ? null : publishedVersion.getHtmlContent();
     }
 
-    /** 관리자 생성 API — 항상 DRAFT. */
+    // 관리자 생성 API — 항상 DRAFT
     public static Event createDraft(
             Admin ownerAdmin,
             EventTemplate template,
