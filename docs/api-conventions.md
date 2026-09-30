@@ -90,12 +90,14 @@ public record ApiResponse<T>(
 
 ```java
 public record ErrorResponse(
+        boolean success,
         String code,
         String message,
         LocalDateTime timestamp
 ) {
     public static ErrorResponse of(String code, String message) {
         return new ErrorResponse(
+                false,
                 code,
                 message,
                 LocalDateTime.now(ZoneId.of("Asia/Seoul"))
@@ -108,13 +110,27 @@ public record ErrorResponse(
 
 ```json
 {
+  "success": false,
   "code": "EVENT404-0",
   "message": "이벤트를 찾을 수 없습니다.",
   "timestamp": "2026-09-23T00:54:10"
 }
 ```
 
-정상 응답과 실패 응답은 서로 다른 형식을 사용한다. 클라이언트는 HTTP 상태 코드를 기준으로 두 응답을 구분한다.
+정상 응답과 실패 응답은 담는 필드가 다르다. 실패 응답에는 `data`가 없고 `code`·`timestamp`가 있다.
+
+다만 `success`는 양쪽 모두에 있다. 클라이언트는 HTTP 상태 코드로 구분해도 되고, 본문의 `success` 하나로 갈라도 된다.
+
+```js
+if (body.success) return body.data;
+throw new ApiError(body.message, body.code);
+```
+
+`success`를 실패 응답에도 싣는 이유는 성공 응답에만 있으면 그 필드가 하는 일이 없기 때문이다.
+실패 응답에서 `body.success`를 읽으면 `undefined`가 되어 `body.success === false`로 판별할 수 없고,
+그러면 클라이언트는 상태 코드로 먼저 갈라야 한다. 양쪽에 두면 본문만으로도 판별이 된다.
+
+`data`는 실패 응답에 넣지 않는다. 실패에 데이터가 없는 것은 자명하고, 항상 `null`인 필드를 실을 이유가 없다.
 
 ## 4. 에러 코드
 
