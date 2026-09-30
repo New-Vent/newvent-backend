@@ -32,7 +32,7 @@ import com.newvent.event.repository.EventVersionRepository;
  */
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(JpaVersionStore.class)
+@Import({JpaVersionStore.class, com.newvent.common.config.JpaAuditingConfig.class})
 class JpaVersionStoreTest {
 
     @Autowired

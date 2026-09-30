@@ -1,10 +1,18 @@
 package com.newvent.event.controller;
 
+import jakarta.validation.Valid;
+
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
+import com.newvent.event.dto.request.DirectEditRequest;
+import com.newvent.event.dto.response.DirectEditResponse;
 import com.newvent.event.dto.response.EventVersionDetailResponse;
 import com.newvent.event.dto.response.EventVersionListResponse;
+import com.newvent.event.service.DirectEditService;
 import com.newvent.event.service.EventVersionService;
 
 import lombok.RequiredArgsConstructor;
@@ -15,6 +23,20 @@ import lombok.RequiredArgsConstructor;
 public class EventVersionController {
 
     private final EventVersionService eventVersionService;
+    private final DirectEditService directEditService;
+
+    @PostMapping("/direct-edit")
+    public ApiResponse<DirectEditResponse> directEdit(
+            @PathVariable Long eventId,
+            @Valid @RequestBody DirectEditRequest request,
+            Authentication authentication
+    ) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof AuthUser user)
+                || !user.admin()) {
+            throw new AccessDeniedException("관리자 인증이 필요합니다.");
+        }
+        return ApiResponse.success(directEditService.directEdit(eventId, request, user.id()));
+    }
 
     // TODO: 인증/인가 구현 후 관리자만 조회할 수 있도록 제한
     @GetMapping
