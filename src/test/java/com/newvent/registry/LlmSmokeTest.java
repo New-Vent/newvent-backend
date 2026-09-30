@@ -8,8 +8,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.newvent.editor.service.Op;
+import com.newvent.editor.service.RawRoute;
+import com.newvent.editor.service.RouteParser;
 import com.newvent.infra.llm.BedrockClient;
 import com.newvent.infra.llm.LlmClient;
 import com.newvent.infra.llm.OllamaClient;
@@ -38,6 +39,11 @@ import com.newvent.infra.llm.OllamaClient;
  *   extract → sanitize → validate. 생성은 sanitizeGenerated, 수정은 sanitizeEdited 다.
  *   여기서 순서를 다르게 하면 "스모크는 통과하는데 서비스는 깨지는" 상태가 된다.
  *   실제로 그래서 href="#" 유실을 6주 동안 못 봤다.
+ *
+ * ★ 검증은 프로덕션 코드로만 한다
+ *   ④ 라우터가 한때 JSON 을 직접 읽었다. 그래서 스키마가 {"ops":[…]} 로
+ *   바뀐 뒤 모델이 정답을 내는데도 이 테스트만 빨간불이 났다.
+ *   이 파일에 파싱·검증 로직을 새로 쓰면 언젠가 반드시 서비스와 어긋난다.
  */
 @EnabledIf("스모크_켜짐")
 class LlmSmokeTest {
@@ -157,8 +163,8 @@ class LlmSmokeTest {
     }
 
     @Test
-    @DisplayName("④ 라우터 — JSON 한 줄이 파싱되고 값이 유효하다")
-    void 라우터_왕복() throws Exception {
+    @DisplayName("④ 라우터 — 프로덕션 파서가 읽고, 값이 레지스트리에 있다")
+    void 라우터_왕복() {
         LlmClient.Response r = client().chat(LlmClient.Request.router(
                 PromptBuilder.router(),
                 "혜택에 '제휴 카페 쿠폰' 한 줄 추가해줘"));
@@ -168,24 +174,39 @@ class LlmSmokeTest {
                 "라우터 출력이 256 토큰에 걸려 잘렸습니다. "
                 + "추론 모델이면 사고에 다 씁니다 — Mode.ROUTER 상한을 512 로 올리세요.");
 
-        String raw = r.content().trim();
-        int s = raw.indexOf('{'), e = raw.lastIndexOf('}');
-        assertTrue(s >= 0 && e > s,
-                "JSON 을 못 찾았습니다. Ollama 는 format:\"json\" 으로 강제하지만 "
-                + "Bedrock 에는 그게 없습니다 — toolConfig 로 강제할지 정해야 합니다.\n원문:\n" + raw);
+        // ★ 여기서 JSON 을 직접 읽지 않는다 — **프로덕션 파서를 부른다.**
+        //   예전엔 indexOf('{') 로 잘라서 루트의 "op" 를 봤다. 그때는 스키마가
+        //   단수였으니 맞았지만, 지금 라우터는 {"ops":[…]} 로 온다.
+        //   그래서 모델이 정답을 내도 이 테스트만 빨간불이 났다 —
+        //   테스트가 서비스와 다른 걸 읽고 있었던 거다.
+        //   RouteParser 를 부르면 그 어긋남 자체가 불가능해진다.
+        //   덤으로 "래퍼 없는 배열", "옛 단수 형태", MAX_OPS 초과 판정까지
+        //   서비스와 똑같은 기준으로 검사된다.
+        List<RawRoute> routes = RouteParser.parse(r.content()).orElse(null);
+        assertNotNull(routes,
+                "RouteParser 가 못 읽었습니다. Ollama 는 format:\"json\" 으로 강제하지만 "
+                + "Bedrock 에는 그게 없습니다 — toolConfig 로 강제할지 정해야 합니다.\n"
+                + "원문:\n" + r.content());
 
-        JsonNode j = new ObjectMapper().readTree(raw.substring(s, e + 1));
+        // ★ parse() 가 이미 보장하는 것: 비어 있지 않고, MAX_OPS 를 넘지 않는다.
+        //   그래서 여기서는 각 연산의 **값** 만 본다.
+        for (RawRoute route : routes) {
+            assertTrue(Op.find(route.op()).isPresent(),
+                    "모르는 op 입니다: " + route.op() + " (전체: " + routes + ")");
 
-        String op = j.path("op").asText(null);
-        assertNotNull(op, "op 필드가 없습니다: " + j);
-        assertTrue(List.of("EDIT", "ADD", "DELETE", "STYLE").contains(op),
-                "모르는 op 입니다: " + op);
-
-        String target = j.path("target").asText(null);
-        if (target != null && !target.isBlank() && !"null".equals(target)) {
-            assertDoesNotThrow(() -> Block.of(target),
-                    "레지스트리에 없는 영역을 골랐습니다: " + target);
+            // ★ target 은 null 이어도 된다 — Gate 가 되묻는 경로로 보낸다.
+            if (route.target() != null) {
+                assertDoesNotThrow(() -> Block.of(route.target()),
+                        "레지스트리에 없는 영역을 골랐습니다: " + route.target());
+            }
         }
+
+        // ★ 정확도는 단언하지 않는다
+        //   v11 벤치마크에서 op 정확도가 4/12 였다. "이 문장에는 ADD/benefits 가
+        //   나와야 한다" 를 단언하면 회차마다 빨간불이 뜨고, 사람들이 이 파일을
+        //   무시하기 시작한다. 주장하는 건 "서비스가 받아들일 모양으로 왔다" 까지다.
+        //   맞췄는지는 아래 한 줄을 눈으로 본다.
+        System.out.println("  라우터 결과  " + routes);
     }
 
     @Test
