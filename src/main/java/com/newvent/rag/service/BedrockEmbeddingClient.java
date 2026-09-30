@@ -79,7 +79,7 @@ public class BedrockEmbeddingClient implements EmbeddingClient {
             JsonNode root = M.readTree(out);
             ArrayNode arr = titan
                     ? (ArrayNode) root.path("embedding")
-                    : (ArrayNode) root.path("embeddings").path("float");
+                    : (ArrayNode) root.path("embeddings").path("float").get(0);
             float[] v = new float[arr.size()];
             for (int i = 0; i < arr.size(); i++) {
                 v[i] = (float) arr.get(i).asDouble();
