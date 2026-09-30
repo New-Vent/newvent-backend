@@ -140,11 +140,11 @@ public interface ErrorCode {
 {도메인명}{HTTP 상태 코드}-{일련번호}
 ```
 
-| 구성 | 설명 | 예시 |
-| --- | --- | --- |
-| 도메인명 | 에러가 발생한 도메인을 영문 대문자로 작성 | `COMMON`, `USER`, `EVENT` |
-| HTTP 상태 코드 | 해당 에러의 HTTP 상태 코드 | `400`, `401`, `404`, `500` |
-| 일련번호 | 같은 도메인과 HTTP 상태 코드 안에서 0부터 순차적으로 부여 | `0`, `1`, `2` |
+| 구성           | 설명                                                      | 예시                       |
+|----------------|-----------------------------------------------------------|----------------------------|
+| 도메인명       | 에러가 발생한 도메인을 영문 대문자로 작성                 | `COMMON`, `USER`, `EVENT`  |
+| HTTP 상태 코드 | 해당 에러의 HTTP 상태 코드                                | `400`, `401`, `404`, `500` |
+| 일련번호       | 같은 도메인과 HTTP 상태 코드 안에서 0부터 순차적으로 부여 | `0`, `1`, `2`              |
 
 예시:
 
@@ -156,12 +156,17 @@ public interface ErrorCode {
 
 ### 4.3 공통 에러 코드
 
-| 에러 코드 | HTTP 상태 | 메시지 |
-| --- | --- | --- |
-| `COMMON400-0` | 400 Bad Request | 잘못된 입력값입니다. |
-| `COMMON401-0` | 401 Unauthorized | 인증이 필요합니다. |
-| `COMMON403-0` | 403 Forbidden | 접근 권한이 없습니다. |
-| `COMMON500-0` | 500 Internal Server Error | 서버 내부 오류가 발생했습니다. |
+| 에러 코드     | HTTP 상태                  | 메시지                            |
+|---------------|----------------------------|-----------------------------------|
+| `COMMON400-0` | 400 Bad Request            | 잘못된 입력값입니다.              |
+| `COMMON401-0` | 401 Unauthorized           | 인증이 필요합니다.                |
+| `COMMON403-0` | 403 Forbidden              | 접근 권한이 없습니다.             |
+| `COMMON404-0` | 404 Not Found              | 요청한 경로를 찾을 수 없습니다.   |
+| `COMMON405-0` | 405 Method Not Allowed     | 지원하지 않는 HTTP 메서드입니다.  |
+| `COMMON415-0` | 415 Unsupported Media Type | 지원하지 않는 Content-Type입니다. |
+| `COMMON500-0` | 500 Internal Server Error  | 서버 내부 오류가 발생했습니다.    |
+
+`COMMON400-0`의 메시지는 검증 실패, 파라미터 형식 오류, 필수 파라미터 누락 등 구체적인 사유에 따라 달라질 수 있다.
 
 도메인별 에러 코드는 각 도메인의 `~ErrorCode` enum에서 관리한다.
 
@@ -193,16 +198,27 @@ public abstract class BaseException extends RuntimeException {
 
 ### 5.2 전역 예외 처리
 
-`GlobalExceptionHandler`는 `@RestControllerAdvice`를 사용하여 애플리케이션의 예외를 공통 형식으로 변환한다.
+`GlobalExceptionHandler`는 `@RestControllerAdvice`를 사용하여 예외를 공통 `ErrorResponse` 형식으로 변환한다.
 
-| 예외 | 처리 방식 |
-| --- | --- |
-| `BaseException` | 해당 `ErrorCode`의 HTTP 상태, 코드, 메시지를 반환 |
-| `MethodArgumentNotValidException` | 필드 오류 메시지를 우선 사용하고, 없으면 클래스 레벨 오류 메시지를 사용 |
-| `ConstraintViolationException` | 요청 파라미터 및 경로 변수의 제약조건 위반 메시지를 반환 |
-| `HandlerMethodValidationException` | Spring MVC 메서드 파라미터 검증 오류 메시지를 반환 |
-| `HttpMessageNotReadableException` | 잘못된 JSON 요청을 `COMMON400-0`으로 반환 |
-| `Exception` | 내부 정보를 노출하지 않고 `COMMON500-0`으로 반환하며 서버 로그에 기록 |
+| 예외                                      | 처리 방식                                                                                            |
+|-------------------------------------------|------------------------------------------------------------------------------------------------------|
+| `BaseException`                           | 해당 `ErrorCode`의 HTTP 상태, 코드, 메시지를 반환                                                    |
+| `MethodArgumentNotValidException`         | 필드 오류 메시지를 우선 사용하고, 없으면 클래스 레벨 오류 메시지를 사용하여 400 / `COMMON400-0` 반환 |
+| `ConstraintViolationException`            | 요청 파라미터 및 경로 변수의 제약조건 위반 메시지와 함께 400 / `COMMON400-0` 반환                    |
+| `HandlerMethodValidationException`        | Spring MVC 메서드 검증 오류 메시지와 함께 400 / `COMMON400-0` 반환                                   |
+| `HttpMessageNotReadableException`         | 잘못된 JSON 또는 읽을 수 없는 요청 본문을 400 / `COMMON400-0`으로 반환                               |
+| `MethodArgumentTypeMismatchException`     | 파라미터·경로 변수의 타입 변환 실패를 400 / `COMMON400-0`으로 반환                                   |
+| `MissingServletRequestParameterException` | 필수 요청 파라미터 누락을 400 / `COMMON400-0`으로 반환                                               |
+| `AuthenticationException`                 | 401 / `COMMON401-0` 반환                                                                             |
+| `AccessDeniedException`                   | 403 / `COMMON403-0` 반환                                                                             |
+| `NoResourceFoundException`                | 존재하지 않는 리소스 경로를 404 / `COMMON404-0`으로 반환                                             |
+| `HttpRequestMethodNotSupportedException`  | 지원하지 않는 HTTP 메서드를 405 / `COMMON405-0`으로 반환                                             |
+| `HttpMediaTypeNotSupportedException`      | 지원하지 않는 Content-Type을 415 / `COMMON415-0`으로 반환                                            |
+| `Exception`                               | 내부 정보를 노출하지 않고 500 / `COMMON500-0`으로 반환하며 서버 로그에 기록                          |
+
+405 응답에는 지원하는 HTTP 메서드를 안내하는 `Allow` 헤더를 포함한다.
+
+위 처리는 관리자·공개 API에 공통 적용된다. 인증·인가 단계에서 요청이 거부되면 해당 401·403 응답이 우선 반환된다.
 
 ## 6. Validation
 
