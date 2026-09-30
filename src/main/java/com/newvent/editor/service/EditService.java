@@ -196,14 +196,18 @@ public class EditService {
             return;
         }
 
-        List<Decision.Run> plan = planAll(job, cmd);
+        String doc = base.html();
+
+        List<Decision.Run> plan = planAll(job, cmd, doc);
         if (plan == null) return;               // 되묻기 · 거절 — job 에 문구가 담겼다
         if (job.checkCancelled()) return;
 
-        // ★ 여기서 상한을 다시 본다. checkDailyLimit 은 상태가 없어서 다시 보는 게 맞다.
-        gateway.reserve(plan.size() * retry.maxAttempts());
-
-        String doc = base.html();
+        // ★ 모델을 부르는 연산만 센다. DELETE 는 모델을 안 부른다 —
+        int modelOps = (int) plan.stream().filter(r -> r.op() != Op.DELETE).count();
+        if (modelOps > 0) {
+            // checkDailyLimit 은 상태가 없어서 다시 보는 게 맞다.
+            gateway.reserve(modelOps * retry.maxAttempts());
+        }
         for (Decision.Run step : plan) {
             if (job.checkCancelled()) return;
             doc = apply(job, cmd, doc, step);
@@ -231,7 +235,7 @@ public class EditService {
      * 요청문을 실행 계획으로 바꾼다. <b>모델을 부르는 건 라우터 1회뿐이다.</b>
      *
      */
-    private List<Decision.Run> planAll(GenerationJob job, EditCommand cmd) {
+    private List<Decision.Run> planAll(GenerationJob job, EditCommand cmd, String doc) {
         job.to(GenerationJob.Phase.ROUTING);
 
         // ★ requestId = jobId 다. 라우터 호출만 이 작업과 로그에서 이어진다.
@@ -268,13 +272,43 @@ public class EditService {
                         job.fail("같은 부분에 대한 요청이 두 개입니다. 하나씩 말씀해 주세요.");
                         return null;
                     }
-                    plan.add(r);
+                    Decision.Run fixed = againstDocument(job, doc, r);
+                    if (fixed == null) return null;     // job 에 문구가 담겼다
+                    plan.add(fixed);
                 }
             }
         }
         log.info("수정 계획 (event={}, job={}) — {}", cmd.eventId(), job.jobId(),
                 plan.stream().map(r -> r.op() + ":" + r.block().key()).toList());
         return plan;
+    }
+
+    /**
+     * 문서와 대조해 연산을 교정하거나 거절한다.
+     *
+     * ★ 있는데 ADD → EDIT 으로 고친다
+     *
+     * ★ 없는데 ADD 가 아니면 거절한다
+     *
+     */
+    private Decision.Run againstDocument(GenerationJob job, String doc, Decision.Run r) {
+        boolean present = !BlockValidator.blockOf(doc, r.block()).isBlank();
+
+        if (r.op() == Op.ADD && present) {
+            log.info("수정 — {} 는 이미 있어 ADD 를 EDIT 으로 본다 (event={})",
+                    r.block().key(), job.eventId());
+            return new Decision.Run(r.block(), Op.EDIT, r.content());
+        }
+
+        if (r.op() != Op.ADD && !present) {
+            log.info("수정 거절 — {} 영역이 문서에 없다 (event={}, op={})",
+                    r.block().key(), job.eventId(), r.op());
+            job.fail(r.op() == Op.DELETE
+                    ? "지우려는 부분이 이미 없습니다."
+                    : "고치려는 부분이 페이지에 없습니다. 먼저 추가해 달라고 말씀해 주세요.");
+            return null;
+        }
+        return r;
     }
 
     // ── 연산 하나 ─────────────────────────────────────────────────
@@ -289,10 +323,7 @@ public class EditService {
         // ★ 삭제는 모델을 부르지 않는다. 지우는 데 모델이 필요 없다.
         //   canDelete() 가 참인 블록은 steps 하나뿐이다(나머지는 필수)
         if (step.op() == Op.DELETE) {
-            if (before.isBlank()) {
-                job.fail("지우려는 부분이 이미 없습니다.");
-                return null;
-            }
+            // 문서에 있는지는 planAll 의 againstDocument 가 이미 봤다
             log.info("수정 — {} 삭제 (event={}). 모델을 부르지 않는다", block.key(), cmd.eventId());
             return removeBlock(doc, block);
         }
@@ -329,7 +360,27 @@ public class EditService {
                     + "요청을 조금 더 구체적으로 적어 다시 시도해 주세요.");
             return null;
         }
-        return BlockMerge.merge(doc, block, res.html());
+        // ★ 없던 영역이면 병합이 아니라 삽입이다.
+        //   BlockMerge.merge 는 있는 섹션을 갈아끼울 뿐 새로 만들지 못한다
+        return before.isBlank()
+                ? insertBlock(doc, block, res.html().strip())
+                : BlockMerge.merge(doc, block, res.html());
+    }
+
+    /**
+     * 없던 섹션을 문서 순서에 맞는 자리에 끼워 넣는다.
+     */
+    private static String insertBlock(String doc, Block block, String section) {
+        for (Block after : Block.values()) {
+            if (after.ordinal() <= block.ordinal()) continue;
+            if (BlockValidator.blockOf(doc, after).isBlank()) continue;
+
+            int at = doc.indexOf(BlockMerge.extract(doc, after));
+            if (at >= 0) {
+                return doc.substring(0, at) + section + "\n" + doc.substring(at);
+            }
+        }
+        return doc + "\n" + section;
     }
 
     /**

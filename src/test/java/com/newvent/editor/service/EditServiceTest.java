@@ -91,6 +91,19 @@ class EditServiceTest {
         }
     }
 
+    /** reserve 가 몇 번 얼마씩 불렸는지 센다. call 은 안 쓰인다 — 가짜가 덮었다 */
+    static final class CountingGateway implements LlmCallGateway {
+        final List<Integer> reserves = new ArrayList<>();
+
+        @Override public void reserve(int expectedCalls) { reserves.add(expectedCalls); }
+
+        @Override
+        public com.newvent.infra.llm.LlmClient.Response call(
+                LlmCallContext ctx, com.newvent.infra.llm.LlmClient.Request req) {
+            throw new UnsupportedOperationException("가짜가 덮었어야 한다");
+        }
+    }
+
     private static RetryService.Result ok(String html) {
         return new RetryService.Result(true, html, List.of());
     }
@@ -119,9 +132,21 @@ class EditServiceTest {
             "<section data-block=\"hero\"><h1>가을 대축제</h1>"
             + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>";
 
+    /** steps 가 없는 문서. 백지 생성이 선택 블록을 빼먹었거나 삭제한 뒤의 상태 */
+    private static final String NO_STEPS = """
+            <section data-block="hero"><h1>여름 데이터 대방출</h1>\
+            <p>기간 <span data-slot="period"></span> 까지</p></section>
+            <section data-block="benefits"><ul><li>데이터 10GB</li><li>쿠폰</li></ul></section>
+            <section data-block="notices"><p>유의사항</p></section>
+            <section data-block="cta"><button class="btn">참여하기</button></section>""";
+
+    private static final String NEW_STEPS =
+            "<section data-block=\"steps\"><ol><li>앱 열기</li><li>버튼 누르기</li></ol></section>";
+
     private static final String NEW_BENEFITS =
             "<section data-block=\"benefits\"><ul><li>데이터 20GB</li><li>쿠폰</li></ul></section>";
 
+    private CountingGateway gateway;
     private FakeRouter router;
     private FakeRetry retry;
     private GenerationJobStore jobs;
@@ -134,8 +159,9 @@ class EditServiceTest {
         retry = new FakeRetry();
         jobs = new GenerationJobStore();
         versions = new VersionStore.InMemory();
+        gateway = new CountingGateway();
         service = new EditService(router, retry, versions, new EventGuard.Open(), jobs,
-                LlmCallRecorder.none(), new LlmCallGateway.Direct(null));
+                LlmCallRecorder.none(), gateway);
 
         // 고칠 페이지를 하나 심는다. 이게 v1 이고 기준 버전이 된다
         versions.save(EVENT, BASE, null);
@@ -209,9 +235,9 @@ class EditServiceTest {
     @Test
     @DisplayName("내용 없는 항목 추가는 되묻는다 — 모델이 지어내면 안 된다")
     void 내용_없는_추가는_되묻는다() {
-        router.willReturn(new RawRoute("ADD", "benefits", null));
+        router.willReturn(new RawRoute("ADD", "steps", null));
 
-        GenerationJob job = run("혜택 하나 더 추가해줘");
+        GenerationJob job = run("참여 방법 하나 더 추가해줘");
 
         assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
         assertEquals(0, retry.calls());
@@ -471,5 +497,105 @@ class EditServiceTest {
         run("제목을 가을 대축제로 바꿔줘");
 
         assertTrue(retry.prompts().get(0).contains("직접 쓴 문구"));
+    }
+
+    // ── 상한 확보 ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("삭제만 있으면 모델 몫의 상한을 잡지 않는다")
+    void 삭제는_상한을_잡지_않는다() {
+        router.willReturn(new RawRoute("DELETE", "steps", null));
+
+        run("참여방법 영역 지워줘");
+
+        // start() 가 라우터 1 + 연산 하나(2) = 3 을 잡는다. 그 뒤로는 없어야 한다
+        assertEquals(List.of(1 + retry.maxAttempts()), gateway.reserves,
+                "DELETE 는 모델을 안 부르는데 상한을 잡았다");
+    }
+
+    @Test
+    @DisplayName("삭제와 수정이 섞이면 수정 몫만 잡는다")
+    void 섞이면_수정_몫만_잡는다() {
+        router.willReturn(
+                new RawRoute("DELETE", "steps", null),
+                new RawRoute("EDIT", "hero", "가을 대축제"));
+        retry.willReturn(ok(NEW_HERO));
+
+        run("참여방법 지우고 제목도 바꿔줘");
+
+        assertEquals(List.of(1 + retry.maxAttempts(), retry.maxAttempts()), gateway.reserves,
+                "연산 2개지만 모델을 부르는 건 하나다");
+    }
+
+    // ── 문서에 없는 영역 ──────────────────────────────────────────
+
+    @Test
+    @DisplayName("없는 영역 수정은 모델을 부르기 전에 거절한다")
+    void 없는_영역_수정은_모델_전에_거절한다() {
+        setUpWith(NO_STEPS);
+        router.willReturn(new RawRoute("EDIT", "steps", "더 친절하게"));
+
+        GenerationJob job = run("참여방법을 더 친절하게 다듬어줘");
+
+        assertEquals(GenerationJob.Phase.FAILED, job.phase());
+        assertEquals(0, retry.calls(), "없는 영역인데 모델을 불렀다 — 호출 예산이 샌다");
+        assertEquals(1, versionNo());
+        assertEquals(List.of(1 + retry.maxAttempts()), gateway.reserves,
+                "판정에서 끝났으니 두 번째 확보가 없어야 한다");
+    }
+
+    @Test
+    @DisplayName("없던 영역 추가는 문서 순서에 맞는 자리에 삽입된다")
+    void 없던_영역은_삽입된다() {
+        setUpWith(NO_STEPS);
+        router.willReturn(new RawRoute("ADD", "steps", "앱 열고 버튼 누르기"));
+        retry.willReturn(ok(NEW_STEPS));
+
+        GenerationJob job = run("참여 방법 넣어줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertEquals(2, versionNo());
+
+        String saved = savedHtml();
+        assertFalse(blockOf(saved, Block.STEPS).isBlank(), "steps 가 안 들어갔다");
+        // benefits < steps < notices 순서여야 한다
+        assertTrue(saved.indexOf("data-block=\"benefits\"") < saved.indexOf("data-block=\"steps\""));
+        assertTrue(saved.indexOf("data-block=\"steps\"") < saved.indexOf("data-block=\"notices\""));
+    }
+
+    @Test
+    @DisplayName("이미 있는 영역에 대한 추가는 수정으로 본다")
+    void 있는_영역_추가는_수정이다() {
+        router.willReturn(new RawRoute("ADD", "steps", "앱 열고 버튼 누르기"));
+        retry.willReturn(ok(NEW_STEPS));
+
+        GenerationJob job = run("참여 방법 추가해줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertEquals(2, versionNo());
+        // 삽입이 아니라 병합이므로 steps 는 하나뿐이다
+        assertEquals(1, savedHtml().split("data-block=\"steps\"", -1).length - 1);
+    }
+
+    @Test
+    @DisplayName("혜택 항목 추가는 모델을 부르기 전에 거절한다")
+    void 혜택_항목_추가는_거절한다() {
+        router.willReturn(new RawRoute("ADD", "benefits", "데이터 20GB 증정"));
+
+        GenerationJob job = run("혜택에 데이터 20GB 증정을 추가해줘");
+
+        assertEquals(GenerationJob.Phase.FAILED, job.phase());
+        assertTrue(job.message().contains("늘리거나 줄일 수 없습니다"));
+        assertEquals(0, retry.calls(), "거절인데 모델을 불렀다");
+        assertEquals(1, versionNo());
+    }
+
+    /** 기준 문서를 바꿔 다시 세운다 */
+    private void setUpWith(String html) {
+        versions = new VersionStore.InMemory();
+        gateway = new CountingGateway();
+        service = new EditService(router, retry, versions, new EventGuard.Open(), jobs,
+                LlmCallRecorder.none(), gateway);
+        versions.save(EVENT, html, null);
     }
 }
