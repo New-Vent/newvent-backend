@@ -39,12 +39,12 @@ public class ParticipationService {
 
         User user = userService.getById(userId);
 
-        if (gradeRank(user.getMembershipGrade()) < gradeRank(event.getGrade())) {
-            throw new ParticipationException(ParticipationErrorCode.INSUFFICIENT_GRADE);
-        }
-
         if (participationRepository.existsByEventIdAndUserId(eventId, userId)) {
             throw new ParticipationException(ParticipationErrorCode.ALREADY_PARTICIPATED);
+        }
+
+        if (gradeRank(user.getMembershipGrade()) < gradeRank(event.getGrade())) {
+            throw new ParticipationException(ParticipationErrorCode.INSUFFICIENT_GRADE);
         }
 
         try {

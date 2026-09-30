@@ -169,6 +169,26 @@ class ParticipationServiceTest {
         verify(participationRepository, never()).saveAndFlush(any(EventParticipation.class));
     }
 
+    @Test
+    void 이미참여했고_등급도부족하면_중복참여를우선한다() {
+        when(publicEventService.getPublicEvent(1L))
+                .thenReturn(event(EventStatus.PUBLISHED, MembershipGrade.BEST));
+        when(userService.getById(7L))
+                .thenReturn(user(MembershipGrade.NORMAL));
+        when(participationRepository.existsByEventIdAndUserId(1L, 7L))
+                .thenReturn(true);
+
+        ParticipationException exception = assertThrows(
+                ParticipationException.class,
+                () -> service.participate(1L, 7L));
+
+        assertEquals(
+                ParticipationErrorCode.ALREADY_PARTICIPATED,
+                exception.getErrorCode());
+        verify(participationRepository, never())
+                .saveAndFlush(any(EventParticipation.class));
+    }
+
     private Event event(EventStatus status, MembershipGrade grade) {
         Event event = BeanUtils.instantiateClass(Event.class);
         ReflectionTestUtils.setField(event, "status", status);
