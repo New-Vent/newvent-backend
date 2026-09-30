@@ -117,6 +117,9 @@ class RagEvalSmokeTest {
             int i = 0;
             for (Element section : doc.select("section[data-block]")) {
                 String key = section.attr("data-block");
+                // ★ notices 는 색인하지 않는다. 서버 소유 문구라 예시가 될 이유가 없다.
+                //   Q8(유의사항 → 없음)이 이 결정을 고정한다.
+                if ("notices".equals(key)) continue;
                 String content = section.text();
                 repo.save(RagChunk.create(event, null, key, i++,
                         content, embedding.modelName(),
