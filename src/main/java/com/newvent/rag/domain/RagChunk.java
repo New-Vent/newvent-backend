@@ -46,7 +46,7 @@ public class RagChunk {
 	private Event event;
 
 	@ManyToOne(fetch = FetchType.LAZY)
-	@JoinColumn(name = "version_id", nullable = false,
+	@JoinColumn(name = "version_id",
 				foreignKey = @ForeignKey(name = "fk_rag_chunks_version"))
 	private EventVersion version;
 
