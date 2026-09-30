@@ -40,6 +40,7 @@ class EditServiceTest {
 
         private Optional<List<RawRoute>> next = Optional.empty();
         private int calls;
+        private String lastRequest;
 
         FakeRouter() {
             super(new LlmCallGateway.Direct(null), LlmCallRecorder.none());
@@ -52,6 +53,7 @@ class EditServiceTest {
         @Override
         public Optional<List<RawRoute>> route(LlmCallContext ctx, String requestText) {
             calls++;
+            lastRequest = requestText;
             return next;
         }
     }
@@ -207,6 +209,46 @@ class EditServiceTest {
     }
 
     // ── 되묻기 ────────────────────────────────────────────────────
+
+    @Test
+    void 개인정보는_확인_전_호출과_저장이_없고_확인_후_원문으로_진행한다() {
+        String request = "제목에 a@example.com 안내 문구 추가해줘";
+        GenerationJob question = run(request);
+        assertEquals(GenerationJob.Phase.ASK_BACK, question.phase());
+        assertTrue(question.privacyConfirmationRequired());
+        assertEquals(0, router.calls());
+        assertEquals(0, retry.calls());
+        assertTrue(gateway.reserves.isEmpty());
+        assertEquals(1, versionNo());
+        assertFalse(question.inputContext().text().contains("a@example.com"));
+        router.willReturn(new RawRoute("EDIT", "hero", null));
+        retry.willReturn(ok(NEW_HERO));
+        GenerationJob reply = await(started(service.start(new EditCommand(
+                EVENT, "여름 이벤트", request, question.jobId(), true))));
+        assertEquals(GenerationJob.Phase.DONE, reply.phase());
+        assertTrue(router.lastRequest.contains("a@example.com"));
+        assertTrue(retry.prompts().getFirst().contains("a@example.com"));
+        assertEquals(2, versionNo());
+    }
+
+    @Test
+    void 개인정보_수정후_재요청은_확인없이_일반_요청으로_진행한다() {
+        run("전화번호 010-1234-5678 넣어줘");
+        router.willReturn(new RawRoute("EDIT", "hero", null));
+        retry.willReturn(ok(NEW_HERO));
+        assertEquals(GenerationJob.Phase.DONE, run("제목을 가을 축제로 바꿔줘").phase());
+        assertFalse(router.lastRequest.contains("010-1234"));
+    }
+
+    @Test
+    void 개인정보_확인중_버전이_바뀌면_진행하지_않는다() {
+        GenerationJob question = run("a@example.com 넣어줘");
+        versions.save(EVENT, NEW_HERO, versions.latest(EVENT).orElseThrow().versionId());
+        var result = service.start(new EditCommand(EVENT, "여름 이벤트",
+                "a@example.com 넣어줘", question.jobId(), true));
+        assertInstanceOf(EditService.StartResult.Rejected.class, result);
+        assertEquals(0, router.calls());
+    }
 
     @Test
     @DisplayName("라우터가 못 알아들으면 되묻고 모델을 더 부르지 않는다")

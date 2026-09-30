@@ -90,6 +90,22 @@ public final class GenerationJob {
      * ★ 실패 · 중단으로 끝나면 끝까지 null 이다 — 저장 단계에 도달하지 못했으므로 버전이 없다.
      */
     private final AtomicReference<Long> versionId = new AtomicReference<>();
+    public record InputContext(String flow, String text, Long baseVersionId) {}
+    private volatile InputContext inputContext;
+    private volatile String privacyFingerprint;
+    private volatile java.util.List<String> privacyTypes = java.util.List.of();
+
+    public InputContext inputContext() { return inputContext; }
+    public boolean privacyConfirmationRequired() { return privacyFingerprint != null; }
+    public String privacyFingerprint() { return privacyFingerprint; }
+    public java.util.List<String> privacyTypes() { return privacyTypes; }
+    public void privacyConfirmation(String fingerprint, java.util.List<String> types) {
+        privacyTypes = java.util.List.copyOf(types);
+        privacyFingerprint = fingerprint;
+    }
+    public void inputContext(String flow, String text, Long baseVersionId) {
+        inputContext = new InputContext(flow, text, baseVersionId);
+    }
 
     public GenerationJob(Long eventId) {
         this.eventId = eventId;

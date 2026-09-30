@@ -13,7 +13,16 @@ public record GenerateCommand(
         String title,
         String period,
         String ctaUrl,
-        String requestText) {
+        String requestText,
+        java.util.UUID clarificationJobId, boolean privacyConfirmed) {
+    public GenerateCommand(Long eventId, String templateCode, String title, String period,
+                           String ctaUrl, String requestText, java.util.UUID clarificationJobId) {
+        this(eventId, templateCode, title, period, ctaUrl, requestText, clarificationJobId, false);
+    }
+    public GenerateCommand(Long eventId, String templateCode, String title, String period,
+                           String ctaUrl, String requestText) {
+        this(eventId, templateCode, title, period, ctaUrl, requestText, null);
+    }
 
     /**
      * 생성 시작. **트랜잭션 안에서 부른다** (아래 지연 로딩 주석 참고).

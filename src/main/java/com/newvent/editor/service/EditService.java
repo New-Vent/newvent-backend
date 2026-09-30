@@ -64,6 +64,7 @@ public class EditService {
 
 
     private final LlmCallGateway gateway;
+    private final com.newvent.filtering.FilteringPolicy filtering;
 
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -75,6 +76,14 @@ public class EditService {
     public EditService(RouteService router, RetryService retry, VersionStore versions,
                        EventGuard guard, GenerationJobStore jobs,
                        LlmCallRecorder recorder, LlmCallGateway gateway) {
+        this(router, retry, versions, guard, jobs, recorder, gateway, new com.newvent.filtering.FilteringPolicy());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EditService(RouteService router, RetryService retry, VersionStore versions,
+                       EventGuard guard, GenerationJobStore jobs, LlmCallRecorder recorder,
+                       LlmCallGateway gateway, com.newvent.filtering.FilteringPolicy filtering) {
+        this.filtering = filtering;
         this.router = router;
         this.retry = retry;
         this.versions = versions;
@@ -117,9 +126,16 @@ public class EditService {
         }
 
         // ③ 고칠 게 있는가 — 여기서 봐야 404 가 관리자에게 도달한다
-        if (versions.latest(cmd.eventId()).isEmpty()) {
+        VersionStore.Snapshot snapshot = versions.latest(cmd.eventId()).orElse(null);
+        if (snapshot == null) {
             return new StartResult.Rejected(EditErrorCode.PAGE_NOT_FOUND);
         }
+
+        var input = filtering.prepare(cmd.requestText(), cmd.clarificationJobId(), cmd.eventId(),
+                "edit", snapshot.versionId(), jobs, cmd.privacyConfirmed(), cmd.title());
+        if (input.error() != null) return new StartResult.Rejected(input.error());
+        EditCommand safeCommand = new EditCommand(cmd.eventId(),
+                cmd.title(), input.text(), cmd.clarificationJobId(), cmd.privacyConfirmed());
 
         // ④ 이미 돌고 있나 — **자리를 잡지 않고** 먼저 본다
         Optional<GenerationJob> already = jobs.ofEvent(cmd.eventId());
@@ -128,7 +144,7 @@ public class EditService {
         }
 
         // ⑤ 하루 상한 — 라우터 1회 + 연산 하나의 재시도 묶음
-        gateway.reserve(1 + retry.maxAttempts());
+        if (input.question() == null) gateway.reserve(1 + retry.maxAttempts());
 
         // ⑥ 자리 잡기
         Optional<GenerationJob> slot = jobs.start(cmd.eventId());
@@ -140,7 +156,14 @@ public class EditService {
         }
 
         GenerationJob job = slot.get();
-        worker.submit(() -> runSafely(job, cmd));
+        job.inputContext("edit", input.contextText(), snapshot.versionId());
+        job.privacyConfirmation(input.fingerprint(), input.privacyTypes());
+        if (input.question() != null) {
+            job.askBack(input.question());
+            jobs.finish(job);
+        } else {
+            worker.submit(() -> runSafely(job, safeCommand));
+        }
         return new StartResult.Started(job);
     }
 
@@ -197,7 +220,13 @@ public class EditService {
         }
 
         String doc = base.html();
+        if (cmd.clarificationJobId() != null
+                && !java.util.Objects.equals(base.versionId(), job.inputContext().baseVersionId())) {
+            job.fail("확인 요청 이후 작업 버전이 변경되었습니다. 다시 요청해 주세요.");
+            return;
+        }
 
+        job.inputContext("edit", cmd.requestText(), base.versionId());
         List<Decision.Run> plan = planAll(job, cmd, doc);
         if (plan == null) return;               // 되묻기 · 거절 — job 에 문구가 담겼다
         if (job.checkCancelled()) return;
