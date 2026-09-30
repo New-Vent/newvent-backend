@@ -20,15 +20,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.newvent.auth.dto.AuthUser;
-import com.newvent.event.dto.response.DirectEditResponse;
-import com.newvent.event.dto.response.EventVersionDetailResponse;
-import com.newvent.event.dto.response.EventVersionListResponse;
-import com.newvent.event.service.DirectEditService;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
+import com.newvent.event.dto.response.DirectEditResponse;
 import com.newvent.event.dto.response.EventVersionDetailResponse;
 import com.newvent.event.dto.response.EventVersionListResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
+import com.newvent.event.service.DirectEditService;
 import com.newvent.event.service.EventVersionService;
 
 @ExtendWith(MockitoExtension.class)
