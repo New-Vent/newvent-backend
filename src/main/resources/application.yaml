@@ -1,4 +1,9 @@
+# 프로파일
+#   dev   (기본값) 로컬 개발 — application-dev.yaml. 아무것도 지정하지 않으면 이걸로 뜬다
+#   prod           배포 — application-prod.yaml. main 브랜치 배포에서만 켠다 (SPRING_PROFILES_ACTIVE=prod)
 spring:
+  profiles:
+    default: dev
   application:
     name: newvent-backend
   jackson:
@@ -22,6 +27,10 @@ server:
   port: 8080
 
 # 인증 — JWT Access Token + Refresh Token(HttpOnly 쿠키)
+#
+#   ★ 여기 값은 엄격한 쪽이다 (Secure=true, 비밀키 기본값 없음). 프로파일이 덮어쓴다.
+#       dev   application-dev.yaml   Secure=false, 개발용 비밀키, localhost:5173·5174 허용
+#       prod  application-prod.yaml  Secure=true 고정, 비밀키·허용 Origin 은 환경변수 필수
 auth:
   jwt:
     secret: ${JWT_SECRET}

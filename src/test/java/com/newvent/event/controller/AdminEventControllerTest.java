@@ -2,6 +2,7 @@ package com.newvent.event.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -18,11 +19,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.newvent.auth.dto.AuthUser;
 import com.newvent.auth.jwt.JwtProvider;
 import com.newvent.common.config.SecurityConfig;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
@@ -45,6 +48,9 @@ class AdminEventControllerTest {
 
     @Autowired
     MockMvc mockMvc;
+
+    @Autowired
+    JwtProvider jwtProvider;
 
     @MockitoBean
     EventService eventService;
@@ -111,9 +117,10 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
                 "sports_cheer", null, MembershipGrade.BEST,
                 null, false);
-        given(eventService.create(any(EventCreateRequest.class))).willReturn(created);
+        given(eventService.create(eq(1L), any(EventCreateRequest.class))).willReturn(created);
 
         mockMvc.perform(post("/api/admin/events")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtProvider.issue(AuthUser.admin(1L)).value())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {

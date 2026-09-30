@@ -10,7 +10,8 @@ public enum EventErrorCode implements ErrorCode {
     EVENT_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-0", "이벤트를 찾을 수 없습니다."),
     TEMPLATE_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-1", "템플릿을 찾을 수 없습니다."),
     EVENT_NOT_ACCESSIBLE(HttpStatus.NOT_FOUND, "EVENT404-2", "지금은 접근할 수 없는 이벤트입니다."),
-    VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-3", "이벤트 버전을 찾을 수 없습니다.");
+    VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "EVENT404-3", "이벤트 버전을 찾을 수 없습니다."),
+    PUBLISHED_VERSION_CHECKPOINT_UNMARK_FORBIDDEN(HttpStatus.CONFLICT, "EVENT409-0", "현재 게시 중인 버전의 저장 지점은 해제할 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Min;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.request.EventCreateRequest;
@@ -59,8 +61,9 @@ public class AdminEventController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<EventDetailResponse>> create(
+            @AuthenticationPrincipal AuthUser principal,
             @Valid @RequestBody EventCreateRequest request) {
-        EventDetailResponse created = eventService.create(request);
+        EventDetailResponse created = eventService.create(principal.id(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(created));
     }
 
