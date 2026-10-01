@@ -55,7 +55,7 @@ public class GenerateController {
         }
         GenerateCommand initial = GenerateCommand.of(event, req.templateCode(), req.requestText());
         GenerateCommand cmd = new GenerateCommand(initial.eventId(), initial.templateCode(), initial.title(),
-                initial.period(), initial.ctaUrl(), initial.requestText(), req.clarificationJobId(), req.privacyConfirmed());
+                initial.period(), initial.ctaUrl(), initial.requestText(), req.privacyConfirmationJobId(), req.privacyConfirmed());
 
         return switch (generation.start(cmd)) {
             case StartResult.Started s -> ResponseEntity

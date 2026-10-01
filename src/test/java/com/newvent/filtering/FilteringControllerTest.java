@@ -54,7 +54,7 @@ class FilteringControllerTest {
                 new EditController(edit, events).start(1L, new EditRequest("제목 수정", previous), AuthUser.admin(1L)));
         assertThrows(GenerationException.class, () ->
                 new GenerateController(generate, events).start(1L, new GenerateRequest(null, "생성", previous), AuthUser.admin(1L)));
-        verify(edit).start(argThat(c -> previous.equals(c.clarificationJobId())));
-        verify(generate).start(argThat(c -> previous.equals(c.clarificationJobId())));
+        verify(edit).start(argThat(c -> previous.equals(c.privacyConfirmationJobId())));
+        verify(generate).start(argThat(c -> previous.equals(c.privacyConfirmationJobId())));
     }
 }

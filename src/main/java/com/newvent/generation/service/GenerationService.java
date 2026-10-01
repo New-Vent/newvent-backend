@@ -126,11 +126,11 @@ public class GenerationService {
         // ③ 이미 돌고 있나 — **자리를 잡지 않고** 먼저 본다
         var input = cmd.hasTemplate()
                 ? com.newvent.filtering.FilteringPolicy.Result.accepted("")
-                : filtering.prepare(cmd.requestText(), cmd.clarificationJobId(), cmd.eventId(),
+                : filtering.prepare(cmd.requestText(), cmd.privacyConfirmationJobId(), cmd.eventId(),
                         "generate", null, jobs, cmd.privacyConfirmed(), cmd.title());
         if (input.error() != null) return new StartResult.Rejected(input.error());
-        if (cmd.hasTemplate() && (cmd.clarificationJobId() != null || cmd.privacyConfirmed())) {
-            return new StartResult.Rejected(com.newvent.filtering.FilteringErrorCode.INVALID_CLARIFICATION);
+        if (cmd.hasTemplate() && (cmd.privacyConfirmationJobId() != null || cmd.privacyConfirmed())) {
+            return new StartResult.Rejected(com.newvent.filtering.FilteringErrorCode.PRIVACY_CONFIRMATION_NOT_FOUND);
         }
         GenerateCommand safeCommand = new GenerateCommand(cmd.eventId(), cmd.templateCode(),
                 cmd.title(), cmd.period(), cmd.ctaUrl(), input.text());
@@ -157,7 +157,7 @@ public class GenerationService {
         }
 
         GenerationJob job = slot.get();
-        job.inputContext("generate", input.contextText(), null);
+        job.privacyRequest("generate", null);
         job.privacyConfirmation(input.fingerprint(), input.privacyTypes());
         if (input.question() != null) {
             job.askBack(input.question());

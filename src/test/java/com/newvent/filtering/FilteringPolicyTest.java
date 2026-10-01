@@ -20,7 +20,7 @@ class FilteringPolicyTest {
     private GenerationJob pending(String text) {
         var result = prepare(text);
         var job = jobs.start(1L).orElseThrow();
-        job.inputContext("edit", result.contextText(), 10L);
+        job.privacyRequest("edit", 10L);
         job.privacyConfirmation(result.fingerprint(), result.privacyTypes());
         job.askBack(result.question());
         jobs.finish(job);
@@ -34,7 +34,6 @@ class FilteringPolicyTest {
         assertTrue(result.privacyTypes().contains("PHONE"));
         assertNotNull(result.question());
         assertEquals("", result.text());
-        assertFalse(result.contextText().contains("a@example.com"));
         assertFalse(result.question().contains("010-1234"));
     }
     @Test
@@ -57,13 +56,13 @@ class FilteringPolicyTest {
     @Test
     void rejectsOtherEventFlowVersionAndUnknownJob() {
         var job = pending("a@example.com");
-        assertEquals(FilteringErrorCode.INVALID_CLARIFICATION,
+        assertEquals(FilteringErrorCode.PRIVACY_CONFIRMATION_NOT_FOUND,
                 policy.prepare("a@example.com", job.jobId(), 2L, "edit", 10L, jobs, true, "행사").error());
-        assertEquals(FilteringErrorCode.INVALID_CLARIFICATION,
+        assertEquals(FilteringErrorCode.PRIVACY_CONFIRMATION_NOT_FOUND,
                 policy.prepare("a@example.com", job.jobId(), 1L, "generate", 10L, jobs, true, "행사").error());
-        assertEquals(FilteringErrorCode.STALE_CLARIFICATION,
+        assertEquals(FilteringErrorCode.STALE_PRIVACY_CONFIRMATION,
                 policy.prepare("a@example.com", job.jobId(), 1L, "edit", 11L, jobs, true, "행사").error());
-        assertEquals(FilteringErrorCode.INVALID_CLARIFICATION,
+        assertEquals(FilteringErrorCode.PRIVACY_CONFIRMATION_NOT_FOUND,
                 policy.prepare("a@example.com", UUID.randomUUID(), 1L, "edit", 10L, jobs, true, "행사").error());
     }
     @Test
@@ -74,30 +73,36 @@ class FilteringPolicyTest {
         when(store.byId(id)).thenReturn(Optional.of(job));
         when(job.eventId()).thenReturn(1L);
         when(job.phase()).thenReturn(GenerationJob.Phase.ASK_BACK);
-        when(job.inputContext()).thenReturn(new GenerationJob.InputContext("edit", "", 10L));
+        when(job.privacyRequest()).thenReturn(new GenerationJob.PrivacyRequest("edit", 10L));
+        when(job.privacyConfirmationRequired()).thenReturn(true);
         when(job.startedAt()).thenReturn(Instant.now().minusSeconds(1801));
-        assertEquals(FilteringErrorCode.INVALID_CLARIFICATION,
+        assertEquals(FilteringErrorCode.PRIVACY_CONFIRMATION_NOT_FOUND,
                 policy.prepare("a@example.com", id, 1L, "edit", 10L, store, true, "행사").error());
     }
     @Test
-    void normalRouterQuestionStillContinuesAndNewPrivateReplyRequiresConfirmation() {
+    void normalRouterQuestionIsNotAPrivacyConfirmation() {
         var job = jobs.start(1L).orElseThrow();
-        job.inputContext("edit", "제목 바꿔줘", 10L);
         job.askBack("어떤 제목인가요?");
         jobs.finish(job);
-        var reply = policy.prepare("이메일 a@example.com", job.jobId(), 1L, "edit", 10L, jobs, false, "행사");
-        assertNotNull(reply.question());
-        assertFalse(reply.contextText().contains("a@example.com"));
-        var next = jobs.start(1L).orElseThrow();
-        next.inputContext("edit", reply.contextText(), 10L);
-        next.privacyConfirmation(reply.fingerprint(), reply.privacyTypes());
-        next.askBack(reply.question());
-        jobs.finish(next);
-        var confirmed = policy.prepare("이메일 a@example.com", next.jobId(), 1L, "edit", 10L, jobs, true, "행사");
-        assertNull(confirmed.error());
-        assertTrue(confirmed.text().contains("제목 바꿔줘"));
-        assertTrue(confirmed.text().contains("a@example.com"));
+        var reply = policy.prepare("새 제목", job.jobId(), 1L, "edit", 10L, jobs, false, "행사");
+        assertEquals(FilteringErrorCode.PRIVACY_CONFIRMATION_NOT_FOUND, reply.error());
+        assertEquals("새 제목", prepare("새 제목").text());
     }
+
+    @Test
+    void original500CharacterLimitAppliesToInitialAndConfirmedRequests() {
+        String atLimit = "a@example.com " + "가".repeat(486);
+        assertEquals(500, atLimit.length());
+        var job = pending(atLimit);
+        var accepted = policy.prepare(atLimit, job.jobId(), 1L, "edit", 10L, jobs, true, "행사");
+        assertNull(accepted.error());
+        assertEquals(atLimit, accepted.text());
+        assertEquals(com.newvent.generation.exception.GenerationErrorCode.REQUEST_TOO_LONG,
+                prepare(atLimit + "나").error());
+        assertEquals(com.newvent.generation.exception.GenerationErrorCode.REQUEST_TOO_LONG,
+                policy.prepare(atLimit + "나", job.jobId(), 1L, "edit", 10L, jobs, true, "행사").error());
+    }
+
     @Test
     void noProfanityOrStyleRulesAndNoAutomaticRedaction() {
         for (String text : new String[]{"씨발", "전체적으로 밝게 해줘", "무료 당첨 100%", "기간 늘려줘"}) {

@@ -14,10 +14,10 @@ public record GenerateRequest(
 
         @Size(max = 500, message = "요청이 너무 깁니다. 500자 이내로 줄여 주세요.")
         String requestText,
-        java.util.UUID clarificationJobId,
+        java.util.UUID privacyConfirmationJobId,
         boolean privacyConfirmed) {
-    public GenerateRequest(String templateCode, String requestText, java.util.UUID clarificationJobId) {
-        this(templateCode, requestText, clarificationJobId, false);
+    public GenerateRequest(String templateCode, String requestText, java.util.UUID privacyConfirmationJobId) {
+        this(templateCode, requestText, privacyConfirmationJobId, false);
     }
     public GenerateRequest(String templateCode, String requestText) {
         this(templateCode, requestText, null);

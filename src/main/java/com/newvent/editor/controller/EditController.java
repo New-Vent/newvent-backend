@@ -58,7 +58,7 @@ public class EditController {
             throw new org.springframework.security.access.AccessDeniedException("이벤트 소유 관리자만 수정할 수 있습니다.");
         }
         EditCommand cmd = new EditCommand(event.getId(), event.getTitle(),
-                req.requestText(), req.clarificationJobId(), req.privacyConfirmed());
+                req.requestText(), req.privacyConfirmationJobId(), req.privacyConfirmed());
 
         return switch (edit.start(cmd)) {
             case StartResult.Started s -> ResponseEntity

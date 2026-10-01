@@ -14,10 +14,10 @@ public record GenerateCommand(
         String period,
         String ctaUrl,
         String requestText,
-        java.util.UUID clarificationJobId, boolean privacyConfirmed) {
+        java.util.UUID privacyConfirmationJobId, boolean privacyConfirmed) {
     public GenerateCommand(Long eventId, String templateCode, String title, String period,
-                           String ctaUrl, String requestText, java.util.UUID clarificationJobId) {
-        this(eventId, templateCode, title, period, ctaUrl, requestText, clarificationJobId, false);
+                           String ctaUrl, String requestText, java.util.UUID privacyConfirmationJobId) {
+        this(eventId, templateCode, title, period, ctaUrl, requestText, privacyConfirmationJobId, false);
     }
     public GenerateCommand(Long eventId, String templateCode, String title, String period,
                            String ctaUrl, String requestText) {

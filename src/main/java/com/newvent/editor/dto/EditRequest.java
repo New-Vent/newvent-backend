@@ -9,10 +9,10 @@ public record EditRequest(
 
         @Size(max = 500, message = "요청이 너무 깁니다. 500자 이내로 줄여 주세요.")
         String requestText,
-        java.util.UUID clarificationJobId,
+        java.util.UUID privacyConfirmationJobId,
         boolean privacyConfirmed) {
-    public EditRequest(String requestText, java.util.UUID clarificationJobId) {
-        this(requestText, clarificationJobId, false);
+    public EditRequest(String requestText, java.util.UUID privacyConfirmationJobId) {
+        this(requestText, privacyConfirmationJobId, false);
     }
     public EditRequest(String requestText) { this(requestText, null); }
 }

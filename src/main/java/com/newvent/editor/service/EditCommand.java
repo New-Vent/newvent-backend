@@ -5,9 +5,9 @@ import com.newvent.event.domain.Event;
 /**
  * 수정 요청 하나.
  */
-public record EditCommand(Long eventId, String title, String requestText, java.util.UUID clarificationJobId, boolean privacyConfirmed) {
-    public EditCommand(Long eventId, String title, String requestText, java.util.UUID clarificationJobId) {
-        this(eventId, title, requestText, clarificationJobId, false);
+public record EditCommand(Long eventId, String title, String requestText, java.util.UUID privacyConfirmationJobId, boolean privacyConfirmed) {
+    public EditCommand(Long eventId, String title, String requestText, java.util.UUID privacyConfirmationJobId) {
+        this(eventId, title, requestText, privacyConfirmationJobId, false);
     }
     public EditCommand(Long eventId, String title, String requestText) {
         this(eventId, title, requestText, null);

@@ -131,11 +131,11 @@ public class EditService {
             return new StartResult.Rejected(EditErrorCode.PAGE_NOT_FOUND);
         }
 
-        var input = filtering.prepare(cmd.requestText(), cmd.clarificationJobId(), cmd.eventId(),
+        var input = filtering.prepare(cmd.requestText(), cmd.privacyConfirmationJobId(), cmd.eventId(),
                 "edit", snapshot.versionId(), jobs, cmd.privacyConfirmed(), cmd.title());
         if (input.error() != null) return new StartResult.Rejected(input.error());
         EditCommand safeCommand = new EditCommand(cmd.eventId(),
-                cmd.title(), input.text(), cmd.clarificationJobId(), cmd.privacyConfirmed());
+                cmd.title(), input.text(), cmd.privacyConfirmationJobId(), cmd.privacyConfirmed());
 
         // ④ 이미 돌고 있나 — **자리를 잡지 않고** 먼저 본다
         Optional<GenerationJob> already = jobs.ofEvent(cmd.eventId());
@@ -156,7 +156,7 @@ public class EditService {
         }
 
         GenerationJob job = slot.get();
-        job.inputContext("edit", input.contextText(), snapshot.versionId());
+        job.privacyRequest("edit", snapshot.versionId());
         job.privacyConfirmation(input.fingerprint(), input.privacyTypes());
         if (input.question() != null) {
             job.askBack(input.question());
@@ -220,13 +220,13 @@ public class EditService {
         }
 
         String doc = base.html();
-        if (cmd.clarificationJobId() != null
-                && !java.util.Objects.equals(base.versionId(), job.inputContext().baseVersionId())) {
+        if (cmd.privacyConfirmationJobId() != null
+                && !java.util.Objects.equals(base.versionId(), job.privacyRequest().baseVersionId())) {
             job.fail("확인 요청 이후 작업 버전이 변경되었습니다. 다시 요청해 주세요.");
             return;
         }
 
-        job.inputContext("edit", cmd.requestText(), base.versionId());
+        job.privacyRequest("edit", base.versionId());
         List<Decision.Run> plan = planAll(job, cmd, doc);
         if (plan == null) return;               // 되묻기 · 거절 — job 에 문구가 담겼다
         if (job.checkCancelled()) return;

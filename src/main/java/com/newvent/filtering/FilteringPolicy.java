@@ -20,40 +20,34 @@ import com.newvent.generation.service.RequestFilter;
 @Component
 public class FilteringPolicy {
     public record Result(String text, ErrorCode error, String question,
-                         String fingerprint, List<String> privacyTypes, String prefix) {
+                         String fingerprint, List<String> privacyTypes) {
         public static Result accepted(String text) {
-            return new Result(text, null, null, null, List.of(), "");
+            return new Result(text, null, null, null, List.of());
         }
         public static Result rejected(ErrorCode error) {
-            return new Result("", error, null, null, List.of(), "");
+            return new Result("", error, null, null, List.of());
         }
-        // 대기 시 신규 개인정보 원문은 보관하지 않는다. 원 요청은 프론트가 재전송한다.
-        public String contextText() { return fingerprint == null ? text : prefix; }
     }
     public Result prepare(String raw, UUID previousId, Long eventId, String flow, Long versionId,
                           GenerationJobStore jobs, boolean privacyConfirmed, String title) {
         var invalid = RequestFilter.reject(raw);
         if (invalid.isPresent()) return Result.rejected(invalid.get());
         String cleaned = RequestFilter.clean(raw);
-        String prefix = "";
         GenerationJob prior = null;
         if (previousId != null) {
             prior = jobs.byId(previousId).orElse(null);
             if (prior == null || !eventId.equals(prior.eventId())
-                    || prior.phase() != GenerationJob.Phase.ASK_BACK || prior.inputContext() == null
-                    || !flow.equals(prior.inputContext().flow())
+                    || prior.phase() != GenerationJob.Phase.ASK_BACK || !prior.privacyConfirmationRequired()
+                    || prior.privacyRequest() == null
+                    || !flow.equals(prior.privacyRequest().flow())
                     || prior.startedAt().isBefore(Instant.now().minus(Duration.ofMinutes(30)))) {
-                return Result.rejected(FilteringErrorCode.INVALID_CLARIFICATION);
+                return Result.rejected(FilteringErrorCode.PRIVACY_CONFIRMATION_NOT_FOUND);
             }
-            if (!Objects.equals(versionId, prior.inputContext().baseVersionId())) {
-                return Result.rejected(FilteringErrorCode.STALE_CLARIFICATION);
+            if (!Objects.equals(versionId, prior.privacyRequest().baseVersionId())) {
+                return Result.rejected(FilteringErrorCode.STALE_PRIVACY_CONFIRMATION);
             }
-            prefix = prior.privacyConfirmationRequired()
-                    ? prior.inputContext().text()
-                    : prior.inputContext().text() + "\n[확인 질문]\n" + prior.message() + "\n[관리자 답변]\n";
         }
-        String text = prefix + cleaned;
-        if (text.length() > 2000) return Result.rejected(FilteringErrorCode.CONTEXT_TOO_LONG);
+        String text = cleaned;
         if (prior != null && prior.privacyConfirmationRequired() && !privacyConfirmed) {
             return Result.rejected(FilteringErrorCode.INVALID_PRIVACY_CONFIRMATION);
         }
@@ -66,7 +60,7 @@ public class FilteringPolicy {
         }
         List<String> types = PrivacyDetector.types((title == null ? "" : title) + "\n" + text);
         if (!types.isEmpty()) {
-            return new Result("", null, PrivacyDetector.question(types), fingerprint(title, text), types, prefix);
+            return new Result("", null, PrivacyDetector.question(types), fingerprint(title, text), types);
         }
         return Result.accepted(text);
     }

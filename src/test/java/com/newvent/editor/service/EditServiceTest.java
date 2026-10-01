@@ -220,7 +220,6 @@ class EditServiceTest {
         assertEquals(0, retry.calls());
         assertTrue(gateway.reserves.isEmpty());
         assertEquals(1, versionNo());
-        assertFalse(question.inputContext().text().contains("a@example.com"));
         router.willReturn(new RawRoute("EDIT", "hero", null));
         retry.willReturn(ok(NEW_HERO));
         GenerationJob reply = await(started(service.start(new EditCommand(
