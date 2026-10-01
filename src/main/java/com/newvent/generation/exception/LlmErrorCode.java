@@ -12,7 +12,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum LlmErrorCode implements ErrorCode {
 
-    DAILY_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "LLM429-0", "일일 호출 상한을 초과했습니다.");
+    DAILY_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "LLM429-0", "일일 호출 상한을 초과했습니다."),
+    LOG_NOT_FOUND(HttpStatus.NOT_FOUND, "LLM404-0", "호출 로그를 찾을 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;
