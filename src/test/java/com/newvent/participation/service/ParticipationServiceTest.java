@@ -321,6 +321,50 @@ class ParticipationServiceTest {
         assertEquals(1L, response.eventId());
     }
 
+    @Test
+    void 참여설정이없으면_저장하지않는다() {
+        when(publicEventService.getPublicEvent(1L))
+                .thenReturn(event(EventStatus.PUBLISHED, MembershipGrade.NORMAL));
+        when(userService.getById(7L))
+                .thenReturn(user(MembershipGrade.NORMAL));
+        when(eventGameConfigRepository.findAllByEventId(1L))
+                .thenReturn(List.of());
+
+        ParticipationException exception = assertThrows(
+                ParticipationException.class,
+                () -> service.participate(1L, 7L, null));
+
+        assertEquals(
+                ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED,
+                exception.getErrorCode());
+        verify(participationRepository, never())
+                .saveAndFlush(any(EventParticipation.class));
+    }
+
+    @Test
+    void 참여설정이여러개면_저장하지않는다() {
+        when(publicEventService.getPublicEvent(1L))
+                .thenReturn(event(EventStatus.PUBLISHED, MembershipGrade.NORMAL));
+        when(userService.getById(7L))
+                .thenReturn(user(MembershipGrade.NORMAL));
+
+        EventGameConfig config1 = mock(EventGameConfig.class);
+        EventGameConfig config2 = mock(EventGameConfig.class);
+
+        when(eventGameConfigRepository.findAllByEventId(1L))
+                .thenReturn(List.of(config1, config2));
+
+        ParticipationException exception = assertThrows(
+                ParticipationException.class,
+                () -> service.participate(1L, 7L, null));
+
+        assertEquals(
+                ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED,
+                exception.getErrorCode());
+        verify(participationRepository, never())
+                .saveAndFlush(any(EventParticipation.class));
+    }
+
     private Event event(EventStatus status, MembershipGrade grade) {
         Event event = BeanUtils.instantiateClass(Event.class);
         ReflectionTestUtils.setField(event, "status", status);
