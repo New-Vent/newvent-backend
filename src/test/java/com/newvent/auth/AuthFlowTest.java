@@ -37,6 +37,7 @@ import com.newvent.auth.dto.AuthUser;
 import com.newvent.auth.entity.RefreshToken;
 import com.newvent.auth.repository.RefreshTokenRepository;
 import com.newvent.auth.service.RefreshTokenService;
+import com.newvent.auth.web.AccountType;
 import com.newvent.user.domain.MembershipGrade;
 import com.newvent.user.domain.User;
 import com.newvent.user.repository.UserRepository;
@@ -56,6 +57,10 @@ import io.jsonwebtoken.security.Keys;
 class AuthFlowTest {
 
     private static final String PASSWORD = "pw-1234";
+
+    // ★ 경로·쿠키 이름은 AccountType 에서 받는다 — 테스트가 옛 문자열을 들고 있으면 바뀐 걸 못 잡는다
+    private static final AccountType U = AccountType.USER;
+    private static final AccountType A = AccountType.ADMIN;
     private static final String USER = "authtest_user";
     private static final String USER2 = "authtest_user2";
     private static final String ADMIN = "authtest_admin";
@@ -114,30 +119,47 @@ class AuthFlowTest {
     }
 
     private Cookie userCookie(String loginId) throws Exception {
-        return login("/auth/login", loginId, PASSWORD).getResponse().getCookie("refresh_token");
+        return login(U.login(), loginId, PASSWORD).getResponse().getCookie(U.cookieName());
     }
 
     private String accessToken(MvcResult result) throws Exception {
         return result.getResponse().getContentAsString().replaceAll(".*\"accessToken\":\"([^\"]+)\".*", "$1");
     }
 
+    private Cookie adminCookie(String loginId) throws Exception {
+        return login(A.login(), loginId, PASSWORD).getResponse().getCookie(A.cookieName());
+    }
+
+    /** 쿠키 이름으로 대상을 골라 그 대상의 refresh 로 보낸다 */
     private MvcResult refresh(Cookie cookie) throws Exception {
-        return mvc.perform(post("/auth/refresh").header("Origin", origin).cookie(cookie)).andReturn();
+        AccountType accountType = A.cookieName().equals(cookie.getName()) ? A : U;
+        return mvc.perform(post(accountType.refresh()).header("Origin", origin).cookie(cookie)).andReturn();
+    }
+
+    /** 응답에서 그 대상의 새 쿠키를 꺼낸다 */
+    private static Cookie cookieOf(MvcResult r, AccountType accountType) {
+        return r.getResponse().getCookie(accountType.cookieName());
+    }
+
+    private static String loginBody(String loginId, String password) {
+        return "{\"loginId\":\"%s\",\"password\":\"%s\"}".formatted(loginId, password);
     }
 
     @Test
-    @DisplayName("사용자 로그인: ApiResponse 로 Access Token, HttpOnly Refresh 쿠키(Path=/auth)가 내려온다")
+    @DisplayName("사용자 로그인: ApiResponse 로 Access Token, HttpOnly Refresh 쿠키(nv_user_rt, Path=/api/auth)가 내려온다")
     void 사용자_로그인_성공() throws Exception {
-        mvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post(U.login()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"loginId\":\"" + USER + "\",\"password\":\"" + PASSWORD + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
                 .andExpect(jsonPath("$.data.expireDate").isNotEmpty())
-                .andExpect(cookie().httpOnly("refresh_token", true))
-                .andExpect(cookie().path("refresh_token", "/auth"))
+                .andExpect(jsonPath("$.data.expiresIn").isNumber())
+                .andExpect(cookie().httpOnly("nv_user_rt", true))
+                .andExpect(cookie().path("nv_user_rt", "/api/auth"))
+                .andExpect(cookie().doesNotExist("nv_admin_rt"))
                 // Secure·SameSite 는 설정(AUTH_COOKIE_SECURE / AUTH_COOKIE_SAME_SITE)을 그대로 따른다
-                .andExpect(cookie().secure("refresh_token", authProps.cookie().secure()))
+                .andExpect(cookie().secure("nv_user_rt", authProps.cookie().secure()))
                 .andExpect(header().string("Set-Cookie",
                         containsString("SameSite=" + authProps.cookie().sameSite())));
     }
@@ -145,7 +167,7 @@ class AuthFlowTest {
     @Test
     @DisplayName("사용자 로그인 시 멤버십 등급이 재계산돼 저장된다")
     void 로그인_등급_재계산() throws Exception {
-        login("/auth/login", USER, PASSWORD);
+        login(U.login(), USER, PASSWORD);
 
         // 요금제 30,000원(1점) + 가입 1년 미만(1점) = 2점 → NORMAL
         assertEquals(MembershipGrade.NORMAL, users.findByLoginId(USER).orElseThrow().getMembershipGrade());
@@ -155,15 +177,16 @@ class AuthFlowTest {
     @DisplayName("틀린 비밀번호·없는 계정·다른 테이블의 계정은 모두 같은 401(AUTH401-0)")
     void 로그인_실패() throws Exception {
         MvcResult[] failures = {
-                login("/auth/login", USER, "wrong"),
-                login("/auth/login", "authtest_nobody", PASSWORD),
-                login("/auth/login", ADMIN, PASSWORD),              // 관리자 계정으로 사용자 로그인
-                login("/auth/admin/login", USER, PASSWORD),         // 사용자 계정으로 관리자 로그인
-                login("/auth/admin/login", INACTIVE_ADMIN, PASSWORD),   // 비활성 관리자
+                login(U.login(), USER, "wrong"),
+                login(U.login(), "authtest_nobody", PASSWORD),
+                login(U.login(), ADMIN, PASSWORD),              // 관리자 계정으로 사용자 로그인
+                login(A.login(), USER, PASSWORD),         // 사용자 계정으로 관리자 로그인
+                login(A.login(), INACTIVE_ADMIN, PASSWORD),   // 비활성 관리자
         };
         for (MvcResult r : failures) {
             assertEquals(401, r.getResponse().getStatus());
-            assertNull(r.getResponse().getCookie("refresh_token"));
+            assertNull(r.getResponse().getCookie(U.cookieName()));
+            assertNull(r.getResponse().getCookie(A.cookieName()));
             org.hamcrest.MatcherAssert.assertThat(r.getResponse().getContentAsString(),
                     containsString("\"code\":\"AUTH401-0\""));
         }
@@ -172,10 +195,10 @@ class AuthFlowTest {
     @Test
     @DisplayName("관리자 로그인 → /api/admin/** 통과, 사용자는 403")
     void 관리자_로그인과_인가() throws Exception {
-        MvcResult adminLogin = login("/auth/admin/login", ADMIN, PASSWORD);
+        MvcResult adminLogin = login(A.login(), ADMIN, PASSWORD);
         assertEquals(200, adminLogin.getResponse().getStatus());
         String admin = accessToken(adminLogin);
-        String user = accessToken(login("/auth/login", USER, PASSWORD));
+        String user = accessToken(login(U.login(), USER, PASSWORD));
 
         // 존재하지 않는 경로다 — 401/403 이 아니면 인가는 통과한 것
         assertPassesAuthorization("/api/admin/anything", admin);
@@ -227,18 +250,18 @@ class AuthFlowTest {
     void 갱신_로테이션() throws Exception {
         Cookie first = userCookie(USER);
 
-        MvcResult refreshed = mvc.perform(post("/auth/refresh").header("Origin", origin).cookie(first))
+        MvcResult refreshed = mvc.perform(post(U.refresh()).header("Origin", origin).cookie(first))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
                 .andReturn();
-        Cookie second = refreshed.getResponse().getCookie("refresh_token");
+        Cookie second = cookieOf(refreshed, U);
         assertNotEquals(first.getValue(), second.getValue());
         assertEquals(200, refresh(second).getResponse().getStatus());       // 새 토큰은 동작
 
-        mvc.perform(post("/auth/refresh").header("Origin", origin).cookie(first))   // 재사용 → 거부 + 쿠키 삭제
+        mvc.perform(post(U.refresh()).header("Origin", origin).cookie(first))   // 재사용 → 거부 + 쿠키 삭제
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH401-1"))
-                .andExpect(cookie().maxAge("refresh_token", 0));
+                .andExpect(cookie().maxAge(U.cookieName(), 0));
     }
 
     @Test
@@ -247,9 +270,9 @@ class AuthFlowTest {
         Cookie a = userCookie(USER);
         Cookie b = userCookie(USER);                                                  // 다른 기기
         Cookie other = userCookie(USER2);
-        Cookie admin = login("/auth/admin/login", ADMIN, PASSWORD).getResponse().getCookie("refresh_token");
+        Cookie admin = adminCookie(ADMIN);
 
-        Cookie a2 = refresh(a).getResponse().getCookie("refresh_token");
+        Cookie a2 = cookieOf(refresh(a), U);
         assertEquals(401, refresh(a).getResponse().getStatus());                    // a 재사용 → 탈취 의심
 
         assertEquals(401, refresh(a2).getResponse().getStatus());
@@ -261,11 +284,11 @@ class AuthFlowTest {
     @Test
     @DisplayName("관리자가 비활성화되면 가지고 있던 Refresh Token 으로도 재발급받지 못하고, 그 계정의 토큰이 전부 지워진다")
     void 비활성_관리자_갱신_거부() throws Exception {
-        Cookie c = login("/auth/admin/login", ADMIN, PASSWORD).getResponse().getCookie("refresh_token");
-        Cookie otherDevice = login("/auth/admin/login", ADMIN, PASSWORD).getResponse().getCookie("refresh_token");
+        Cookie c = adminCookie(ADMIN);
+        Cookie otherDevice = adminCookie(ADMIN);
         jdbc.update("UPDATE admins SET is_active = FALSE WHERE login_id = ?", ADMIN);
 
-        mvc.perform(post("/auth/refresh").header("Origin", origin).cookie(c))
+        mvc.perform(post(A.refresh()).header("Origin", origin).cookie(c))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH401-1"));
 
@@ -275,7 +298,7 @@ class AuthFlowTest {
 
         // 다시 활성화해도 비활성화 전 세션은 되살아나지 않는다
         jdbc.update("UPDATE admins SET is_active = TRUE WHERE login_id = ?", ADMIN);
-        mvc.perform(post("/auth/refresh").header("Origin", origin).cookie(otherDevice))
+        mvc.perform(post(A.refresh()).header("Origin", origin).cookie(otherDevice))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH401-1"));
     }
@@ -284,7 +307,7 @@ class AuthFlowTest {
     @DisplayName("DB 에는 토큰 원문이 아니라 해시만, 주인은 user_id / admin_id 중 한쪽에만 저장된다")
     void 저장_형태() throws Exception {
         Cookie u = userCookie(USER);
-        login("/auth/admin/login", ADMIN, PASSWORD);
+        login(A.login(), ADMIN, PASSWORD);
 
         var userTokens = jdbc.queryForList(
                 "SELECT token_hash, admin_id FROM refresh_tokens WHERE user_id = ?", userIdOf(USER));
@@ -301,9 +324,90 @@ class AuthFlowTest {
     @Test
     @DisplayName("쿠키 없이 refresh 하면 401")
     void 쿠키_없는_갱신() throws Exception {
-        mvc.perform(post("/auth/refresh").header("Origin", origin))
+        for (AccountType accountType : AccountType.values()) {
+            mvc.perform(post(accountType.refresh()).header("Origin", origin))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value("AUTH401-1"));
+        }
+    }
+
+    @Test
+    @DisplayName("관리자 로그인 쿠키는 nv_admin_rt, Path=/api/admin/auth — 사용자 쿠키와 이름·경로가 다르다")
+    void 관리자_쿠키() throws Exception {
+        mvc.perform(post(A.login()).contentType(MediaType.APPLICATION_JSON).content(loginBody(ADMIN, PASSWORD)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.expiresIn").isNumber())
+                .andExpect(cookie().httpOnly("nv_admin_rt", true))
+                .andExpect(cookie().path("nv_admin_rt", "/api/admin/auth"))
+                .andExpect(cookie().doesNotExist("nv_user_rt"));
+    }
+
+    @Test
+    @DisplayName("같은 브라우저에서 사용자·관리자로 함께 로그인해도 서로의 세션을 건드리지 않는다")
+    void 사용자_관리자_세션_공존() throws Exception {
+        Cookie user = userCookie(USER);
+        Cookie admin = adminCookie(ADMIN);
+
+        MvcResult u = refresh(user);
+        MvcResult a = refresh(admin);
+        assertEquals(200, u.getResponse().getStatus());
+        assertEquals(200, a.getResponse().getStatus());
+        // 각자 자기 쿠키만 갱신한다
+        assertNull(cookieOf(u, A));
+        assertNull(cookieOf(a, U));
+    }
+
+    @Test
+    @DisplayName("같은 경로에서 다른 계정으로 다시 로그인하면 옛 토큰은 DB 에서도 폐기된다 — 다른 계정 종류 쿠키는 그대로")
+    void 재로그인_옛_토큰_폐기() throws Exception {
+        Cookie user1 = userCookie(USER);
+        Cookie admin = adminCookie(ADMIN);
+
+        // 브라우저처럼 지금 쿠키를 실은 채 user2 로 다시 로그인한다
+        MvcResult relogin = mvc.perform(post(U.login()).contentType(MediaType.APPLICATION_JSON)
+                        .content(loginBody(USER2, PASSWORD)).cookie(user1, admin))
+                .andReturn();
+        assertEquals(200, relogin.getResponse().getStatus());
+        Cookie user2 = cookieOf(relogin, U);
+
+        assertEquals(401, refresh(user1).getResponse().getStatus());    // 옛 토큰은 더 못 쓴다
+        assertEquals(200, refresh(user2).getResponse().getStatus());
+        assertEquals(200, refresh(admin).getResponse().getStatus());    // 관리자 세션은 무관
+    }
+
+    @Test
+    @DisplayName("로그인에 실패하면 들고 있던 토큰을 건드리지 않는다")
+    void 로그인_실패는_세션을_끊지_않는다() throws Exception {
+        Cookie user = userCookie(USER);
+
+        mvc.perform(post(U.login()).contentType(MediaType.APPLICATION_JSON)
+                        .content(loginBody(USER, "wrong")).cookie(user))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().doesNotExist("Set-Cookie"));
+
+        assertEquals(200, refresh(user).getResponse().getStatus());
+    }
+
+    @Test
+    @DisplayName("다른 대상의 토큰은 무효이고 소비되지도 않는다 — 주인은 계속 쓸 수 있다")
+    void 대상이_다른_토큰() throws Exception {
+        Cookie user = userCookie(USER);
+        Cookie admin = adminCookie(ADMIN);
+
+        // 사용자 토큰을 관리자 쿠키 이름으로 관리자 refresh 에 보낸다 (그 반대도)
+        mvc.perform(post(A.refresh()).header("Origin", origin).cookie(new Cookie(A.cookieName(), user.getValue())))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH401-1"));
+        mvc.perform(post(U.refresh()).header("Origin", origin).cookie(new Cookie(U.cookieName(), admin.getValue())))
+                .andExpect(status().isUnauthorized());
+
+        // 다른 대상의 logout 으로도 지워지지 않는다
+        mvc.perform(post(A.logout()).header("Origin", origin).cookie(new Cookie(A.cookieName(), user.getValue())))
+                .andExpect(status().isNoContent());
+
+        // 소비·삭제되지 않았으므로 주인은 그대로 갱신된다 (재사용 탐지에도 안 걸린다)
+        assertEquals(200, refresh(user).getResponse().getStatus());
+        assertEquals(200, refresh(admin).getResponse().getStatus());
     }
 
     @Test
@@ -311,11 +415,18 @@ class AuthFlowTest {
     void 로그아웃() throws Exception {
         Cookie c = userCookie(USER);
 
-        mvc.perform(post("/auth/logout").header("Origin", origin).cookie(c))
+        mvc.perform(post(U.logout()).header("Origin", origin).cookie(c))
                 .andExpect(status().isNoContent())
-                .andExpect(cookie().maxAge("refresh_token", 0));
+                .andExpect(cookie().maxAge(U.cookieName(), 0))
+                .andExpect(cookie().path(U.cookieName(), U.basePath()));
         assertEquals(401, refresh(c).getResponse().getStatus());
-        mvc.perform(post("/auth/logout").header("Origin", origin)).andExpect(status().isNoContent());   // 멱등
+        mvc.perform(post(U.logout()).header("Origin", origin)).andExpect(status().isNoContent());   // 멱등
+
+        Cookie admin = adminCookie(ADMIN);
+        mvc.perform(post(A.logout()).header("Origin", origin).cookie(admin))
+                .andExpect(status().isNoContent())
+                .andExpect(cookie().maxAge(A.cookieName(), 0));
+        assertEquals(401, refresh(admin).getResponse().getStatus());
     }
 
     @Test
@@ -323,7 +434,8 @@ class AuthFlowTest {
     void csrf_출처_검사() throws Exception {
         Cookie c = userCookie(USER);
 
-        for (String path : new String[] {"/auth/refresh", "/auth/logout"}) {
+        // ★ 네 경로 전부 — 목록은 AccountType 에서 온다. 경로를 옮겼는데 검사가 꺼지면 여기서 걸린다
+        for (String path : AccountType.cookieOnlyPaths()) {
             mvc.perform(post(path).cookie(c))                                           // Origin·Referer 없음
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.code").value("AUTH403-0"));
@@ -332,14 +444,14 @@ class AuthFlowTest {
                     .andExpect(jsonPath("$.code").value("AUTH403-0"));
         }
         // 허용 안 된 Origin 은 그보다 앞선 CORS 필터가 거부한다
-        mvc.perform(post("/auth/refresh").cookie(c).header("Origin", "http://evil.example"))
+        mvc.perform(post(U.refresh()).cookie(c).header("Origin", "http://evil.example"))
                 .andExpect(status().isForbidden());
 
         // 거부된 요청들이 토큰을 소모하지 않았다 — Referer 로 허용 Origin 을 대신해도 통과
-        mvc.perform(post("/auth/refresh").cookie(c).header("Referer", origin + "/admin/events"))
+        mvc.perform(post(U.refresh()).cookie(c).header("Referer", origin + "/admin/events"))
                 .andExpect(status().isOk());
         // login 은 검사 대상이 아니다 (Origin 없이도 200)
-        assertEquals(200, login("/auth/login", USER, PASSWORD).getResponse().getStatus());
+        assertEquals(200, login(U.login(), USER, PASSWORD).getResponse().getStatus());
     }
 
     @Test
@@ -361,13 +473,13 @@ class AuthFlowTest {
     @Test
     @DisplayName("CORS: 허용한 Origin 에만 credentials 허용")
     void cors() throws Exception {
-        mvc.perform(options("/auth/refresh")
+        mvc.perform(options(U.refresh())
                         .header("Origin", origin)
                         .header("Access-Control-Request-Method", "POST"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Credentials", "true"))
                 .andExpect(header().string("Access-Control-Allow-Origin", origin));
-        mvc.perform(options("/auth/refresh")
+        mvc.perform(options(U.refresh())
                         .header("Origin", "http://evil.example")
                         .header("Access-Control-Request-Method", "POST"))
                 .andExpect(status().isForbidden());

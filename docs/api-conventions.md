@@ -90,12 +90,14 @@ public record ApiResponse<T>(
 
 ```java
 public record ErrorResponse(
+        boolean success,
         String code,
         String message,
         LocalDateTime timestamp
 ) {
     public static ErrorResponse of(String code, String message) {
         return new ErrorResponse(
+                false,
                 code,
                 message,
                 LocalDateTime.now(ZoneId.of("Asia/Seoul"))
@@ -108,13 +110,27 @@ public record ErrorResponse(
 
 ```json
 {
+  "success": false,
   "code": "EVENT404-0",
   "message": "이벤트를 찾을 수 없습니다.",
   "timestamp": "2026-09-23T00:54:10"
 }
 ```
 
-정상 응답과 실패 응답은 서로 다른 형식을 사용한다. 클라이언트는 HTTP 상태 코드를 기준으로 두 응답을 구분한다.
+정상 응답과 실패 응답은 담는 필드가 다르다. 실패 응답에는 `data`가 없고 `code`·`timestamp`가 있다.
+
+다만 `success`는 양쪽 모두에 있다. 클라이언트는 HTTP 상태 코드로 구분해도 되고, 본문의 `success` 하나로 갈라도 된다.
+
+```js
+if (body.success) return body.data;
+throw new ApiError(body.message, body.code);
+```
+
+`success`를 실패 응답에도 싣는 이유는 성공 응답에만 있으면 그 필드가 하는 일이 없기 때문이다.
+실패 응답에서 `body.success`를 읽으면 `undefined`가 되어 `body.success === false`로 판별할 수 없고,
+그러면 클라이언트는 상태 코드로 먼저 갈라야 한다. 양쪽에 두면 본문만으로도 판별이 된다.
+
+`data`는 실패 응답에 넣지 않는다. 실패에 데이터가 없는 것은 자명하고, 항상 `null`인 필드를 실을 이유가 없다.
 
 ## 4. 에러 코드
 
@@ -140,11 +156,11 @@ public interface ErrorCode {
 {도메인명}{HTTP 상태 코드}-{일련번호}
 ```
 
-| 구성 | 설명 | 예시 |
-| --- | --- | --- |
-| 도메인명 | 에러가 발생한 도메인을 영문 대문자로 작성 | `COMMON`, `USER`, `EVENT` |
-| HTTP 상태 코드 | 해당 에러의 HTTP 상태 코드 | `400`, `401`, `404`, `500` |
-| 일련번호 | 같은 도메인과 HTTP 상태 코드 안에서 0부터 순차적으로 부여 | `0`, `1`, `2` |
+| 구성           | 설명                                                      | 예시                       |
+|----------------|-----------------------------------------------------------|----------------------------|
+| 도메인명       | 에러가 발생한 도메인을 영문 대문자로 작성                 | `COMMON`, `USER`, `EVENT`  |
+| HTTP 상태 코드 | 해당 에러의 HTTP 상태 코드                                | `400`, `401`, `404`, `500` |
+| 일련번호       | 같은 도메인과 HTTP 상태 코드 안에서 0부터 순차적으로 부여 | `0`, `1`, `2`              |
 
 예시:
 
@@ -156,12 +172,17 @@ public interface ErrorCode {
 
 ### 4.3 공통 에러 코드
 
-| 에러 코드 | HTTP 상태 | 메시지 |
-| --- | --- | --- |
-| `COMMON400-0` | 400 Bad Request | 잘못된 입력값입니다. |
-| `COMMON401-0` | 401 Unauthorized | 인증이 필요합니다. |
-| `COMMON403-0` | 403 Forbidden | 접근 권한이 없습니다. |
-| `COMMON500-0` | 500 Internal Server Error | 서버 내부 오류가 발생했습니다. |
+| 에러 코드     | HTTP 상태                  | 메시지                            |
+|---------------|----------------------------|-----------------------------------|
+| `COMMON400-0` | 400 Bad Request            | 잘못된 입력값입니다.              |
+| `COMMON401-0` | 401 Unauthorized           | 인증이 필요합니다.                |
+| `COMMON403-0` | 403 Forbidden              | 접근 권한이 없습니다.             |
+| `COMMON404-0` | 404 Not Found              | 요청한 경로를 찾을 수 없습니다.   |
+| `COMMON405-0` | 405 Method Not Allowed     | 지원하지 않는 HTTP 메서드입니다.  |
+| `COMMON415-0` | 415 Unsupported Media Type | 지원하지 않는 Content-Type입니다. |
+| `COMMON500-0` | 500 Internal Server Error  | 서버 내부 오류가 발생했습니다.    |
+
+`COMMON400-0`의 메시지는 검증 실패, 파라미터 형식 오류, 필수 파라미터 누락 등 구체적인 사유에 따라 달라질 수 있다.
 
 도메인별 에러 코드는 각 도메인의 `~ErrorCode` enum에서 관리한다.
 
@@ -193,16 +214,27 @@ public abstract class BaseException extends RuntimeException {
 
 ### 5.2 전역 예외 처리
 
-`GlobalExceptionHandler`는 `@RestControllerAdvice`를 사용하여 애플리케이션의 예외를 공통 형식으로 변환한다.
+`GlobalExceptionHandler`는 `@RestControllerAdvice`를 사용하여 예외를 공통 `ErrorResponse` 형식으로 변환한다.
 
-| 예외 | 처리 방식 |
-| --- | --- |
-| `BaseException` | 해당 `ErrorCode`의 HTTP 상태, 코드, 메시지를 반환 |
-| `MethodArgumentNotValidException` | 필드 오류 메시지를 우선 사용하고, 없으면 클래스 레벨 오류 메시지를 사용 |
-| `ConstraintViolationException` | 요청 파라미터 및 경로 변수의 제약조건 위반 메시지를 반환 |
-| `HandlerMethodValidationException` | Spring MVC 메서드 파라미터 검증 오류 메시지를 반환 |
-| `HttpMessageNotReadableException` | 잘못된 JSON 요청을 `COMMON400-0`으로 반환 |
-| `Exception` | 내부 정보를 노출하지 않고 `COMMON500-0`으로 반환하며 서버 로그에 기록 |
+| 예외                                      | 처리 방식                                                                                            |
+|-------------------------------------------|------------------------------------------------------------------------------------------------------|
+| `BaseException`                           | 해당 `ErrorCode`의 HTTP 상태, 코드, 메시지를 반환                                                    |
+| `MethodArgumentNotValidException`         | 필드 오류 메시지를 우선 사용하고, 없으면 클래스 레벨 오류 메시지를 사용하여 400 / `COMMON400-0` 반환 |
+| `ConstraintViolationException`            | 요청 파라미터 및 경로 변수의 제약조건 위반 메시지와 함께 400 / `COMMON400-0` 반환                    |
+| `HandlerMethodValidationException`        | Spring MVC 메서드 검증 오류 메시지와 함께 400 / `COMMON400-0` 반환                                   |
+| `HttpMessageNotReadableException`         | 잘못된 JSON 또는 읽을 수 없는 요청 본문을 400 / `COMMON400-0`으로 반환                               |
+| `MethodArgumentTypeMismatchException`     | 파라미터·경로 변수의 타입 변환 실패를 400 / `COMMON400-0`으로 반환                                   |
+| `MissingServletRequestParameterException` | 필수 요청 파라미터 누락을 400 / `COMMON400-0`으로 반환                                               |
+| `AuthenticationException`                 | 401 / `COMMON401-0` 반환                                                                             |
+| `AccessDeniedException`                   | 403 / `COMMON403-0` 반환                                                                             |
+| `NoResourceFoundException`                | 존재하지 않는 리소스 경로를 404 / `COMMON404-0`으로 반환                                             |
+| `HttpRequestMethodNotSupportedException`  | 지원하지 않는 HTTP 메서드를 405 / `COMMON405-0`으로 반환                                             |
+| `HttpMediaTypeNotSupportedException`      | 지원하지 않는 Content-Type을 415 / `COMMON415-0`으로 반환                                            |
+| `Exception`                               | 내부 정보를 노출하지 않고 500 / `COMMON500-0`으로 반환하며 서버 로그에 기록                          |
+
+405 응답에는 지원하는 HTTP 메서드를 안내하는 `Allow` 헤더를 포함한다.
+
+위 처리는 관리자·공개 API에 공통 적용된다. 인증·인가 단계에서 요청이 거부되면 해당 401·403 응답이 우선 반환된다.
 
 ## 6. Validation
 

@@ -84,6 +84,12 @@ public class Event extends BaseTimeEntity {
         this.deletedAt = null;
     }
 
+    // 게시(DRAFT→PUBLISHED) 및 재게시(다른 버전으로 교체)
+    public void publish(EventVersion version) {
+        this.status = EventStatus.PUBLISHED;
+        this.publishedVersion = version;
+    }
+
     public String templateCode() {
         return template == null ? null : template.getCode();
     }
@@ -114,5 +120,36 @@ public class Event extends BaseTimeEntity {
         event.reviewStatus = ReviewStatus.PENDING;
         event.grade = grade == null ? MembershipGrade.NORMAL : grade;
         return event;
+    }
+
+    /** 관리자 수정 API — 부분 수정 병합과 검증은 서비스가 끝낸 값을 받는다. */
+    public void updateInfo(
+            String title,
+            EventTemplate template,
+            OffsetDateTime startDate,
+            OffsetDateTime endDate,
+            MembershipGrade grade) {
+        this.title = title;
+        this.template = template;
+        this.startDate = startDate;
+        this.endDate = endDate;
+        this.grade = grade;
+    }
+
+    /** DRAFT 는 게시 전이라 기간이 지나도 다시 잡을 수 있게 잠그지 않는다. */
+    public boolean editLocked(OffsetDateTime now) {
+        if (status == EventStatus.ENDED) {
+            return true;
+        }
+        return status == EventStatus.PUBLISHED && endDate != null && !now.isBefore(endDate);
+    }
+
+    public boolean published() {
+        return status == EventStatus.PUBLISHED;
+    }
+
+    /** 게시 중인지는 서비스가 확인한 뒤 호출한다. 게시 버전(publishedVersion)은 그대로 둔다. */
+    public void end() {
+        this.status = EventStatus.ENDED;
     }
 }

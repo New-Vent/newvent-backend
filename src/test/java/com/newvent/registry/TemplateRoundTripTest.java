@@ -131,7 +131,7 @@ class TemplateRoundTripTest {
     @DisplayName("★ 카드를 지우거나 늘려도 통과한다 — 개수는 자유")
     void 카드_추가_삭제는_통과한다() {
         String benefits = BlockValidator.blockOf(
-                LOADER.find("template_2_holiday_gift").orElseThrow().html(), Block.BENEFITS);
+                LOADER.find("holiday_gift").orElseThrow().html(), Block.BENEFITS);
 
         Document d = Jsoup.parseBodyFragment(benefits);
         d.body().select(".benefit-card").last().remove();     // 복주머니 하나 지우기
@@ -148,7 +148,7 @@ class TemplateRoundTripTest {
     @DisplayName("id 를 지우면 걸린다")
     void id를_지우면_걸린다() {
         String hero = BlockValidator.blockOf(
-                LOADER.find("template_4_flash_sale").orElseThrow().html(), Block.HERO);
+                LOADER.find("flash_sale").orElseThrow().html(), Block.HERO);
         assertFalse(Slots.idsOf(hero).isEmpty(), "이 블록에 id 가 없습니다. 테스트 대상을 바꾸세요.");
 
         Document d = Jsoup.parseBodyFragment(hero);
@@ -180,7 +180,7 @@ class TemplateRoundTripTest {
     @DisplayName("★ ev-block 을 떼면 걸린다 — 제일 조용한 고장")
     void ev_block을_떼면_걸린다() {
         String hero = BlockValidator.blockOf(
-                LOADER.find("template_1_sports_cheer").orElseThrow().html(), Block.HERO);
+                LOADER.find("sports_cheer").orElseThrow().html(), Block.HERO);
         assertTrue(hero.contains("ev-block"), "이 템플릿에 ev-block 이 없습니다. 대상을 바꾸세요.");
 
         Document d = Jsoup.parseBodyFragment(hero);
@@ -197,7 +197,7 @@ class TemplateRoundTripTest {
     @DisplayName("★ 슬롯 요소의 class 를 지우면 걸린다 — 버튼이 안 눌린다")
     void 슬롯의_class를_지우면_걸린다() {
         String cta = BlockValidator.blockOf(
-                LOADER.find("template_1_sports_cheer").orElseThrow().html(), Block.CTA);
+                LOADER.find("sports_cheer").orElseThrow().html(), Block.CTA);
 
         Document d = Jsoup.parseBodyFragment(cta);
         var slot = d.body().selectFirst(Slot.CTA_LINK.selector());
@@ -216,7 +216,7 @@ class TemplateRoundTripTest {
     @DisplayName("class 순서만 바꾸는 건 통과한다")
     void class_순서는_상관없다() {
         String hero = BlockValidator.blockOf(
-                LOADER.find("template_3_member_appreciation").orElseThrow().html(), Block.HERO);
+                LOADER.find("member_appreciation").orElseThrow().html(), Block.HERO);
 
         Document d = Jsoup.parseBodyFragment(hero);
         var root = d.body().selectFirst("section[data-block]");
@@ -261,7 +261,7 @@ class TemplateRoundTripTest {
     @Test
     @DisplayName("채우면 다시 값이 들어간다")
     void 채우기가_동작한다() {
-        String html = new TemplateService(LOADER).initialHtml("template_3_member_appreciation");
+        String html = new TemplateService(LOADER).initialHtml("member_appreciation");
 
         String filled = Slots.fill(html, "2026.10.01 ~ 2026.10.31", "https://event.example.com/vip");
         Document d = Jsoup.parseBodyFragment(filled);

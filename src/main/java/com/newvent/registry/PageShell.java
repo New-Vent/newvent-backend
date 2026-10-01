@@ -1,0 +1,190 @@
+package com.newvent.registry;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.nodes.Node;
+
+/**
+ * 저장되는 조각이 **혼자서도 성립하도록** 서버가 보장하는 것들.
+ *
+ * ★ 왜 이게 필요했나 — 두 경로의 계약이 달랐다
+ *     템플릿  조각 안에 &lt;div class="ev-container event-page"&gt; 가 있다. 테마 클래스는 없다.
+ *     백지    래퍼가 아예 없다. &lt;section&gt; 으로 바로 시작한다.
+ *
+ *   event.css 의 규칙은 **전부** .ev-container 또는 .event-page 의 자손 선택자다.
+ *
+ *       :where(.event-page, .ev-container) :where([data-block="hero"]:not(.ev-block)) { … }
+ *
+ *   그래서 백지 결과는 CSS 가 하나도 안 걸렸고, 템플릿 결과는
+ *   .theme-sports .sp-* 가 전부 빗나갔다. 카드 기본 스타일마저
+ *   :not([class*="sp-"]) 로 sp- 를 제외하므로 fallback 도 안 걸린다 —
+ *   즉 테마 클래스가 없으면 혜택 카드는 **양쪽 다 안 먹어서** 무스타일이다.
+ */
+public final class PageShell {
+
+    /** 래퍼에 붙는 class. 둘 다 붙인다 — event.css 가 두 이름을 다르게 쓴다. */
+    public static final String ROOT_CLASSES = "ev-container event-page";
+
+    /** 래퍼를 찾는 선택자. 둘 중 하나라도 있으면 이미 래퍼가 있는 것이다. */
+    private static final String ROOT_SELECTOR = ".ev-container, .event-page";
+
+    private static final String NOTICES_RESOURCE = "/notices/common.html";
+
+    /**
+     * 승인 문구. 한 번 읽고 들고 있는다.
+     *
+     * ★ 왜 리소스 파일인가
+     *   문구가 바뀌면 자바 코드를 고치지 않고 파일 하나만 고친다. 기획·법무가 읽을 수 있고,
+     *   PR 에서 문구 변경만 따로 보인다. 관리자 화면이 생기면 DB 로 옮기면 되고,
+     *   그때 바뀌는 건 NOTICES_RESOURCE 한 줄이다.
+     *
+     * ★ 왜 static final 초기화가 아닌가
+     *   거기서 던지면 자바가 클래스를 "초기화 실패" 로 기억한다. 그 뒤 접근은 전부
+     *   NoClassDefFoundError 가 되고, **진짜 원인은 첫 줄에만 남는다.**
+     *   테스트 로그가 파일 누락 하나에 도배되고 원인을 찾기 어려워진다.
+     *   지연 로딩이면 부를 때마다 같은 메시지가 그대로 나온다.
+     */
+    private static volatile String noticesHtml;
+
+    private PageShell() {}
+
+    /**
+     * 승인 문구를 읽을 수 있는지 확인한다. **시작할 때 부른다.**
+     *
+     * ★ 왜 시작할 때인가
+     *   유의사항 없는 페이지가 게시되는 것이 이 클래스가 막으려는 바로 그 일이다.
+     *   그걸 첫 생성 요청 때 알게 되면 이미 늦다. 뜨지 않는 편이 낫다.
+     *   설정 클래스에서 한 줄 부르면 된다:  PageShell.selfCheck();
+     */
+    public static void selfCheck() {
+        notices();
+    }
+
+    private static String notices() {
+        String v = noticesHtml;
+        if (v == null) {
+            v = loadNotices();
+            noticesHtml = v;
+        }
+        return v;
+    }
+
+    /**
+     * 저장 직전에 한 번 부른다. 래퍼 → 테마 → 유의사항 순서다.
+     *
+     * @param templateCode 템플릿 코드. **백지면 null** — 그때는 테마를 붙이지 않는다.
+     */
+    public static String plant(String fragment, String templateCode) {
+        return ensureNotices(ensureRoot(fragment, templateCode));
+    }
+
+    /**
+     * 루트 래퍼를 보장한다. 없으면 만들어 감싸고, 있으면 class 만 보강한다.
+     *
+     * ★ 이미 theme-* 가 붙어 있으면 건드리지 않는다.
+     *   관리자가 만든 템플릿이 자기 테마를 들고 올 수 있다.
+     */
+    public static String ensureRoot(String fragment, String templateCode) {
+        Document doc = parse(fragment);
+        Element root = doc.body().selectFirst(ROOT_SELECTOR);
+
+        if (root == null) {
+            Element wrapper = doc.body().appendElement("div");
+            // ★ appendChild 가 부모를 옮긴다. 순회 중에 옮기면 인덱스가 흔들리므로 먼저 복사한다.
+            List<Node> moving = new ArrayList<>(doc.body().childNodes());
+            for (Node n : moving) {
+                if (n == wrapper) continue;
+                wrapper.appendChild(n);
+            }
+            root = wrapper;
+        }
+
+        for (String c : ROOT_CLASSES.split(" ")) {
+            if (!root.hasClass(c)) root.addClass(c);
+        }
+
+        final Element target = root;
+        boolean themed = target.classNames().stream().anyMatch(c -> c.startsWith(Theme.PREFIX));
+        if (!themed) {
+            Theme.of(templateCode).ifPresent(t -> target.addClass(t.cssClass()));
+        }
+        return doc.body().html();
+    }
+
+    /**
+     * 유의사항 블록을 보장한다. 모델은 만들 수 없고(SERVER 소유) 서버만 넣는다.
+     *
+     * ★ 자리는 Block 순서를 따른다 — HERO → BENEFITS → STEPS → NOTICES → CTA.
+     *   뒤에 오는 블록 중 **실제로 있는 첫 번째** 앞에 넣는다. 아무것도 없으면 맨 끝이다.
+     *   하드코딩으로 "CTA 앞" 이라고 쓰면 CTA 가 없는 문서에서 자리가 틀린다.
+     */
+    public static String ensureNotices(String fragment) {
+        Document doc = parse(fragment);
+        if (doc.body().selectFirst(Block.NOTICES.selector()) != null) {
+            return doc.body().html();          // 템플릿에는 이미 있다
+        }
+
+        Element host = doc.body().selectFirst(ROOT_SELECTOR);
+        if (host == null) host = doc.body();
+
+        Element notices = parse(notices()).body().child(0);
+
+        Element anchor = null;
+        for (Block b : Block.values()) {
+            if (b.ordinal() <= Block.NOTICES.ordinal()) continue;
+            Element found = host.selectFirst(b.selector());
+            if (found != null) { anchor = found; break; }
+        }
+
+        if (anchor != null) anchor.before(notices);
+        else                host.appendChild(notices);
+
+        return doc.body().html();
+    }
+
+    private static Document parse(String html) {
+        Document doc = Jsoup.parseBodyFragment(html == null ? "" : html);
+        // ★ 조각의 공백을 그대로 둔다. 여기서 재정렬하면 버전 diff 가 통째로 번진다.
+        doc.outputSettings().prettyPrint(false);
+        return doc;
+    }
+
+    /**
+     * 클래스패스에서 문구를 읽는다.
+     *
+     * ★ 클래스로더를 두 군데 본다
+     *   보통은 이 클래스의 로더로 충분하지만, 테스트 러너나 devtools 처럼
+     *   로더가 갈리는 환경에서 한쪽만 보면 "파일은 있는데 못 찾는" 일이 생긴다.
+     */
+    private static String loadNotices() {
+        try (InputStream in = open()) {
+            if (in == null) {
+                throw new IllegalStateException(
+                        "승인 유의사항 문구를 클래스패스에서 못 찾았습니다: " + NOTICES_RESOURCE
+                        + "\n  두어야 할 곳: src/main/resources" + NOTICES_RESOURCE
+                        + "\n  빌드 산출물: build/resources/main" + NOTICES_RESOURCE
+                        + "\n  산출물에 없으면 ./gradlew clean 후 다시 빌드하세요."
+                        + "\n  이 파일이 없으면 유의사항 없는 페이지가 게시됩니다.");
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8).strip();
+        } catch (IOException e) {
+            throw new IllegalStateException("승인 유의사항 문구를 읽지 못했습니다: " + NOTICES_RESOURCE, e);
+        }
+    }
+
+    private static InputStream open() {
+        InputStream in = PageShell.class.getResourceAsStream(NOTICES_RESOURCE);
+        if (in != null) return in;
+
+        ClassLoader cl = Thread.currentThread().getContextClassLoader();
+        // ★ 컨텍스트 로더는 앞의 / 를 붙이지 않는다. 붙이면 못 찾는다.
+        return (cl == null) ? null : cl.getResourceAsStream(NOTICES_RESOURCE.substring(1));
+    }
+}

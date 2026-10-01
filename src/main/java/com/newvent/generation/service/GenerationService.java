@@ -19,6 +19,7 @@ import com.newvent.generation.exception.GenerationErrorCode;
 import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmCallException;
 import com.newvent.registry.Block;
+import com.newvent.registry.PageShell;
 import com.newvent.registry.PromptBuilder;
 import com.newvent.registry.Slot;
 import com.newvent.registry.Slots;
@@ -97,7 +98,7 @@ public class GenerationService {
      *
      * ★ 검사 순서가 중요하다 — 자리를 잡기 전에 거를 것을 다 거른다.
      *   자리를 먼저 잡으면 거부된 요청이 그 이벤트의 생성을 잠시 막는다.
-     *   상한(④)은 더 나쁘다 — 예외로 나가서 자리를 **영구히** 붙잡는다. ③ 주석 참고.
+     *   상한(⑤)은 더 나쁘다 — 예외로 나가서 자리를 **영구히** 붙잡는다. ④ 주석 참고.
      */
     public StartResult start(GenerateCommand cmd) {
         // ① 이벤트를 건드려도 되는가
@@ -106,7 +107,24 @@ public class GenerationService {
             return new StartResult.Rejected(blocked.get());
         }
 
-        // ② 경로별 검사
+        // ② 요청문을 조용히 버리지 않는다
+        //
+        // ★ 경로별 검사보다 먼저 본다. 템플릿 코드가 멀쩡한지와 무관하게
+        //   이 조합 자체가 틀렸다. 뒤에 두면 "없는 템플릿 + 요청문" 이
+        //   TEMPLATE_NOT_FOUND 로 나가서 진짜 원인이 가려진다.
+        if (cmd.discardsRequestText()) {
+            log.warn("생성 요청이 모순입니다 (event={}) — {} 템플릿 '{}' 로 가면서 "
+                    + "요청문 {}자를 들고 있습니다. 그대로 두면 모델을 안 부른 채 "
+                    + "요청문만 버려지고 DONE 으로 끝납니다. "
+                    + "AI 생성이면 templateCode:\"\" 를, 템플릿이면 requestText 를 비워 보내야 합니다.",
+                    cmd.eventId(),
+                    cmd.templateFromEvent() ? "templateCode 를 보내지 않아 이벤트에 붙은" : "명시한",
+                    cmd.templateCode(),
+                    cmd.requestText().strip().length());
+            return new StartResult.Rejected(GenerationErrorCode.AMBIGUOUS_GENERATION);
+        }
+
+        // ③ 경로별 검사
         if (cmd.hasTemplate()) {
 
             if (!templates.exists(cmd.templateCode())) {
@@ -139,13 +157,13 @@ public class GenerationService {
             return new StartResult.AlreadyRunning(already.get());
         }
 
-        // ④ 하루 상한 — 백지 경로만. 템플릿 경로는 모델을 아예 안 부른다
+        // ⑤ 하루 상한 — 백지 경로만. 템플릿 경로는 모델을 아예 안 부른다
 
         if (!cmd.hasTemplate() && input.question() == null) {
             retry.reserve();
         }
 
-        // ⑤ 자리 잡기
+        // ⑥ 자리 잡기
 
         Optional<GenerationJob> slot = jobs.start(cmd.eventId());
         if (slot.isEmpty()) {
@@ -272,8 +290,10 @@ public class GenerationService {
             return null;
         }
         checkFormValues(cmd, res.html());
-        return plantPeriodSlot(res.html());
-    }
+        // ★ 저장 직전에 껍데기를 보장한다 — 래퍼 · 유의사항.
+        //   백지는 템플릿이 없으므로 테마를 고를 근거가 없다 → null.
+        //   event.css 의 :root 기본값이 쓰인다. 무스타일이 아니다.
+        return PageShell.plant(plantPeriodSlot(res.html()), null);    }
 
     /**
      * 이벤트 값과 어긋나는지 본다.

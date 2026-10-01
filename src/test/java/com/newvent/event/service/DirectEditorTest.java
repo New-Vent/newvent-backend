@@ -64,7 +64,7 @@ class DirectEditorTest {
                     .anyMatch(t -> t.before().equals("2026.10.01 ~ 2026.10.31")), template.code());
         }
 
-        String saved = Slots.clear(TEMPLATES.find("template_1_sports_cheer").orElseThrow().html());
+        String saved = Slots.clear(TEMPLATES.find("sports_cheer").orElseThrow().html());
         String rendered = Slots.fill(saved, "2026.10.01 ~ 2026.10.31", "/join");
         DirectEditor.EditableText prize = DirectEditor.editableTexts(rendered).stream()
                 .filter(t -> t.before().equals("🏆 경품"))
@@ -103,7 +103,7 @@ class DirectEditorTest {
     @Test
     @DisplayName("단일 문구 치환 시 지정한 자리만 정확히 바뀌고 XSS 태그는 이스케이프된다")
     void 문구치환_및_XSS방지() {
-        TemplateLoader.Source tpl = TEMPLATES.find("template_1_sports_cheer").orElseThrow();
+        TemplateLoader.Source tpl = TEMPLATES.find("sports_cheer").orElseThrow();
         String html = tpl.html();
 
         // 템플릿 1의 첫 문구는 HERO의 배지 문구 "LIVE PROMOTION"
@@ -125,7 +125,7 @@ class DirectEditorTest {
     @Test
     @DisplayName("before 문구가 불일치하거나 인덱스가 범위를 벗어나면 예외가 발생한다")
     void 불일치_및_범위초과_예외() {
-        TemplateLoader.Source tpl = TEMPLATES.find("template_1_sports_cheer").orElseThrow();
+        TemplateLoader.Source tpl = TEMPLATES.find("sports_cheer").orElseThrow();
         String html = tpl.html();
 
         // before 불일치 -> 409 Conflict
@@ -142,7 +142,7 @@ class DirectEditorTest {
     @Test
     @DisplayName("template_5의 중첩 컨테이너(.benefits-list in .lc-gauge-card)에서도 정상 치환된다")
     void template5_중첩구조_정상치환() {
-        TemplateLoader.Source tpl = TEMPLATES.find("template_5_pre_registration").orElseThrow();
+        TemplateLoader.Source tpl = TEMPLATES.find("pre_registration").orElseThrow();
         String html = tpl.html();
 
         // template_5의 게이지 달성 관련 텍스트 노드 치환
@@ -159,7 +159,7 @@ class DirectEditorTest {
     @Test
     @DisplayName("CTA 버튼 인라인 스타일이 올바르게 반영되고 null 필드는 기본값을 유지한다")
     void 버튼스타일_인라인적용() {
-        TemplateLoader.Source tpl = TEMPLATES.find("template_1_sports_cheer").orElseThrow();
+        TemplateLoader.Source tpl = TEMPLATES.find("sports_cheer").orElseThrow();
         String html = tpl.html();
 
         ButtonStyle style = new ButtonStyle("#d60076", "#ffffff", "medium", "pill");
@@ -206,7 +206,7 @@ class DirectEditorTest {
     @Test
     @DisplayName("apply 메서드로 텍스트 치환과 버튼 스타일을 동시에 적용할 수 있다")
     void 텍스트치환과_버튼스타일_동시적용() {
-        TemplateLoader.Source tpl = TEMPLATES.find("template_3_member_appreciation").orElseThrow();
+        TemplateLoader.Source tpl = TEMPLATES.find("member_appreciation").orElseThrow();
         String html = tpl.html();
 
         List<TextEdit> edits = List.of(new TextEdit(0, "VIP & FAMILY ONLY", "ALL MEMBERS WELCOME"));

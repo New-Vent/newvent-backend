@@ -37,8 +37,7 @@ auth:
     access-ttl-minutes: 30
     refresh-ttl-days: 7
   cookie:
-    name: refresh_token
-    path: /auth
+    #   ★ 경로·쿠키 이름은 여기 없다. 환경마다 달라지면 안 되므로 코드(AccountType)에 고정했다.
     secure: ${AUTH_COOKIE_SECURE:true}
     same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
   cors:

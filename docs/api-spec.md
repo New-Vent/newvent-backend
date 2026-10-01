@@ -1,8 +1,8 @@
 # API 명세
 
-관리자 이벤트 조회 API의 현재 구현을 적는다. 인증/인가·JPA·쓰기 API는 이 문서 범위 밖이다.
+관리자 이벤트·템플릿 API의 현재 구현을 적는다. `/api/admin/**` 는 관리자 로그인(ADMIN)이 필요하다.
 
-> Status: Draft — `feat/event-admin-query`
+> Status: Draft
 
 ## 공통
 
@@ -31,12 +31,7 @@
 
 ## 아직 안 한 것
 
-- 인증/인가 (Security 미사용. `/api/admin/**` 도 토큰 없이 호출됨)
-- JPA/Flyway — 지금은 메모리 더미 (이벤트 시드 6건 · 템플릿 5종)
-- 템플릿 `baseContent`(HTML 조각) — 메타데이터만 제공
-- 수정·삭제·상태변경·게시 **본구현** (엔드포인트 자리만 501)
-- 공개 조회 `/api/public/events`
-- LLM HTML 생성 (생성 API 는 DRAFT 메타만 저장)
+- 템플릿 HTML 본문 — 템플릿 API 는 메타데이터만 제공
 
 ## 이벤트 상태
 
@@ -49,6 +44,17 @@
 멤버십 등급: `NORMAL` / `EXCELLENT` / `BEST` (화면 표시명 일반/우수/최우수)
 
 `closingSoon`: 저장 컬럼이 아니다. `PUBLISHED` 이고 지금이 기간 안이며 종료 3일 전부터면 `true`.
+
+### 이벤트 자동 종료
+
+- 기본적으로 1분마다 종료 시각이 지난 게시 이벤트를 자동 종료한다.
+- `status = PUBLISHED`, `deletedAt = null`,
+  `endDate < 현재 시각`인 이벤트의 상태를 `ENDED`로 변경한다.
+- 종료 시각이 없는 이벤트와 `DRAFT`, `ENDED` 이벤트는 제외한다.
+- 시작일·종료일은 유지하고 상태와 `updatedAt`만 변경한다.
+- 스케줄러 실행 전에도 참여 API는 이벤트 기간을 검증한다.
+- 현재 공개 목록은 `PUBLISHED`만 조회하므로,
+  자동 종료된 이벤트는 공개 목록에서 제외된다.
 
 ---
 
@@ -203,32 +209,89 @@ Content-Type: application/json
 
 ---
 
-## 쓰기 골격 (501 Not Implemented)
+## `PATCH /api/admin/events/{id}`
 
-본구현 전. 자리만 잡혀 있고 호출하면 `501` 을 반환한다.
+관리자 이벤트 정보·기간 수정 (REQ-EVT-04, 09, 10). 보낸 필드만 바꾸고, 생략하거나 `null` 인 필드는 기존 값을 유지한다.
+상태는 바꾸지 않는다. 종료(`ENDED`)됐거나, 게시(`PUBLISHED`) 중이면서 기존 종료일시가 지난 이벤트는 수정할 수 없다.
+`DRAFT` 는 게시 전이라 기간이 지나도 다시 잡을 수 있다.
 
-| Method | Path | Request | 비고 |
+### Request body
+
+| 필드 | 필수 | 설명 |
+| --- | --- | --- |
+| `name` | X | 1~100자. 생략하면 유지. 값이 오면 공백만 있는 값(`""`, `"   "`)은 400 (`COMMON400-0`). 앞뒤 공백은 제거해 저장 |
+| `startAt` | X | 생략하면 유지 |
+| `endAt` | X | 생략하면 유지. 수정 후 기간(보낸 값 + 기존 값)이 `endAt` > `startAt` 이어야 함 |
+| `templateKey` | X | 생략하면 유지. 빈 문자열(`""`)이면 템플릿 해제. 값이 있으면 활성 템플릿이어야 함. 게시 중에는 지금과 다른 값(해제 포함)을 보내면 409 |
+| `grade` | X | `NORMAL` / `EXCELLENT` / `BEST`. 생략하면 유지 |
+
+```json
+{ "name": "가을 멤버십 더블 혜택", "endAt": "2026-11-30T23:59:59+09:00" }
+```
+
+### 200
+
+생성 API 와 같은 `EventDetailResponse`. `updatedAt` 은 수정 시각으로 바뀐다.
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| 검증 실패 (이벤트명 공백뿐·100자 초과) | 400 | `COMMON400-0` |
+| 수정 후 `endAt` ≤ `startAt` | 400 | `EVENT400-0` |
+| 없거나 삭제된 이벤트 | 404 | `EVENT404-0` |
+| 없는·비활성 `templateKey` | 404 | `EVENT404-1` |
+| 종료(`ENDED`)됐거나, 게시 중이면서 기존 종료일시가 지난 이벤트 | 409 | `EVENT409-1` |
+| 게시 중인 이벤트의 템플릿 변경·해제 | 409 | `EVENT409-4` |
+
+---
+
+## `PATCH /api/admin/events/{id}/status`
+
+관리자 이벤트 종료 (REQ-EVT-07). 지금은 종료(`PUBLISHED` → `ENDED`)만 받는다. 게시는 `POST /{id}/publish` 로 한다.
+상태는 `DRAFT` → `PUBLISHED` → `ENDED` 단방향이고, 종료한 이벤트는 수정할 수 없다. 게시 버전(`completedHtml`)은 그대로 남는다.
+
+### Request body
+
+| 필드 | 필수 | 설명 |
+| --- | --- | --- |
+| `status` | O | `ENDED` 만 허용 |
+
+```json
+{ "status": "ENDED" }
+```
+
+### 200
+
+`EventDetailResponse`. `status` 는 `ENDED`, `closingSoon` 은 `false`.
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| `status` 누락·없는 값 | 400 | `COMMON400-0` |
+| `ENDED` 가 아닌 상태 요청 | 400 | `EVENT400-2` |
+| 없거나 삭제된 이벤트 | 404 | `EVENT404-0` |
+| 게시 중(`PUBLISHED`)이 아닌 이벤트 | 409 | `EVENT409-6` |
+
+---
+
+## 삭제·휴지통
+
+| Method | Path | 설명 | 오류 |
 | --- | --- | --- | --- |
-| `PATCH` | `/api/admin/events/{id}` | `EventUpdateRequest` | null 필드는 미변경 |
-| `DELETE` | `/api/admin/events/{id}` | — | 소프트 삭제 (`deletedAt`) |
-| `PATCH` | `/api/admin/events/{id}/status` | `EventStatusChangeRequest` | `DRAFT` → `PUBLISHED` → `ENDED` |
-| `POST` | `/api/admin/events/{id}/publish` | — | `DRAFT` → `PUBLISHED` |
+| `DELETE` | `/api/admin/events/{id}` | 휴지통으로 보낸다 (`deletedAt` 기록). 응답 `data` 없음 | 404 `EVENT404-0` · 게시 중 409 `EVENT409-2` · 생성 작업 중 409 `EVENT409-3` |
+| `GET` | `/api/admin/events/trash` | 휴지통 목록. `page`·`size` 는 목록 API 와 같음. 삭제일 내림차순 | — |
+| `POST` | `/api/admin/events/{id}/restore` | 휴지통에서 복구. 복구된 `EventDetailResponse` | 휴지통에 없으면 404 `EVENT404-0` |
+| `DELETE` | `/api/admin/events/{id}/permanent` | 휴지통에서 영구 삭제. 되돌릴 수 없음 | 휴지통에 없으면 404 `EVENT404-0` |
 
-### `EventUpdateRequest`
+---
 
-| 필드 | 필수 | 설명 |
-| --- | --- | --- |
-| `name` | X | 1~100자. null(생략)이면 유지. 값이 오면 공백만 있는 값(`""`, `"   "`)은 400 (`COMMON400-0`) |
-| `startAt` | X | null 이면 유지 |
-| `endAt` | X | null 이면 유지 |
-| `templateKey` | X | null 이면 유지 |
-| `grade` | X | `NORMAL` / `EXCELLENT` / `BEST`. null 이면 유지 |
+## 게시
 
-### `EventStatusChangeRequest`
-
-| 필드 | 필수 | 설명 |
-| --- | --- | --- |
-| `status` | O | `DRAFT` / `PUBLISHED` / `ENDED` |
+| Method | Path | 설명 | 오류 |
+| --- | --- | --- | --- |
+| `POST` | `/api/admin/events/{id}/publish` | 요청 `{ "versionId": 10 }`. 게시(`DRAFT` → `PUBLISHED`) 또는 재게시(다른 버전으로 교체). 고른 버전은 저장 지점으로 표시된다. 게시된 `EventDetailResponse` | `versionId` 누락 400 `COMMON400-0` · 없는 이벤트 404 `EVENT404-0` · 없는 버전 404 `EVENT404-3` · 종료된 이벤트 409 `EVENT409-5` |
 
 ---
 
@@ -245,7 +308,7 @@ Content-Type: application/json
     {
       "templateKey": "sports_cheer",
       "name": "스포츠 응원",
-      "description": "월드컵 승부예측 투표와 스코어 맞추기. template_1_sports_cheer.html",
+      "description": "월드컵 승부예측 투표와 스코어 맞추기. sports_cheer.html",
       "theme": "theme-sports",
       "active": true
     }
@@ -256,11 +319,11 @@ Content-Type: application/json
 
 | templateKey | name | theme | 파일 |
 | --- | --- | --- | --- |
-| `sports_cheer` | 스포츠 응원 | `theme-sports` | template_1_sports_cheer.html |
-| `holiday_gift` | 한가위 선물 | `theme-holiday` | template_2_holiday_gift.html |
-| `member_appreciation` | 회원 감사 | `theme-vip` | template_3_member_appreciation.html |
-| `flash_sale` | 72h 특가 | `theme-sale` | template_4_flash_sale.html |
-| `pre_registration` | 사전예약 | `theme-launch` | template_5_pre_registration.html |
+| `sports_cheer` | 스포츠 응원 | `theme-sports` | sports_cheer.html |
+| `holiday_gift` | 한가위 선물 | `theme-holiday` | holiday_gift.html |
+| `member_appreciation` | 회원 감사 | `theme-vip` | member_appreciation.html |
+| `flash_sale` | 72h 특가 | `theme-sale` | flash_sale.html |
+| `pre_registration` | 사전예약 | `theme-launch` | pre_registration.html |
 
 ```text
 http://localhost:8080/api/admin/templates
@@ -274,4 +337,115 @@ http://localhost:8080/api/admin/templates
 
 ```text
 http://localhost:8080/api/admin/templates/sports_cheer
+```
+
+---
+
+## `GET /api/admin/llm-calls`
+
+LLM 호출 로그 목록 (관리자). 쓰기는 `LlmCallLogService.record*` 가 담당하므로 이 API 는 조회 전용.
+정렬은 생성 시각 내림차순 (최신이 먼저).
+
+### Query
+
+| 이름 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- |
+| `eventId` | X | | 이벤트 필터 |
+| `callOk` | X | | 호출 성공 여부 필터 (`true` / `false`) |
+| `from` | X | | 생성 시각 시작 (ISO-8601 + 오프셋) |
+| `to` | X | | 생성 시각 끝 (ISO-8601 + 오프셋) |
+| `page` | X | `0` | 0부터. 목록을 넘으면 빈 `content` |
+| `size` | X | `10` | 1~50 |
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| 잘못된 쿼리 (page, size) | 400 | `COMMON400-0` |
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 1,
+        "eventId": 3,
+        "requestId": "cf3f3b66-8ef0-4d30-9d25-4b52a9f0ae24",
+        "attemptNo": 1,
+        "modelName": "bedrock.gemma3",
+        "provider": "bedrock",
+        "callOk": true,
+        "validOk": true,
+        "inputTokens": 420,
+        "outputTokens": 310,
+        "responseTimeMs": 1820,
+        "ragUsed": false,
+        "createdAt": "2026-09-30T16:30:00+09:00"
+      }
+    ],
+    "page": 0,
+    "size": 10,
+    "totalElements": 1,
+    "totalPages": 1
+  },
+  "message": null
+}
+```
+
+`ragUsed` 는 RAG 본 구현 전까지 `false` 로 나온다 (정상).
+
+```text
+http://localhost:8080/api/admin/llm-calls
+http://localhost:8080/api/admin/llm-calls?eventId=3&callOk=true
+```
+
+---
+
+## `GET /api/admin/llm-calls/{id}`
+
+LLM 호출 로그 상세 1건. 목록에 없는 실패 분류·잘림·RAG 청크 아이디까지 내려간다.
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "eventId": 3,
+    "versionId": 12,
+    "requestId": "cf3f3b66-8ef0-4d30-9d25-4b52a9f0ae24",
+    "attemptNo": 1,
+    "modelName": "bedrock.gemma3",
+    "provider": "bedrock",
+    "callOk": true,
+    "validOk": false,
+    "failureType": "VALIDATION_FAIL",
+    "failureMessage": null,
+    "failCodes": "INVALID_AMOUNT",
+    "truncated": false,
+    "inputTokens": 420,
+    "outputTokens": 310,
+    "responseTimeMs": 1820,
+    "ragUsed": false,
+    "chunkIds": null,
+    "createdAt": "2026-09-30T16:30:00+09:00"
+  },
+  "message": null
+}
+```
+
+`failureType` 값: `VALIDATION_FAIL` / `TRUNCATED`. `versionId` 는 저장까지 이어진 마지막 성공 시도에만 있다 (선행 실패·실패 결과는 `null`).
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| 없는 로그 | 404 | `LLM404-0` |
+
+```text
+http://localhost:8080/api/admin/llm-calls/1
 ```
