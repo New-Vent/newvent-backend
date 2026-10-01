@@ -72,6 +72,15 @@ public class Event extends BaseTimeEntity {
     )
     private EventVersion publishedVersion;
 
+    @Column(name = "start_notified_at")
+    private OffsetDateTime startNotifiedAt;
+
+    @Column(name = "closing_soon_notified_at")
+    private OffsetDateTime closingSoonNotifiedAt;
+
+    @Column(name = "end_notified_at")
+    private OffsetDateTime endNotifiedAt;
+
     public boolean deleted() {
         return deletedAt != null;
     }
@@ -146,5 +155,18 @@ public class Event extends BaseTimeEntity {
 
     public boolean published() {
         return status == EventStatus.PUBLISHED;
+    }
+
+    // 시작·마감임박·종료 알림
+    public void markStartNotified(OffsetDateTime now) {
+        this.startNotifiedAt = now;
+    }
+
+    public void markClosingSoonNotified(OffsetDateTime now) {
+        this.closingSoonNotifiedAt = now;
+    }
+
+    public void markEndNotified(OffsetDateTime now) {
+        this.endNotifiedAt = now;
     }
 }

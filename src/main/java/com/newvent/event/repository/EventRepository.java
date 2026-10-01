@@ -1,6 +1,7 @@
 package com.newvent.event.repository;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -133,4 +134,24 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             @Param("publishedStatus") EventStatus publishedStatus,
             @Param("endedStatus") EventStatus endedStatus,
             @Param("now") OffsetDateTime now);
+
+    // 이미 알림 보낸 건 각 notifiedAt 컬럼으로 걸러 중복 발송을 막는다.
+
+    @Query("SELECT e FROM Event e JOIN FETCH e.ownerAdmin "
+            + "WHERE e.status = :published AND e.deletedAt IS NULL "
+            + "AND e.startDate IS NOT NULL AND e.startDate <= :now AND e.startNotifiedAt IS NULL")
+    List<Event> findStartingEvents(@Param("published") EventStatus published, @Param("now") OffsetDateTime now);
+
+    @Query("SELECT e FROM Event e JOIN FETCH e.ownerAdmin "
+            + "WHERE e.status = :published AND e.deletedAt IS NULL "
+            + "AND e.endDate IS NOT NULL AND e.endDate > :now AND e.endDate <= :threshold "
+            + "AND e.closingSoonNotifiedAt IS NULL")
+    List<Event> findClosingSoonEvents(
+            @Param("published") EventStatus published,
+            @Param("now") OffsetDateTime now,
+            @Param("threshold") OffsetDateTime threshold);
+
+    @Query("SELECT e FROM Event e JOIN FETCH e.ownerAdmin "
+            + "WHERE e.status = :ended AND e.deletedAt IS NULL AND e.endNotifiedAt IS NULL")
+    List<Event> findEndedEventsNeedingNotification(@Param("ended") EventStatus ended);
 }
