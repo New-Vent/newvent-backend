@@ -115,7 +115,102 @@ public final class PageShell {
         if (!themed) {
             Theme.of(templateCode).ifPresent(t -> target.addClass(t.cssClass()));
         }
+        orderBlocks(target);
+        hoist(doc, target);
         return doc.body().html();
+    }
+
+    /**
+     * 수정 결과를 저장하기 직전에 부른다 — 블록 순서를 맞추고 팔레트를 루트로 옮긴다.
+     * 생성 · 템플릿 경로는 {@link #ensureRoot} 가 같은 일을 한다.
+     *
+     * ★ 루트가 없으면 그대로 돌려준다. 래퍼를 만드는 건 ensureRoot 의 몫이다
+     */
+    public static String settle(String fragment) {
+        Document doc = parse(fragment);
+        Element root = doc.body().selectFirst(ROOT_SELECTOR);
+        if (root == null) return fragment;
+        orderBlocks(root);
+        hoist(doc, root);
+        return doc.body().html();
+    }
+
+    /**
+     * 블록을 {@link Block} 선언 순서로 다시 세운다.
+     *
+     * ★ 왜 서버가 정렬하나 — 모델이 낸 순서를 그대로 저장하면
+     *   FAQ 가 참여 버튼 뒤에 붙는다(Bedrock 실측). 순서는 프롬프트로 시키는 것보다
+     *   서버가 맞추는 게 확실하고, 레지스트리 순서가 이미 정본이다.
+     *
+     * ★ 블록 자리만 바꾼다. 블록 사이의 다른 노드(템플릿 스크립트 · 장식 div)는 제자리에 둔다 —
+     *   원래 블록들이 있던 자리(슬롯)에 정렬된 블록을 차례로 꽂는다.
+     * ★ 이미 순서가 맞으면 아무것도 안 한다. 템플릿 5종은 이미 맞다 (바이트 왕복 테스트 유지).
+     * ★ 형제끼리만 정렬한다. 모르는 data-block 은 세지 않고 제자리에 둔다.
+     */
+    private static void orderBlocks(Element root) {
+        List<Element> slots = new ArrayList<>();
+        for (Element child : root.children()) {
+            if (child.is("section[data-block]") && Block.find(child.attr("data-block")).isPresent()) {
+                slots.add(child);
+            }
+        }
+        List<Element> sorted = new ArrayList<>(slots);
+        sorted.sort(java.util.Comparator.comparingInt(e -> Block.of(e.attr("data-block")).ordinal()));
+        if (sorted.equals(slots)) return;
+
+        List<Element> markers = new ArrayList<>(slots.size());
+        for (Element s : slots) {
+            Element marker = new Element("template");
+            s.before(marker);
+            markers.add(marker);
+        }
+        for (Element s : slots) s.remove();
+        for (int i = 0; i < markers.size(); i++) markers.get(i).replaceWith(sorted.get(i));
+    }
+
+    /**
+     * hero 섹션에 붙은 팔레트를 루트로 옮긴다. **수정 결과를 저장하기 직전에 부른다.**
+     * 생성 · 템플릿 경로는 {@link #ensureRoot} 가 같은 일을 한다.
+     *
+     * ★ 왜 옮기나 — 모델은 블록 하나만 출력한다. 루트를 못 만진다.
+     *   그래서 hero 에 고르게 하고, 색은 페이지 전체(루트)에 걸어야 하므로 서버가 옮긴다.
+     *   hero 에 남겨 두면 hero 안쪽만 색이 바뀐다.
+     *
+     * ★ 루트가 없으면 그대로 돌려준다. 래퍼를 만드는 건 ensureRoot 의 몫이다
+     */
+    public static String hoistPalette(String fragment) {
+        Document doc = parse(fragment);
+        Element root = doc.body().selectFirst(ROOT_SELECTOR);
+        if (root == null) return fragment;
+        hoist(doc, root);
+        return doc.body().html();
+    }
+
+    /**
+     * 섹션들의 palette-* 를 걷어 루트에 하나만 남긴다.
+     *   새 팔레트가 없으면     루트는 그대로 (이번 수정이 색을 안 건드렸다)
+     *   palette-base 면        루트의 팔레트를 지운다 (원래대로)
+     *   그 밖                  루트의 팔레트를 그걸로 바꾼다
+     */
+    private static void hoist(Document doc, Element root) {
+        String picked = null;
+        for (Element sec : doc.body().select("section[data-block]")) {
+            for (String c : List.copyOf(sec.classNames())) {
+                if (!Palette.looksLike(c)) continue;
+                if (picked == null && Palette.find(c).isPresent()
+                        && sec.is(Block.HERO.selector())) {
+                    picked = c;
+                }
+                sec.removeClass(c);
+            }
+            if (sec.classNames().isEmpty()) sec.removeAttr("class");
+        }
+        if (picked == null) return;
+
+        for (String c : List.copyOf(root.classNames())) {
+            if (Palette.looksLike(c)) root.removeClass(c);
+        }
+        if (!picked.equals(Palette.BASE.cssClass())) root.addClass(picked);
     }
 
     /**

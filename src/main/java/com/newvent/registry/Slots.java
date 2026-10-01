@@ -99,8 +99,12 @@ public final class Slots {
      * 돌려주기만 해도 실패로 잡히고, 재시도 4번이 전부 같은 이유로 터진다.
      */
     private static String normalize(String className) {
+        // ★ 모양 변형(v-*) · 팔레트(palette-*)는 비교에서 뺀다.
+        //   수정에서 바꾸라고 허용한 class 다. 넣으면 "모양 바꿔줘" 가 class_changed 로 매번 실패한다.
+        //   허용 목록 밖의 것은 정화(BlockValidator.cleanLooks)가 이미 지웠다.
         return new TreeSet<>(List.of(className.trim().split("\\s+"))).stream()
                 .filter(s -> !s.isEmpty())
+                .filter(s -> !Variant.looksLike(s) && !Palette.looksLike(s))
                 .collect(Collectors.joining(" "));
     }
 

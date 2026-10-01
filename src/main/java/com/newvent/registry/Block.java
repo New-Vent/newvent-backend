@@ -2,6 +2,8 @@ package com.newvent.registry;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -28,32 +30,73 @@ public enum Block {
     // ★ PERIOD 는 블록이 아니라 슬롯이다 (Slot.PERIOD).
     //   템플릿 5종 전부 기간이 hero 안에 들어가 있어서 독립 섹션으로 뺄 수 없다.
     //   기간 값은 서버가 [data-slot="period"] 를 찾아 채운다.
-    HERO("hero", true, Source.MIXED,
+    //
+    // ★ 선언 순서가 곧 문서 순서다. 삽입 자리(EditService.insertBlock)와
+    //   유의사항 자리(PageShell.ensureNotices)가 ordinal 로 정해진다.
+    //
+    // ★ core — 백지 생성에서 **항상** 만드는 블록인가
+    //   required 와 다르다. required 는 검증기의 안전망이고(steps 는 false),
+    //   core 는 모델에게 "빠뜨리지 마라" 라고 시킬지다(steps 는 true).
+    //   core=false 블록은 요청문에 관련 내용이 있을 때만 만들라고 시킨다.
+    //   전부 시키면 페이지마다 출력이 두 배가 되고, 없는 내용을 지어낸다.
+    HERO("hero", true, true, Source.MIXED,
             "이벤트 제목과 한 줄 소개. 기간은 서버가 넣는다",
             "제목은 <h1>, 소개는 <p> 로 감싼다",
-            "h1", null, 0),
+            "h1", null, 0, null),
 
-    BENEFITS("benefits", true, Source.MIXED,
+    HIGHLIGHT("highlight", false, false, Source.LLM,
+            "핵심 혜택을 한 줄로 강조하는 띠 배너 — 요청문에 있는 혜택으로만 쓴다",
+            "<p> 하나에 강조 문구를 한두 문장으로 쓴다",
+            "p", null, 0, null),
+
+    INTRO("intro", false, false, Source.LLM,
+            "이벤트 취지와 배경을 소개하는 짧은 글",
+            "<h2> 소제목 하나와 <p> 문단 1~2개로 쓴다",
+            "p", null, 0, null),
+
+    BENEFITS("benefits", true, true, Source.MIXED,
             "혜택 — 항목은 폼 값, 문장만 다듬는다",
             "<ul> 안에 <li> 로 항목을 나열한다. 2개 이상",
             // 백지: ul li · 템플릿: .benefit-card (계약 EVENT_STRUCTURE_CONTRACT §3)
-            "ul li, .benefit-card", "ul, .benefits-list", 2),
+            "ul li, .benefit-card", "ul, .benefits-list", 2, null),
 
-    STEPS("steps", false, Source.LLM,
+    // ★ 표는 수치가 몰리는 자리다. "지어내지 마라" 를 역할 설명에 박아 둔다 —
+    //   생성 프롬프트와 수정 프롬프트 둘 다 desc 를 읽는다. 수정에서는 ValueCheck 가 한 겹 더 막는다.
+    //   container 가 tbody 인 이유: Jsoup 이 <table> 아래에 tbody 를 끼워 넣는다. 행은 거기 달린다.
+    COMPARE("compare", false, false, Source.LLM,
+            "혜택·요금제 비교표 — 요청문에 나온 값만 쓴다. 숫자·가격·용량을 지어내지 마라",
+            "<h2> 소제목과 <table> 하나. 첫 행은 <th> 머리글, 나머지 행은 <td>",
+            "table tr", "tbody", 2, "비교|표로|표를|vs|VS"),
+
+    AUDIENCE("audience", false, false, Source.LLM,
+            "참여 대상 — 요청문에 나온 조건만 쓴다. 조건을 지어내지 마라",
+            "<h2> 소제목과 <ul> 안에 <li> 로 대상을 나열한다",
+            "ul li", "ul", 1, "대상|가입자|이상|등급|고객만"),
+
+    STEPS("steps", false, true, Source.LLM,
             "참여 방법 2~4단계",
             "<ol> 안에 <li> 로 순서대로 나열한다",
-            "ol li, .step-card", "ol, .steps-list", 2),
+            "ol li, .step-card", "ol, .steps-list", 2, null),
 
-    NOTICES("notices", true, Source.SERVER,
+    // ★ 모양이 두 벌이다 — 목록형 <dl> 과 펼침형 <details>.
+    //   펼침(아코디언)은 class 만으로 못 만든다. 닫힌 <details> 의 내용은 CSS 로 꺼낼 수 없어서
+    //   목록형 변형(plain · cards · qa)과 마크업이 갈린다. 그래서 must · container 가 둘 다 받는다.
+    //   shape 는 하나만 시킨다(dl). 펼침형은 변형 안내에서 "이걸 고르면 이 마크업" 으로 따로 말한다.
+    FAQ("faq", false, false, Source.LLM,
+            "자주 묻는 질문 2~4개 — 페이지에 나온 내용으로만 답한다",
+            "<h2> 소제목과 <dl> 안에 질문은 <dt>, 답은 <dd> 로 쓴다",
+            "dl dt, details summary", "dl, .ev-accordion", 2, "질문|FAQ|faq|Q&A|문답|궁금"),
+
+    NOTICES("notices", true, true, Source.SERVER,
             "유의사항 — 승인된 문구만 서버가 삽입",
-            null, null, null, 0),
+            null, null, null, 0, null),
 
-    CTA("cta", true, Source.MIXED,
+    CTA("cta", true, true, Source.MIXED,
             "참여 버튼. 문구만 생성, 링크는 폼 값",
             "<a href=\"#\" class=\"btn\"> 안에 버튼 문구를 넣는다",
             // 템플릿 5종은 전부 <button>. <a> 는 5종 통틀어 0개다.
             // 호스트가 이벤트 위임으로 클릭을 받으므로 button 이 맞는 선택이다.
-            "a, button", null, 0);
+            "a, button", null, 0, null);
 
     /** 누가 내용을 만드는가. 프롬프트·클릭 가능 여부·덮어쓰기가 여기서 갈린다. */
     public enum Source {
@@ -67,32 +110,59 @@ public enum Block {
 
     private final String key;
     private final boolean required;
+    private final boolean core;
     private final Source source;
     private final String desc;
     private final String shape;
     private final String must;
     private final String container;
     private final int minItems;
+    private final Pattern trigger;
 
-    Block(String key, boolean required, Source source,
-          String desc, String shape, String must, String container, int minItems) {
+    Block(String key, boolean required, boolean core, Source source,
+          String desc, String shape, String must, String container, int minItems,
+          String trigger) {
         this.key = key;
         this.required = required;
+        this.core = core;
         this.source = source;
         this.desc = desc;
         this.shape = shape;
         this.must = must;
         this.container = container;
         this.minItems = minItems;
+        this.trigger = trigger == null ? null : Pattern.compile(trigger);
     }
 
     public String key()      { return key; }
     public boolean required(){ return required; }
+    /** 백지 생성에서 항상 만드는가. false 면 요청문에 관련 내용이 있을 때만 */
+    public boolean core()    { return core; }
     public Source source()   { return source; }
     public String desc()     { return desc; }
     public String shape()    { return shape; }
     public String must()     { return must; }
     public int minItems()    { return minItems; }
+
+    /**
+     * 백지 생성에서 이 블록을 만들어도 되는가 — 요청문에 그 내용이 직접 있을 때만.
+     *
+     * ★ 왜 서버가 거르나 — 프롬프트로 "요청문이 직접 말할 때만" 이라고 해도
+     *   FAQ 를 요청하지 않은 이벤트 3건 중 2건에서 질문을 지어냈고, 답이 운영 정책이었다
+     *   ("쿠폰은 가입 완료 즉시 지급", Bedrock 실측). 게시되면 지킬 수 없는 약속이 나간다.
+     *   요청문에 열쇠말이 없으면 프롬프트 목록에서 빼고(PromptBuilder) 출력에서도 지운다(BlockValidator).
+     *
+     * ★ trigger 가 없는 블록은 항상 된다. 요청문이 null 이면 거르지 않는다(테스트 · 수정 경로).
+     * ★ 수정 경로("FAQ 추가해줘")는 이걸 안 본다 — 관리자가 직접 시킨 것이다.
+     */
+    public boolean allowedFor(String requestText) {
+        return trigger == null || requestText == null || trigger.matcher(requestText).find();
+    }
+
+    /** 요청문 기준으로 만들어도 되는 모델 블록 */
+    public static List<Block> llmBlocksFor(String requestText) {
+        return llmBlocks().stream().filter(b -> b.allowedFor(requestText)).collect(Collectors.toList());
+    }
 
     /**
      * 항목이 들어가는 자리. <b>자식 수를 세는 기준이다.</b>
@@ -131,10 +201,14 @@ public enum Block {
     }
 
     public static Block of(String key) {
-        return Arrays.stream(values())
-                .filter(b -> b.key.equals(key))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("없는 블록: " + key));
+        return find(key).orElseThrow(() -> new IllegalArgumentException("없는 블록: " + key));
+    }
+
+    /** 모르는 key 면 빈 값. 모델 출력이나 저장된 HTML 을 볼 때 쓴다 */
+    public static Optional<Block> find(String key) {
+        if (key == null) return Optional.empty();
+        String k = key.trim();
+        return Arrays.stream(values()).filter(b -> b.key.equals(k)).findFirst();
     }
 
     /** CSS 선택자 — event.css 와 검증기가 같은 문자열을 쓰게 한다 */

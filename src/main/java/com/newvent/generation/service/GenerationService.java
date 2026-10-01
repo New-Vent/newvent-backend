@@ -226,9 +226,9 @@ public class GenerationService {
 
         RetryService.Result res = retry.run(
                 ctxOf(job, cmd),
-                PromptBuilder.generate(),
+                PromptBuilder.generate(cmd.requestText()),
                 userPrompt(cmd),
-                HtmlPolicy.generation());
+                HtmlPolicy.generation(cmd.requestText(), cmd.title()));
 
         // ★ 성공이든 실패든 시도 전부를 남긴다. 저장·취소보다 먼저 — 취소돼도 쓴 토큰은 쓴 것이다
         recorder.recordAttempts(ctxOf(job, cmd), res);
