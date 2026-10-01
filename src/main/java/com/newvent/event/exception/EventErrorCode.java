@@ -20,8 +20,9 @@ public enum EventErrorCode implements ErrorCode {
     EVENT_GENERATING_DELETE_FORBIDDEN(HttpStatus.CONFLICT, "EVENT409-3", "생성 작업이 진행 중인 이벤트는 삭제할 수 없습니다. 작업이 끝난 뒤 다시 시도해주세요."),
     /** 템플릿이 공개 목록 카테고리로도 쓰여서, 게시 중에는 변경·해제를 막는다. */
     PUBLISHED_EVENT_TEMPLATE_NOT_EDITABLE(HttpStatus.CONFLICT, "EVENT409-4", "게시 중인 이벤트는 템플릿을 변경하거나 해제할 수 없습니다."),
+    EVENT_ENDED_PUBLISH_FORBIDDEN(HttpStatus.CONFLICT, "EVENT409-5", "종료된 이벤트는 게시할 수 없습니다."),
     /** REQ-EVT-07. DRAFT → PUBLISHED → ENDED 단방향. */
-    EVENT_NOT_ENDABLE(HttpStatus.CONFLICT, "EVENT409-5", "게시 중인 이벤트만 종료할 수 있습니다.");
+    EVENT_NOT_ENDABLE(HttpStatus.CONFLICT, "EVENT409-6", "게시 중인 이벤트만 종료할 수 있습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

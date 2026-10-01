@@ -31,7 +31,6 @@
 
 ## 아직 안 한 것
 
-- 게시 `POST /api/admin/events/{id}/publish` — 자리만 있음 (501)
 - 템플릿 HTML 본문 — 템플릿 API 는 메타데이터만 제공
 
 ## 이벤트 상태
@@ -273,7 +272,7 @@ Content-Type: application/json
 | `status` 누락·없는 값 | 400 | `COMMON400-0` |
 | `ENDED` 가 아닌 상태 요청 | 400 | `EVENT400-2` |
 | 없거나 삭제된 이벤트 | 404 | `EVENT404-0` |
-| 게시 중(`PUBLISHED`)이 아닌 이벤트 | 409 | `EVENT409-5` |
+| 게시 중(`PUBLISHED`)이 아닌 이벤트 | 409 | `EVENT409-6` |
 
 ---
 
@@ -288,13 +287,11 @@ Content-Type: application/json
 
 ---
 
-## 게시 (501 Not Implemented)
+## 게시
 
-본구현 전. 자리만 잡혀 있고 호출하면 `501` 을 반환한다.
-
-| Method | Path | 비고 |
-| --- | --- | --- |
-| `POST` | `/api/admin/events/{id}/publish` | `DRAFT` → `PUBLISHED` |
+| Method | Path | 설명 | 오류 |
+| --- | --- | --- | --- |
+| `POST` | `/api/admin/events/{id}/publish` | 요청 `{ "versionId": 10 }`. 게시(`DRAFT` → `PUBLISHED`) 또는 재게시(다른 버전으로 교체). 고른 버전은 저장 지점으로 표시된다. 게시된 `EventDetailResponse` | `versionId` 누락 400 `COMMON400-0` · 없는 이벤트 404 `EVENT404-0` · 없는 버전 404 `EVENT404-3` · 종료된 이벤트 409 `EVENT409-5` |
 
 ---
 
@@ -311,7 +308,7 @@ Content-Type: application/json
     {
       "templateKey": "sports_cheer",
       "name": "스포츠 응원",
-      "description": "월드컵 승부예측 투표와 스코어 맞추기. template_1_sports_cheer.html",
+      "description": "월드컵 승부예측 투표와 스코어 맞추기. sports_cheer.html",
       "theme": "theme-sports",
       "active": true
     }
@@ -322,11 +319,11 @@ Content-Type: application/json
 
 | templateKey | name | theme | 파일 |
 | --- | --- | --- | --- |
-| `sports_cheer` | 스포츠 응원 | `theme-sports` | template_1_sports_cheer.html |
-| `holiday_gift` | 한가위 선물 | `theme-holiday` | template_2_holiday_gift.html |
-| `member_appreciation` | 회원 감사 | `theme-vip` | template_3_member_appreciation.html |
-| `flash_sale` | 72h 특가 | `theme-sale` | template_4_flash_sale.html |
-| `pre_registration` | 사전예약 | `theme-launch` | template_5_pre_registration.html |
+| `sports_cheer` | 스포츠 응원 | `theme-sports` | sports_cheer.html |
+| `holiday_gift` | 한가위 선물 | `theme-holiday` | holiday_gift.html |
+| `member_appreciation` | 회원 감사 | `theme-vip` | member_appreciation.html |
+| `flash_sale` | 72h 특가 | `theme-sale` | flash_sale.html |
+| `pre_registration` | 사전예약 | `theme-launch` | pre_registration.html |
 
 ```text
 http://localhost:8080/api/admin/templates

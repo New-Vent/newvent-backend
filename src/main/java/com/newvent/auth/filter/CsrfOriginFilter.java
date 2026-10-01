@@ -18,17 +18,19 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
 
 import com.newvent.auth.config.AuthProps;
 import com.newvent.auth.exception.CsrfOriginException;
+import com.newvent.auth.web.AccountType;
 
 /**
- * /auth/refresh, /auth/logout 은 Authorization 헤더 없이 Refresh Token 쿠키만으로 동작한다.
+ * refresh · logout 은 Authorization 헤더 없이 Refresh Token 쿠키만으로 동작한다.
+ *   /api/auth/refresh, /api/auth/logout, /api/admin/auth/refresh, /api/admin/auth/logout
  * 브라우저는 교차 사이트 요청에도 쿠키를 자동으로 실어보내므로(CSRF), SameSite 쿠키 속성만으로는
  * 완전히 막을 수 없다 — 특히 auth.cookie.same-site=None 배포에서는 사실상 무방비다.
  *
- * 이 필터는 위 두 엔드포인트에 한해 Origin(없으면 Referer) 헤더가 auth.cors.allowed-origins 에
+ * 이 필터는 위 엔드포인트에 한해 Origin(없으면 Referer) 헤더가 auth.cors.allowed-origins 에
  * 있는지 확인한다. 값이 없거나 목록에 없으면 요청을 거부한다 (fail-closed).
  *
  * 주의:
- *  - /auth/login 은 대상이 아니다 — 쿠키 없이 이메일/비밀번호로 인증하므로 공격자가 결과를
+ *  - login 은 대상이 아니다 — 쿠키 없이 이메일/비밀번호로 인증하므로 공격자가 결과를
  *    가로챌 수 없고, 이 필터가 막으려는 "쿠키 재생" 유형의 CSRF 와는 성격이 다르다.
  *  - 같은 오리진에서만 서비스한다면(백엔드가 프론트를 직접 서빙) auth.cors.allowed-origins 에
  *    그 오리진을 반드시 넣어야 한다 — CORS 목적이 아니어도 이 필터가 재사용한다.
@@ -37,7 +39,11 @@ import com.newvent.auth.exception.CsrfOriginException;
  */
 public class CsrfOriginFilter extends OncePerRequestFilter {
 
-    private static final Set<String> PROTECTED_PATHS = Set.of("/auth/refresh", "/auth/logout");
+    /**
+     * ★ 경로를 여기 직접 적지 않는다. 인증 경로가 바뀌었는데 이 목록만 옛 값이면
+     *   검사가 에러 없이 꺼진다(fail-open). AccountType 한 곳에서 받아온다.
+     */
+    private static final Set<String> PROTECTED_PATHS = Set.copyOf(AccountType.cookieOnlyPaths());
 
     private final List<String> allowedOrigins;
     private final HandlerExceptionResolver exceptionResolver;

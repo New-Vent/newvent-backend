@@ -125,7 +125,7 @@ class GenerationServiceTest {
     @DisplayName("★ 템플릿 경로는 모델을 아예 안 부른다")
     void 템플릿은_모델을_안_부른다() {
         GenerationJob job = await(started(
-                service.start(template(1L, "template_2_holiday_gift"))));
+                service.start(template(1L, "holiday_gift"))));
 
         assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
         assertEquals(0, retry.calls(),
@@ -135,7 +135,7 @@ class GenerationServiceTest {
     @Test
     @DisplayName("★ 템플릿 저장본은 슬롯이 비어 있다 — 날짜가 굳으면 안 된다")
     void 템플릿_슬롯이_비어있다() {
-        await(started(service.start(template(1L, "template_2_holiday_gift"))));
+        await(started(service.start(template(1L, "holiday_gift"))));
 
         String saved = savedHtml(1L);
         var doc = Jsoup.parseBodyFragment(saved);
@@ -155,7 +155,7 @@ class GenerationServiceTest {
     @DisplayName("템플릿 경로는 요청문이 없어도 된다")
     void 템플릿은_요청문이_필요없다() {
         assertInstanceOf(GenerationService.StartResult.Started.class,
-                service.start(template(1L, "template_1_sports_cheer")),
+                service.start(template(1L, "sports_cheer")),
                 "템플릿을 골랐는데 요청문이 없다고 거부했습니다.");
     }
 
@@ -264,7 +264,7 @@ class GenerationServiceTest {
     @DisplayName("★ 템플릿 경로도 버전 id 를 남긴다 — 모델을 안 불러도 페이지는 생긴다")
     void 템플릿_경로도_버전_id_를_남긴다() {
         GenerationJob job = await(started(
-                service.start(template(1L, "template_2_holiday_gift"))));
+                service.start(template(1L, "holiday_gift"))));
 
         assertNotNull(job.versionId(),
                 "템플릿 경로에서 versionId 가 비었습니다. 이 경로도 버전 1행을 남깁니다.");

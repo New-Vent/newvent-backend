@@ -1,0 +1,109 @@
+package com.newvent.event.repository;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+
+import jakarta.persistence.EntityManager;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
+
+import com.newvent.event.domain.Event;
+import com.newvent.event.domain.EventStatus;
+
+/**
+ * 관리자 목록 쿼리를 <b>실제 PostgreSQL 에서</b> 돌린다.
+ *
+ * ★ 왜 이 테스트인가
+ *   (:periodFrom IS NULL OR …) 로 쓴 쿼리가 PostgreSQL 에서 항상 실패했다
+ *   (could not determine data type of parameter). EventServiceTest 는 저장소를 목으로 바꿔서 못 봤다.
+ */
+@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import(com.newvent.common.config.JpaAuditingConfig.class)
+class EventRepositoryAdminSearchTest {
+
+    private static final OffsetDateTime OCT_1 = OffsetDateTime.parse("2026-10-01T00:00:00+09:00");
+    private static final OffsetDateTime OCT_31 = OffsetDateTime.parse("2026-10-31T23:59:59+09:00");
+    private static final OffsetDateTime NOV_1 = OffsetDateTime.parse("2026-11-01T00:00:00+09:00");
+    private static final OffsetDateTime NOV_30 = OffsetDateTime.parse("2026-11-30T23:59:59+09:00");
+
+    @Autowired
+    private EventRepository events;
+
+    @Autowired
+    private TestEntityManager tem;
+
+    private Long october, november, noDates, deleted;
+
+    @BeforeEach
+    void seed() {
+        EntityManager em = tem.getEntityManager();
+        Long admin = ((Number) em.createNativeQuery(
+                        "INSERT INTO admins (login_id, password_hash, name) VALUES ('search_admin','x','관리자') RETURNING id")
+                .getSingleResult()).longValue();
+        october = insert(em, admin, "검색확인 가을 응원", OCT_1, OCT_31, "DRAFT", false);
+        november = insert(em, admin, "검색확인 겨울 특가", NOV_1, NOV_30, "PUBLISHED", false);
+        noDates = insert(em, admin, "검색확인 날짜 없음", null, null, "DRAFT", false);
+        deleted = insert(em, admin, "검색확인 지운 것", OCT_1, OCT_31, "DRAFT", true);
+    }
+
+    private static Long insert(EntityManager em, Long admin, String title, OffsetDateTime start,
+                               OffsetDateTime end, String status, boolean deleted) {
+        return ((Number) em.createNativeQuery(
+                        "INSERT INTO events (owner_admin_id, title, grade, start_date, end_date, status, deleted_at) "
+                        + "VALUES (?1, ?2, 'NORMAL', ?3, ?4, ?5, " + (deleted ? "now()" : "NULL") + ") RETURNING id")
+                .setParameter(1, admin)
+                .setParameter(2, title)
+                .setParameter(3, start)
+                .setParameter(4, end)
+                .setParameter(5, status)
+                .getSingleResult()).longValue();
+    }
+
+    /** 이번 테스트가 심은 것만 — DB 에 다른 이벤트(시드)가 있어도 흔들리지 않게 */
+    private List<Long> search(String name, EventStatus status, OffsetDateTime from, OffsetDateTime to) {
+        String pattern = "%검색확인" + (name == null ? "" : "%" + name) + "%";
+        return events.findAdminEvents(pattern, status, from, to, PageRequest.of(0, 50))
+                .getContent().stream().map(Event::getId).sorted().toList();
+    }
+
+    @Test
+    @DisplayName("조건이 없으면 삭제되지 않은 것 전부 — 날짜가 비어 있어도 나온다")
+    void 조건_없음() {
+        assertEquals(List.of(october, november, noDates), search(null, null, null, null));
+    }
+
+    @Test
+    @DisplayName("이름 · 상태 조건")
+    void 이름과_상태() {
+        assertEquals(List.of(october), search("가을", null, null, null));
+        assertEquals(List.of(november), search(null, EventStatus.PUBLISHED, null, null));
+        assertEquals(List.of(october, noDates), search(null, EventStatus.DRAFT, null, null));
+    }
+
+    @Test
+    @DisplayName("기간은 구간이 겹치는 것만 — 한쪽만 줘도 되고, 날짜가 빈 이벤트는 빠진다")
+    void 기간() {
+        assertEquals(List.of(october), search(null, null, OCT_1, OCT_31));
+        assertEquals(List.of(november), search(null, null, NOV_1, null));
+        assertEquals(List.of(october), search(null, null, null, OCT_31));
+        assertEquals(List.of(october, november), search(null, null, OCT_1, NOV_30));
+    }
+
+    @Test
+    @DisplayName("모든 조건을 같이")
+    void 전부() {
+        assertEquals(List.of(november), search("겨울", EventStatus.PUBLISHED, OCT_1, NOV_30));
+        assertEquals(List.of(), search("겨울", EventStatus.DRAFT, OCT_1, NOV_30));
+    }
+}

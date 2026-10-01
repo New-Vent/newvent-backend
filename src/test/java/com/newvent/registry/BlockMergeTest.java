@@ -70,7 +70,7 @@ class BlockMergeTest {
     @Test
     @DisplayName("섹션을 교체해도 다른 블록의 class·id·data-slot 과 바깥 스크립트가 그대로다")
     void 대상_밖은_원본_그대로() {
-        String html = TEMPLATES.find("template_2_holiday_gift").orElseThrow().html();
+        String html = TEMPLATES.find("holiday_gift").orElseThrow().html();
         String oldHero = BlockMerge.extract(html, Block.HERO);
         String newHero = oldHero.replaceFirst("<h1", "<h1 data-edit=\"new\"");
         assertNotEquals(oldHero, newHero, "테스트에서 섹션을 수정하지 못했습니다.");

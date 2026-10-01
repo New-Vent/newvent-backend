@@ -56,7 +56,7 @@ class DirectEditServiceTest {
         Long eventId = 1L;
         Long sourceVersionId = 12L;
         Event event = ownedEvent();
-        String baseHtml = TEMPLATES.find("template_1_sports_cheer").orElseThrow().html();
+        String baseHtml = TEMPLATES.find("sports_cheer").orElseThrow().html();
 
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event));
         when(versionStore.htmlOf(eventId, sourceVersionId)).thenReturn(Optional.of(baseHtml));
@@ -127,7 +127,7 @@ class DirectEditServiceTest {
         Long eventId = 1L;
         Long sourceVersionId = 12L;
         Event event = ownedEvent();
-        String baseHtml = TEMPLATES.find("template_1_sports_cheer").orElseThrow().html();
+        String baseHtml = TEMPLATES.find("sports_cheer").orElseThrow().html();
 
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event));
         when(versionStore.htmlOf(eventId, sourceVersionId)).thenReturn(Optional.of(baseHtml));
