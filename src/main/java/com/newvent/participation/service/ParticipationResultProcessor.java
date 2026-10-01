@@ -34,7 +34,8 @@ public class ParticipationResultProcessor {
         return switch (eventGameConfig.getGame().getCode()) {
             case "BASIC" -> processBasic(config);
             case "LUCKY_POUCH" -> draw(config);
-            case "SPORTS_PREDICTION", "PRE_REGISTRATION" -> Map.of();
+            case "SPORTS_PREDICTION" -> Map.of("status", "PENDING");
+            case "PRE_REGISTRATION" -> Map.of();
             default -> throw new ParticipationException(ParticipationErrorCode.UNSUPPORTED_PARTICIPATION_TYPE);
         };
     }
@@ -42,11 +43,12 @@ public class ParticipationResultProcessor {
     private Map<String, Object> processBasic(Map<String, Object> config) {
         Object resultMode = config.get("resultMode");
 
-        if (resultMode == null || "DELAYED".equals(resultMode)) {
+        if (resultMode == null) {
             return Map.of();
         }
 
         return switch (resultMode.toString()) {
+            case "DELAYED" -> Map.of("status", "PENDING");
             case "IMMEDIATE" -> draw(config);
             case "GUARANTEED" -> guaranteed(config);
             default -> throw invalidConfig();

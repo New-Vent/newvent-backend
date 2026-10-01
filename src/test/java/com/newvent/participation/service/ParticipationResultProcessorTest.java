@@ -92,10 +92,31 @@ public class ParticipationResultProcessorTest {
     }
 
     @Test
-    void 스포츠_예측형은_즉시_결과를_만들지_않는다() {
+    void 기본형_DELAYED는_결과_대기를_반환한다() {
+        assertEquals(
+                Map.of("status", "PENDING"),
+                processor.process(config("BASIC", Map.of("resultMode", "DELAYED")))
+        );
+
+        verifyNoInteractions(random);
+    }
+
+    @Test
+    void 사전예약형은_빈_결과를_반환한다() {
         assertEquals(
                 Map.of(),
-                processor.process(config("SPORTS_PREDICTION", Map.of())));
+                processor.process(config("PRE_REGISTRATION", Map.of()))
+        );
+
+        verifyNoInteractions(random);
+    }
+
+    @Test
+    void 스포츠_예측형은_결과_대기를_반환한다() {
+        assertEquals(
+                Map.of("status", "PENDING"),
+                processor.process(config("SPORTS_PREDICTION", Map.of()))
+        );
 
         verifyNoInteractions(random);
     }

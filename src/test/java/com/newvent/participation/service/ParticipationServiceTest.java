@@ -39,7 +39,7 @@ import com.newvent.user.domain.MembershipGrade;
 import com.newvent.user.domain.User;
 import com.newvent.user.service.UserService;
 
-class ParticipationServiceTest {
+class ParticipationServiceTest  {
 
     private final PublicEventService publicEventService = mock(PublicEventService.class);
     private final UserService userService = mock(UserService.class);
@@ -263,7 +263,12 @@ class ParticipationServiceTest {
         assertEquals(
                 Map.of("prediction", "HOME_WIN"),
                 saved.getSubmittedData());
-        assertTrue(saved.getResultData().isEmpty());
+
+        assertEquals(
+                Map.of("status", "PENDING"),
+                saved.getResultData()
+        );
+        assertEquals(saved.getResultData(), response.resultData());
 
         assertEquals(30L, response.participationId());
         assertEquals(1L, response.eventId());
