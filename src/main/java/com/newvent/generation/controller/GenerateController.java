@@ -54,8 +54,9 @@ public class GenerateController {
             throw new org.springframework.security.access.AccessDeniedException("이벤트 소유 관리자만 생성할 수 있습니다.");
         }
         GenerateCommand initial = GenerateCommand.of(event, req.templateCode(), req.requestText());
-        GenerateCommand cmd = new GenerateCommand(initial.eventId(), initial.templateCode(), initial.title(),
-                initial.period(), initial.ctaUrl(), initial.requestText(), req.privacyConfirmationJobId(), req.privacyConfirmed());
+        GenerateCommand cmd = new GenerateCommand(initial.eventId(), initial.templateCode(), initial.templateFromEvent(),
+                initial.title(), initial.period(), initial.ctaUrl(), initial.requestText(),
+                req.privacyConfirmationJobId(), req.privacyConfirmed());
 
         return switch (generation.start(cmd)) {
             case StartResult.Started s -> ResponseEntity

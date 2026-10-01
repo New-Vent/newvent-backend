@@ -17,11 +17,11 @@ public record GenerateCommand(
         java.util.UUID privacyConfirmationJobId, boolean privacyConfirmed) {
     public GenerateCommand(Long eventId, String templateCode, String title, String period,
                            String ctaUrl, String requestText, java.util.UUID privacyConfirmationJobId) {
-        this(eventId, templateCode, title, period, ctaUrl, requestText, privacyConfirmationJobId, false);
+        this(eventId, templateCode, false, title, period, ctaUrl, requestText, privacyConfirmationJobId, false);
     }
     public GenerateCommand(Long eventId, String templateCode, String title, String period,
                            String ctaUrl, String requestText) {
-        this(eventId, templateCode, title, period, ctaUrl, requestText, null);
+        this(eventId, templateCode, false, title, period, ctaUrl, requestText, null, false);
     }
 
     /**
