@@ -111,12 +111,36 @@ class GenerationServiceTest {
     }
 
     private GenerateCommand blank(long id, String text) {
-        return new GenerateCommand(id, null, "여름 이벤트", "2026.07.01 ~ 07.31", null, text);
+        return new GenerateCommand(id, null, false, "여름 이벤트", "2026.07.01 ~ 07.31", null, text);
     }
 
     private GenerateCommand template(long id, String code) {
-        return new GenerateCommand(id, code, "한가위 이벤트", "2026.09.20 ~ 10.05",
+        return new GenerateCommand(id, code, false, "한가위 이벤트", "2026.09.20 ~ 10.05",
                 "https://event.example.com/a", null);
+    }
+
+    /**
+     * 템플릿과 요청문을 함께 들고 있는 꼴. **요청문이 버려질 수 있는 조합이다.**
+     *
+     * @param fromEvent 코드가 요청이 아니라 이벤트에서 왔나 (폴백이 걸린 꼴)
+     */
+    private GenerateCommand both(long id, String code, String text, boolean fromEvent) {
+        return new GenerateCommand(id, code, fromEvent, "한가위 이벤트", "2026.09.20 ~ 10.05",
+                null, text);
+    }
+
+    /**
+     * 거부 사유를 꺼낸다.
+     *
+     * ★ GenerationErrorCode 로 캐스팅하지 않는다. 다른 도메인 코드가 올라오면
+     *   ClassCastException 이 나서 "무엇이 왔는지" 가 가려진다. assertEquals 가
+     *   실제로 온 코드를 찍게 둔다.
+     */
+    private static com.newvent.common.exception.code.ErrorCode rejectedWith(
+            GenerationService.StartResult r) {
+        assertInstanceOf(GenerationService.StartResult.Rejected.class, r,
+                "거부되지 않았습니다: " + r);
+        return ((GenerationService.StartResult.Rejected) r).errorCode();
     }
 
     // ── 경로 ① 템플릿 ────────────────────────────────────────────
@@ -172,6 +196,69 @@ class GenerationServiceTest {
 
         assertTrue(jobs.ofEvent(1L).isEmpty(),
                 "거부됐는데 자리를 잡았습니다. 그 이벤트의 다음 생성이 잠시 막힙니다.");
+    }
+
+    // ── 경로가 섞인 요청 ─────────────────────────────────────────
+    //
+    // ★ 여기가 조용한 사고였던 자리다
+    //   템플릿 경로는 모델을 안 부르므로, 요청문을 버려도 아무 데서도 터지지 않고
+    //   202 → DONE 으로 성공처럼 끝났다. 관리자는 AI 가 반영한 줄 알고,
+    //   일일 상한에도 안 잡히고, llm_call_logs 에도 행이 없어 추적 단서가 없었다.
+
+    @Test
+    @DisplayName("★ 템플릿 코드와 요청문을 함께 보내면 거부한다 — 요청문을 조용히 버리지 않는다")
+    void 템플릿과_요청문을_함께_보내면_거부한다() {
+        var r = service.start(both(1L, "holiday_gift", "데이터 3GB 주는 이벤트", false));
+
+        assertEquals(GenerationErrorCode.AMBIGUOUS_GENERATION, rejectedWith(r),
+                "요청문이 있는데 템플릿 경로로 갔습니다. 모델을 안 부르고 요청문만 버린 뒤 "
+                + "DONE 으로 끝나므로, 관리자는 AI 가 반영한 줄 압니다.");
+        assertEquals(0, retry.calls(), "거부했는데 모델을 불렀습니다.");
+    }
+
+    @Test
+    @DisplayName("★ 폴백으로 템플릿에 갈 때도 거부한다 — templateCode 를 생략한 꼴")
+    void 폴백으로_템플릿에_가도_거부한다() {
+        // ★ 이게 실제로 사람을 속인 조합이다. 프론트가 "AI로 만들기" 에서
+        //   templateCode 를 안 보내면, 이벤트에 붙은 템플릿으로 폴백이 걸린다.
+        var r = service.start(both(1L, "holiday_gift", "데이터 3GB 주는 이벤트", true));
+
+        assertEquals(GenerationErrorCode.AMBIGUOUS_GENERATION, rejectedWith(r),
+                "templateCode 를 생략한 AI 생성 요청이 템플릿 페이지를 만들어 버렸습니다.");
+    }
+
+    @Test
+    @DisplayName("거부된 요청은 자리를 잡지 않는다 — 다음 생성이 막히면 안 된다")
+    void 모순_요청은_자리를_잡지_않는다() {
+        service.start(both(1L, "holiday_gift", "데이터 3GB", true));
+
+        assertTrue(jobs.ofEvent(1L).isEmpty(),
+                "거부됐는데 자리를 잡았습니다. 그 이벤트의 다음 생성이 잠시 막힙니다.");
+
+        // ★ 바로 이어서 제대로 된 요청이 통과해야 한다. 거부가 잔상을 남기면 안 된다
+        retry.willReturn(ok(GENERATED));
+        assertInstanceOf(GenerationService.StartResult.Started.class,
+                service.start(blank(1L, "데이터 3GB 주는 이벤트")),
+                "앞의 거부가 자리를 붙잡고 있습니다.");
+    }
+
+    @Test
+    @DisplayName("템플릿만 보내면 그대로 된다 — 거부가 템플릿 경로를 막아선 안 된다")
+    void 템플릿만_보내면_통과한다() {
+        GenerationJob job = await(started(service.start(template(1L, "holiday_gift"))));
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(0, retry.calls());
+    }
+
+    @Test
+    @DisplayName("공백만 있는 요청문은 없는 것으로 본다 — EMPTY_REQUEST 와 기준이 같아야 한다")
+    void 공백_요청문은_템플릿을_막지_않는다() {
+        // ★ 기준이 어긋나면 "   " 가 템플릿 경로에서는 모순으로 거부되고
+        //   백지 경로에서는 EMPTY_REQUEST 로 거부되어, 같은 입력에 다른 코드가 나간다.
+        GenerationJob job = await(started(service.start(both(1L, "holiday_gift", "   \n ", false))));
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
     }
 
     // ── 경로 ② 백지 ──────────────────────────────────────────────

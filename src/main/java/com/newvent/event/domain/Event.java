@@ -157,7 +157,12 @@ public class Event extends BaseTimeEntity {
         return status == EventStatus.PUBLISHED;
     }
 
-    // 시작·마감임박·종료 알림
+    /** 게시 중인지는 서비스가 확인한 뒤 호출한다. 게시 버전(publishedVersion)은 그대로 둔다. */
+    public void end() {
+        this.status = EventStatus.ENDED;
+    }
+
+    // 시작·마감임박·종료 알림 — 같은 이벤트에 같은 종류가 두 번 가지 않도록 보낸 시각을 남긴다.
     public void markStartNotified(OffsetDateTime now) {
         this.startNotifiedAt = now;
     }

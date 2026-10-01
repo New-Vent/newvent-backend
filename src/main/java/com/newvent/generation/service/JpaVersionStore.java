@@ -45,6 +45,17 @@ public class JpaVersionStore implements VersionStore {
     @Override
     @Transactional
     public Saved save(Long eventId, String html, Long sourceVersionId) {
+        // ★ 이 클래스 주석의 "이벤트당 직렬화에 의존한다" 를 여기서 실제로 만든다.
+        //   아래 max+1 과 insert 사이에 다른 트랜잭션이 끼어들면
+        //   uk_event_versions_event_version_no 로 500 이 난다.
+        //   DirectEditService 는 GenerationJobStore 를 지나가지 않으므로
+        //   직접 편집 자동저장과 채팅 수정이 실제로 동시에 들어온다.
+        //
+        //   ★ 커밋될 때까지 잡고 있다. 그래서 save() 는 짧아야 한다 —
+        //     모델 호출처럼 오래 걸리는 일은 이 트랜잭션 밖에서 끝내고 들어온다.
+        events.lockForVersionAppend(eventId)
+                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+
         int nextNo = versions.findTopByEventIdOrderByVersionNoDesc(eventId)
                 .map(v -> v.getVersionNo() + 1)
                 .orElse(1);

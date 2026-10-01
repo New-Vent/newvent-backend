@@ -58,7 +58,7 @@ public class EventVersionServiceTest {
         OffsetDateTime createdAt = OffsetDateTime.parse("2026-09-21T14:20:00+09:00");
 
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event));
-        when(eventVersionRepository.findByEventIdAndCheckpointTrueOrderByVersionNoDesc(eventId))
+        when(eventVersionRepository.findByEventIdOrderByVersionNoDesc(eventId))
                 .thenReturn(List.of(version));
         when(event.getTitle()).thenReturn("2026 월드컵 응원 이벤트");
         when(event.getStatus()).thenReturn(EventStatus.PUBLISHED);
@@ -83,7 +83,7 @@ public class EventVersionServiceTest {
         assertThat(summary.published()).isTrue();
         assertThat(summary.sourceVersionNo()).isEqualTo(1);
         assertThat(summary.requestContent()).isEqualTo("소개 문구를 친근하게 정리해 줘");
-        verify(eventVersionRepository).findByEventIdAndCheckpointTrueOrderByVersionNoDesc(eventId);
+        verify(eventVersionRepository).findByEventIdOrderByVersionNoDesc(eventId);
     }
 
     @Test
@@ -91,7 +91,7 @@ public class EventVersionServiceTest {
         Long eventId = 12L;
         Event event = org.mockito.Mockito.mock(Event.class);
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event));
-        when(eventVersionRepository.findByEventIdAndCheckpointTrueOrderByVersionNoDesc(eventId))
+        when(eventVersionRepository.findByEventIdOrderByVersionNoDesc(eventId))
                 .thenReturn(List.of());
         when(event.getTitle()).thenReturn("2026 월드컵 응원 이벤트");
 
@@ -234,7 +234,7 @@ public class EventVersionServiceTest {
 
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId))
                 .thenReturn(Optional.of(event));
-        when(eventVersionRepository.findByIdAndEventIdAndCheckpointTrue(versionId, eventId))
+        when(eventVersionRepository.findByIdAndEventId(versionId, eventId))
                 .thenReturn(Optional.of(version));
         when(version.getId()).thenReturn(versionId);
         when(version.getVersionNo()).thenReturn(2);
@@ -252,7 +252,7 @@ public class EventVersionServiceTest {
                 .isEqualTo("<html><body>저장된 화면</body></html>");
 
         verify(eventVersionRepository)
-                .findByIdAndEventIdAndCheckpointTrue(versionId, eventId);
+                .findByIdAndEventId(versionId, eventId);
     }
 
     @Test
@@ -272,12 +272,44 @@ public class EventVersionServiceTest {
     void getVersion_throwsWhenVersionIsNotACheckpointForEvent() {
         when(eventRepository.findByIdAndDeletedAtIsNull(12L))
                 .thenReturn(Optional.of(mock(Event.class)));
-        when(eventVersionRepository.findByIdAndEventIdAndCheckpointTrue(102L, 12L))
+        when(eventVersionRepository.findByIdAndEventId(102L, 12L))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> eventVersionService.getVersion(12L, 102L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo("EVENT404-3");
+    }
+
+    @Test
+    void getVersions_returnsVersionsRegardlessOfCheckpoint() {
+        Long eventId = 12L;
+        Event event = mock(Event.class);
+        EventVersion automaticVersion = mock(EventVersion.class);
+        EventVersion checkpointVersion = mock(EventVersion.class);
+
+        when(eventRepository.findByIdAndDeletedAtIsNull(eventId))
+                .thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByEventIdOrderByVersionNoDesc(eventId))
+                .thenReturn(List.of(automaticVersion, checkpointVersion));
+        when(event.getTitle()).thenReturn("테스트 이벤트");
+        when(event.getStatus()).thenReturn(EventStatus.DRAFT);
+
+        when(automaticVersion.getId()).thenReturn(103L);
+        when(automaticVersion.getVersionNo()).thenReturn(3);
+        when(automaticVersion.isCheckpoint()).thenReturn(false);
+
+        when(checkpointVersion.getId()).thenReturn(102L);
+        when(checkpointVersion.getVersionNo()).thenReturn(2);
+        when(checkpointVersion.isCheckpoint()).thenReturn(true);
+
+        EventVersionListResponse response = eventVersionService.getVersions(eventId);
+
+        assertThat(response.versions())
+                .extracting(EventVersionSummaryResponse::versionNo)
+                .containsExactly(3, 2);
+        assertThat(response.versions())
+                .extracting(EventVersionSummaryResponse::checkpoint)
+                .containsExactly(false, true);
     }
 }
