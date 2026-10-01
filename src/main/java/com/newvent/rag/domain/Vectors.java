@@ -30,7 +30,7 @@ public final class Vectors {
 		}
 		return out;
 	}
-	
+
 	// 코사인 유사도. 길이가 다르면 거부
 	public static double cosine(float[] a, float[] b) {
 		if(a.length != b.length) {

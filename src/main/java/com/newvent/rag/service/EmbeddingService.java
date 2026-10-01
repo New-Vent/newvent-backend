@@ -27,7 +27,7 @@ public class EmbeddingService {
 	private final RagChunkRepository chunks;
 	private final RagChunkingService chunking;
 	private final EmbeddingClient embedding;
-	
+
 	public EmbeddingService(EventVersionRepository versions, RagChunkRepository chunks,
 	        RagChunkingService chunking, EmbeddingClient embedding) {
 		this.versions = versions;
@@ -35,7 +35,7 @@ public class EmbeddingService {
 		this.chunking = chunking;
 		this.embedding = embedding;
 	}
-	
+
 	/**
 	 * 수동 재색인. versionId 가 없으면 그 이벤트 전체 버전을 돌린다.
 	 * 컨트롤러가 부르는 창구는 이것 하나로 통일
@@ -52,7 +52,7 @@ public class EmbeddingService {
 		}
 		return total;
 	}
-	
+
 	// 한 버전 색인하고 저장한 개수를 돌려준다. 다른 이벤트의 버전이면 404
 	@Transactional
 	public int index(Long eventId, Long versionId) {
@@ -70,7 +70,7 @@ public class EmbeddingService {
 		chunks.saveAll(entities);
 		return entities.size();
 	}
-	
+
 	// 색인 현황. 못 센 실패 건수는 두지 않는다 - 들어가지 않은 버전은 전부 미완료로 잡음.
 	@Transactional(readOnly = true)
 	public IndexStatusResponse getStatus(Long eventId) {

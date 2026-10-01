@@ -10,6 +10,6 @@ public interface VersionCompareService {
 
 	/** 두 버전이 얼마나 달라졌는지. changedChunkIds는 바뀐 청크 위치 */
 	record VersionDiff(double similarity, List<Long> changedChunkIds) {}
-	
+
 	VersionDiff compare(Long eventId, Long oldVersionId, Long newVersionId);
 }

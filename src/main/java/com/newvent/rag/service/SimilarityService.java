@@ -22,16 +22,16 @@ public class SimilarityService {
 
 	private final EmbeddingClient embedding;
 	private final RagChunkRepository chunks;
-	
+
 	public SimilarityService(EmbeddingClient embedding, RagChunkRepository chunks) {
 		this.embedding = embedding;
 		this.chunks = chunks;
 	}
-	
+
 	public List<RagChunk> search(Long eventId, String query){
 		return search(eventId, query, RagConstants.DEFAULT_TOP_K);
 	}
-	
+
 	@Transactional(readOnly = true)
 	public List<RagChunk> search(Long eventId, String query, int topK){
 		if(query == null || query.isBlank()) {
@@ -44,7 +44,7 @@ public class SimilarityService {
 		return chunks.findSimilar(Vectors.toDb(q), embedding.modelName(),
 				eventId, RagConstants.MAX_DISTANCE, limit);
 	}
-	
+
 	/** 관리자 미리보기 */
 	@Transactional(readOnly = true)
 	public SearchPreviewResponse searchPreview(Long eventId, String query, int topK) {
@@ -53,12 +53,12 @@ public class SimilarityService {
 		List<ChunkResponse> results = new ArrayList<>(hits.size());
 		for(RagChunk c : hits) {
 			double distance = 1.0 - Vectors.cosine(q, Vectors.fromDb(c.getEmbedding()));
-			results.add(new ChunkResponse(c.getId(), c.getBlockKey(), 
+			results.add(new ChunkResponse(c.getId(), c.getBlockKey(),
 					c.getChunkIndex(), c.getContent(), distance));
 		}
 		return new SearchPreviewResponse(eventId, query, topK, results);
 	}
-	
+
 	/**
 	 * 관리자 생성 보조. 유사 청크를 프롬프트 초안으로 바꿔 둘려줌
 	 * 프론트는 이 중 하나를 고르면 채팅창에 그대로 넣음

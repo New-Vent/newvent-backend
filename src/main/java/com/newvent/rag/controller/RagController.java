@@ -2,6 +2,10 @@ package com.newvent.rag.controller;
 
 import java.util.List;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,13 +22,9 @@ import com.newvent.rag.dto.response.SearchPreviewResponse;
 import com.newvent.rag.service.EmbeddingService;
 import com.newvent.rag.service.SimilarityService;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-
 /**
  * RAG 관리자 API. /api/admin/** 이라 ADMIN 권한이 자동으로 걸림 (SecurityConfig)
- * 
+ *
  * - GET /api/admin/rag/similar-versions (VersionCompareService)
  */
 @Validated
@@ -34,12 +34,12 @@ public class RagController {
 
 	private final EmbeddingService embedding;
 	private final SimilarityService similarity;
-	
+
 	public RagController(EmbeddingService embedding, SimilarityService similarity) {
 		this.embedding = embedding;
 		this.similarity = similarity;
 	}
-	
+
     /** 수동 재색인. versionId가 없으면 이벤트 전체. 돌리고 나서 현황을 돌려준다. */
     @PostMapping("/reindex")
     public ApiResponse<IndexStatusResponse> reindex(@Valid @RequestBody ReindexRequest request) {
