@@ -21,6 +21,7 @@ class BlockMergeTest {
         for (TemplateLoader.Source template : TEMPLATES.all()) {
             String html = template.html();
             for (Block block : Block.values()) {
+                if (!block.core()) continue;    // 템플릿 5종은 core 블록만 갖는다 (highlight · faq 등은 없다)
                 String extracted = BlockMerge.extract(html, block);
                 String merged = BlockMerge.merge(html, block, extracted);
                 String where = template.code() + " / " + block.key();
@@ -84,7 +85,7 @@ class BlockMergeTest {
         assertEquals(newHero, BlockMerge.extract(merged, Block.HERO));
 
         for (Block block : Block.values()) {
-            if (block != Block.HERO) {
+            if (block != Block.HERO && block.core()) {
                 assertEquals(BlockMerge.extract(html, block), BlockMerge.extract(merged, block),
                         block.key() + " 의 class·id·data-slot 이 바뀌었습니다.");
             }
