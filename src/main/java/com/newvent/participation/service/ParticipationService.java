@@ -35,6 +35,7 @@ public class ParticipationService {
     private final EventParticipationRepository participationRepository;
     private final EventGameConfigRepository eventGameConfigRepository;
     private final ParticipationValidator participationValidator;
+    private final ParticipationResultProcessor participationResultProcessor;
 
     @Transactional
     public ParticipationCreateResponse participate(Long eventId, Long userId, ParticipationCreateRequest request) {
@@ -61,13 +62,16 @@ public class ParticipationService {
             throw new ParticipationException(ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED);
         }
 
-        Map<String, Object> submittedData = participationValidator.validate(configs.getFirst(), request);
+        EventGameConfig config = configs.getFirst();
 
+        Map<String, Object> submittedData = participationValidator.validate(config, request);
+        Map<String, Object> resultData = participationResultProcessor.process(config);
         try {
-            EventParticipation participation = participationRepository.saveAndFlush(EventParticipation.create(event, user, submittedData));
+            EventParticipation participation = participationRepository.saveAndFlush(EventParticipation.create(event, user, submittedData, resultData));
             return ParticipationCreateResponse.builder()
                     .participationId(participation.getId())
                     .eventId(eventId)
+                    .resultData(participation.getResultData())
                     .build();
 
         } catch (DataIntegrityViolationException exception) {

@@ -51,7 +51,8 @@ class ParticipationServiceTest {
             userService,
             participationRepository,
             eventGameConfigRepository,
-            new ParticipationValidator()
+            new ParticipationValidator(),
+            new ParticipationResultProcessor()
     );
 
     @BeforeEach
@@ -264,6 +265,58 @@ class ParticipationServiceTest {
                 saved.getSubmittedData());
         assertTrue(saved.getResultData().isEmpty());
 
+        assertEquals(30L, response.participationId());
+        assertEquals(1L, response.eventId());
+    }
+
+    @Test
+    void 즉시추첨_결과를_참여기록에_저장하고_같은결과를_응답한다() {
+        Event event = event(EventStatus.PUBLISHED, MembershipGrade.NORMAL);
+        User user = user(MembershipGrade.NORMAL);
+
+        when(publicEventService.getPublicEvent(1L)).thenReturn(event);
+        when(userService.getById(7L)).thenReturn(user);
+
+        Game game = mock(Game.class);
+        when(game.getCode()).thenReturn("LUCKY_POUCH");
+        when(game.isActive()).thenReturn(true);
+
+        EventGameConfig config = mock(EventGameConfig.class);
+        when(config.getGame()).thenReturn(game);
+        when(config.getConfig()).thenReturn(
+                Map.of(
+                        "pouchCount", 3,
+                        "winProbability", 100,
+                        "prizeName", "커피 쿠폰"));
+
+        when(eventGameConfigRepository.findAllByEventId(1L))
+                .thenReturn(List.of(config));
+
+        when(participationRepository.saveAndFlush(any(EventParticipation.class)))
+                .thenAnswer(invocation -> {
+                    EventParticipation participation = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(participation, "id", 30L);
+                    return participation;
+                });
+
+        ParticipationCreateResponse response = service.participate(
+                1L,
+                7L,
+                new ParticipationCreateRequest(null, null, 2));
+
+        ArgumentCaptor<EventParticipation> captor =
+                ArgumentCaptor.forClass(EventParticipation.class);
+
+        verify(participationRepository).saveAndFlush(captor.capture());
+
+        EventParticipation saved = captor.getValue();
+
+        assertEquals(Map.of("pouchIndex", 2), saved.getSubmittedData());
+        assertEquals(
+                Map.of("status", "WON", "prizeName", "커피 쿠폰"),
+                saved.getResultData());
+
+        assertEquals(saved.getResultData(), response.resultData());
         assertEquals(30L, response.participationId());
         assertEquals(1L, response.eventId());
     }
