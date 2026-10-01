@@ -28,6 +28,7 @@ import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.service.DirectEditService;
 import com.newvent.event.service.EventVersionService;
+import com.newvent.event.service.VersionRestoreService;
 
 @ExtendWith(MockitoExtension.class)
 class EventVersionControllerTest {
@@ -39,6 +40,8 @@ class EventVersionControllerTest {
     private EventVersionService eventVersionService;
     @Mock
     private DirectEditService directEditService;
+    @Mock
+    private VersionRestoreService versionRestoreService;
     @InjectMocks
     private EventVersionController eventVersionController;
 
@@ -240,5 +243,41 @@ class EventVersionControllerTest {
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content(requestJson))
                 .andExpect(status().isBadRequest());
+    }
+
+    // ── 되돌리기 ─────────────────────────────────────────────────
+
+    @Test
+    void restore_whenAdmin_returnsNewVersion() throws Exception {
+        when(versionRestoreService.restore(12L, 102L, 1L))
+                .thenReturn(new com.newvent.event.dto.response.DirectEditResponse(205L, 9));
+
+        mockMvc.perform(post("/api/admin/events/{eventId}/versions/{versionId}/restore", 12L, 102L)
+                        .principal(ADMIN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.versionId").value(205))
+                .andExpect(jsonPath("$.data.versionNo").value(9));
+
+        verify(versionRestoreService).restore(12L, 102L, 1L);
+    }
+
+    /** ★ 관리자가 아닌 사용자 토큰으로는 되돌릴 수 없다. 서비스까지 가지도 않는다 */
+    @Test
+    void restore_whenNotAdmin_returnsForbidden403() throws Exception {
+        mockMvc.perform(post("/api/admin/events/{eventId}/versions/{versionId}/restore", 12L, 102L)
+                        .principal(new UsernamePasswordAuthenticationToken(AuthUser.user(2L), null)))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(versionRestoreService);
+    }
+
+    /** ★ 인증이 아예 없을 때도 같다 */
+    @Test
+    void restore_whenNoAuthentication_returnsForbidden403() throws Exception {
+        mockMvc.perform(post("/api/admin/events/{eventId}/versions/{versionId}/restore", 12L, 102L))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(versionRestoreService);
     }
 }

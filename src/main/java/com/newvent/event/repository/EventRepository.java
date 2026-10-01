@@ -3,9 +3,12 @@ package com.newvent.event.repository;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
+import jakarta.persistence.LockModeType;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +19,14 @@ import com.newvent.event.domain.EventStatus;
 public interface EventRepository extends JpaRepository<Event, Long> {
 
     Optional<Event> findByIdAndDeletedAtIsNull(Long eventId);
+
+    /**
+     * 버전을 덧붙이기 전에 이벤트 행을 잠근다 — {@code SELECT … FOR UPDATE}.
+     *
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT e.id FROM Event e WHERE e.id = :eventId")
+    Optional<Long> lockForVersionAppend(@Param("eventId") Long eventId);
 
     Optional<Event> findByIdAndDeletedAtIsNotNull(Long eventId);
 
