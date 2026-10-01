@@ -45,6 +45,8 @@ public class PublicEventController {
     public ApiResponse<PublicEventResponse> getEvent(@PathVariable Long eventId) {
         Event event = publicEventService.getPublicEvent(eventId);
         boolean closingSoon = publicEventService.isClosingSoon(event, OffsetDateTime.now());
-        return ApiResponse.success(PublicEventResponse.from(event, closingSoon));
+        // 슬롯을 채운 HTML 을 서비스에서 받아 넘긴다. 엔티티에서 직접 꺼내면 기간이 빈 채로 나간다
+        return ApiResponse.success(PublicEventResponse.from(
+                event, closingSoon, publicEventService.publishedHtmlOf(event)));
     }
 }

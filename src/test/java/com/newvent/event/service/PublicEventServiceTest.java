@@ -2,6 +2,7 @@ package com.newvent.event.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -27,6 +28,7 @@ import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventProgress;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventTemplate;
+import com.newvent.event.domain.EventVersion;
 import com.newvent.event.dto.response.PageResponse;
 import com.newvent.event.dto.response.PublicEventSummaryResponse;
 import com.newvent.event.exception.EventNotAccessibleException;
@@ -175,6 +177,48 @@ class PublicEventServiceTest {
 
         verify(eventRepository).findPublicEvents(
                 isNull(), isNull(), isNull(), any(OffsetDateTime.class), eq(PageRequest.of(0, 10)));
+    }
+
+    // ── 게시 HTML 의 슬롯 채우기 ─────────────────────────────────
+
+    @Test
+    @DisplayName("게시 HTML 의 기간 슬롯이 채워진다 — 비어 있으면 사용자 화면에 날짜가 안 보인다")
+    void 게시HTML_기간슬롯_채움() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        setPublishedHtml(event, "<section data-block=\"hero\">"
+                + "<p data-slot=\"period\">기간</p></section>");
+
+        String html = publicEventService.publishedHtmlOf(event);
+
+        assertTrue(html.contains("2026.10.01 ~ 10.31"),
+                "기간이 채워져야 한다. 실제: " + html);
+    }
+
+    @Test
+    @DisplayName("게시 버전이 없으면 null — 저장된 초안을 대신 내보내지 않는다")
+    void 게시HTML_게시버전없음() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED, null, null);
+
+        assertNull(publicEventService.publishedHtmlOf(event));
+    }
+
+    @Test
+    @DisplayName("기간이 비어 있으면 슬롯을 건드리지 않는다 — 원본 문구가 남는다")
+    void 게시HTML_기간없음() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED, null, null);
+        setPublishedHtml(event, "<p data-slot=\"period\">기간 미정</p>");
+
+        String html = publicEventService.publishedHtmlOf(event);
+
+        assertTrue(html.contains("기간 미정"), "실제: " + html);
+    }
+
+    private void setPublishedHtml(Event event, String html) {
+        EventVersion version = BeanUtils.instantiateClass(EventVersion.class);
+        ReflectionTestUtils.setField(version, "htmlContent", html);
+        ReflectionTestUtils.setField(event, "publishedVersion", version);
     }
 
     private Event newEvent(Long id, EventStatus status, OffsetDateTime startDate, OffsetDateTime endDate) {
