@@ -146,6 +146,34 @@ public class BlockValidator {
             f.add(Failure.of(FailureCode.PLACEHOLDER, "자리표시자가 남아 있습니다. 해당 문장을 빼세요."));
             break;
         }
+        if (sourceText != null) f.addAll(inventedYears(doc.body().text(), sourceText));
+        return f;
+    }
+
+    /** 날짜로 쓰인 연도 — "2024년", "2024.12.31", "2024-12" 꼴. "2000원" 같은 금액은 안 걸린다 */
+    private static final Pattern YEAR = Pattern.compile("(?<!\\d)((?:19|20)\\d{2})(?=\\s*년|[.\\-/]\\s*\\d)");
+
+    /**
+     * 입력에 없는 연도를 지어냈는가.
+     *
+     * ★ 왜 — 요청문은 "12월 31일까지" 였는데 모델이 "2024년 12월 31일까지" 로 썼다(Bedrock 실측,
+     *   이벤트는 2026년). 연도 하나 틀리면 쿠폰 · 응모 기한이 지난 날짜로 게시된다.
+     *   날짜는 프롬프트로 "지어내지 마라" 를 이미 시키지만 그걸로 안 막혔다. 연도만은 기계로 잡을 수 있다.
+     *
+     * ★ 허용하는 연도 — 이벤트명 · 요청문 · 이벤트 기간(sourceText 에 들어 있다)에 나온 것만.
+     *   월 · 일은 보지 않는다. "12월 31일" 처럼 연도 없는 날짜는 요청문 그대로일 가능성이 높고,
+     *   숫자 전체 대조는 수정 경로의 ValueCheck 몫이다.
+     */
+    static List<Failure> inventedYears(String text, String sourceText) {
+        List<Failure> f = new ArrayList<>();
+        Matcher y = YEAR.matcher(text == null ? "" : text);
+        while (y.find()) {
+            String year = y.group(1);
+            if (sourceText.contains(year)) continue;
+            f.add(Failure.of(FailureCode.VALUE_ADDED, "year_" + year,
+                    "요청문에 없는 연도(" + year + ")를 썼습니다. 연도를 빼고 월 · 일만 쓰거나, 요청문에 있는 연도만 쓰세요."));
+            break;
+        }
         return f;
     }
 
