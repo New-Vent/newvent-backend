@@ -41,7 +41,8 @@ public record GenerateCommand(
                 event.getTitle(),
                 PeriodText.of(event.getStartDate(), event.getEndDate()),
                 ctaUrl(event),
-                requestText);
+                requestText,
+                null, false);
     }
 
     /**
@@ -53,7 +54,7 @@ public record GenerateCommand(
         return new GenerateCommand(
                 event.getId(), null, false, event.getTitle(),
                 PeriodText.of(event.getStartDate(), event.getEndDate()),
-                ctaUrl(event), null);
+                ctaUrl(event), null, null, false);
     }
 
     /**
