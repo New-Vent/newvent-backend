@@ -95,6 +95,12 @@ public class LlmCallLog {
     @Column(nullable = false, length = 40)
     private String provider;
 
+    @Column(name = "rag_used", nullable = false)
+    private boolean ragUsed = false;
+
+    @Column(name = "chunk_ids", columnDefinition = "text")
+    private String chunkIds;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -150,5 +156,11 @@ public class LlmCallLog {
         return new LlmCallLog(event, version, requestId, attemptNo, modelName, provider,
                 inputTokens, outputTokens, responseTimeMs, truncated, callOk, validOk,
                 failureType, failureMessage, failCodes, createdAt);
+    }
+
+    /** RAG 본 구현(b2/b3)이 색인·검색 때 채운다. 생성 시점은 항상 미사용(false)이다. */
+    public void markRagUsed(String chunkIds) {
+        this.ragUsed = true;
+        this.chunkIds = chunkIds;
     }
 }

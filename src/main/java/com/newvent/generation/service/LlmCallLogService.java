@@ -3,6 +3,7 @@ package com.newvent.generation.service;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -10,12 +11,20 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventVersion;
+import com.newvent.event.dto.response.PageResponse;
 import com.newvent.generation.domain.FailureType;
 import com.newvent.generation.domain.LlmCallLog;
+import com.newvent.generation.dto.LlmCallLogDetailResponse;
+import com.newvent.generation.dto.LlmCallLogSummaryResponse;
+import com.newvent.generation.exception.LlmCallLogNotFoundException;
 import com.newvent.generation.exception.LlmDailyLimitExceededException;
 import com.newvent.generation.repository.LlmCallLogRepository;
 import com.newvent.infra.llm.LlmProps;
@@ -130,5 +139,32 @@ public class LlmCallLogService {
     /** 기존 동작 유지 - 최소 1건 분만 확인 (기존 테스트 호환) */
     public void checkDailyLimit() {
     	checkDailyLimit(1);
+    }
+
+    // 조회
+
+    /**
+     * 관리자 목록. null 조건(eventId/callOk/from/to)은 무시한다.
+     * event 가 LAZY 라 트랜잭션 안에서 DTO 로 변환해야 한다.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<LlmCallLogSummaryResponse> search(Long eventId, Boolean callOk,
+            OffsetDateTime from, OffsetDateTime to, int page, int size) {
+        Page<LlmCallLog> result = logs.search(
+                eventId, callOk,
+                from == null ? null : from.toInstant(),
+                to == null ? null : to.toInstant(),
+                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
+        return PageResponse.of(
+                result.map(LlmCallLogSummaryResponse::from).getContent(),
+                page, size, result.getTotalElements());
+    }
+
+    /** 로그 1건 상세. 없으면 404. */
+    @Transactional(readOnly = true)
+    public LlmCallLogDetailResponse detail(Long id) {
+        LlmCallLog log = logs.findById(id)
+                .orElseThrow(() -> new LlmCallLogNotFoundException(id));
+        return LlmCallLogDetailResponse.from(log);
     }
 }

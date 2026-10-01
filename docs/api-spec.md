@@ -338,3 +338,114 @@ http://localhost:8080/api/admin/templates
 ```text
 http://localhost:8080/api/admin/templates/sports_cheer
 ```
+
+---
+
+## `GET /api/admin/llm-calls`
+
+LLM 호출 로그 목록 (관리자). 쓰기는 `LlmCallLogService.record*` 가 담당하므로 이 API 는 조회 전용.
+정렬은 생성 시각 내림차순 (최신이 먼저).
+
+### Query
+
+| 이름 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- |
+| `eventId` | X | | 이벤트 필터 |
+| `callOk` | X | | 호출 성공 여부 필터 (`true` / `false`) |
+| `from` | X | | 생성 시각 시작 (ISO-8601 + 오프셋) |
+| `to` | X | | 생성 시각 끝 (ISO-8601 + 오프셋) |
+| `page` | X | `0` | 0부터. 목록을 넘으면 빈 `content` |
+| `size` | X | `10` | 1~50 |
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| 잘못된 쿼리 (page, size) | 400 | `COMMON400-0` |
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 1,
+        "eventId": 3,
+        "requestId": "cf3f3b66-8ef0-4d30-9d25-4b52a9f0ae24",
+        "attemptNo": 1,
+        "modelName": "bedrock.gemma3",
+        "provider": "bedrock",
+        "callOk": true,
+        "validOk": true,
+        "inputTokens": 420,
+        "outputTokens": 310,
+        "responseTimeMs": 1820,
+        "ragUsed": false,
+        "createdAt": "2026-09-30T16:30:00+09:00"
+      }
+    ],
+    "page": 0,
+    "size": 10,
+    "totalElements": 1,
+    "totalPages": 1
+  },
+  "message": null
+}
+```
+
+`ragUsed` 는 RAG 본 구현 전까지 `false` 로 나온다 (정상).
+
+```text
+http://localhost:8080/api/admin/llm-calls
+http://localhost:8080/api/admin/llm-calls?eventId=3&callOk=true
+```
+
+---
+
+## `GET /api/admin/llm-calls/{id}`
+
+LLM 호출 로그 상세 1건. 목록에 없는 실패 분류·잘림·RAG 청크 아이디까지 내려간다.
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "eventId": 3,
+    "versionId": 12,
+    "requestId": "cf3f3b66-8ef0-4d30-9d25-4b52a9f0ae24",
+    "attemptNo": 1,
+    "modelName": "bedrock.gemma3",
+    "provider": "bedrock",
+    "callOk": true,
+    "validOk": false,
+    "failureType": "VALIDATION_FAIL",
+    "failureMessage": null,
+    "failCodes": "INVALID_AMOUNT",
+    "truncated": false,
+    "inputTokens": 420,
+    "outputTokens": 310,
+    "responseTimeMs": 1820,
+    "ragUsed": false,
+    "chunkIds": null,
+    "createdAt": "2026-09-30T16:30:00+09:00"
+  },
+  "message": null
+}
+```
+
+`failureType` 값: `VALIDATION_FAIL` / `TRUNCATED`. `versionId` 는 저장까지 이어진 마지막 성공 시도에만 있다 (선행 실패·실패 결과는 `null`).
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| 없는 로그 | 404 | `LLM404-0` |
+
+```text
+http://localhost:8080/api/admin/llm-calls/1
+```
