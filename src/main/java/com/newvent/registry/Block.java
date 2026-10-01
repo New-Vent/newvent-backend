@@ -63,15 +63,24 @@ public enum Block {
     // ★ 표는 수치가 몰리는 자리다. "지어내지 마라" 를 역할 설명에 박아 둔다 —
     //   생성 프롬프트와 수정 프롬프트 둘 다 desc 를 읽는다. 수정에서는 ValueCheck 가 한 겹 더 막는다.
     //   container 가 tbody 인 이유: Jsoup 이 <table> 아래에 tbody 를 끼워 넣는다. 행은 거기 달린다.
+    //
+    // ★ trigger 는 부분 문자열로 찾는다(find). 짧은 말을 넣으면 다른 단어 속에서 걸린다 —
+    //   "표를" 은 "발표를", "비교" 는 "비교적" 에 걸렸다. 그러면 요청에 없는 가격표를 지어낸다.
+    //   그래서 "비교" 뒤에 붙는 꼴까지 적는다. vs 는 영어 단어 속(canvas)을 피하려고 앞뒤 영문자를 막는다.
+    //   오탐 · 정탐 문장은 TriggerAndPlaceholderTest 에 고정했다.
     COMPARE("compare", false, false, Source.LLM,
             "혜택·요금제 비교표 — 요청문에 나온 값만 쓴다. 숫자·가격·용량을 지어내지 마라",
             "<h2> 소제목과 <table> 하나. 첫 행은 <th> 머리글, 나머지 행은 <td>",
-            "table tr", "tbody", 2, "비교|표로|표를|vs|VS"),
+            "table tr", "tbody", 2,
+            "(?i)(비교 ?표|비교해|비교하는|비교한|요금제 비교|(?<![a-z])vs(?![a-z]))"),
 
+    // ★ "이상" · "대상" 단독은 쓰지 않는다 — "3GB 이상 · 1만원 이상" 에 다 걸린다.
+    //   "~ 대상" 꼴과 "대상은/입니다" 꼴로 좁힌다. "가입자가 대상입니다" · "신규 가입자 대상" 은 잡아야 한다.
     AUDIENCE("audience", false, false, Source.LLM,
             "참여 대상 — 요청문에 나온 조건만 쓴다. 조건을 지어내지 마라",
             "<h2> 소제목과 <ul> 안에 <li> 로 대상을 나열한다",
-            "ul li", "ul", 1, "대상|가입자|이상|등급|고객만"),
+            "ul li", "ul", 1,
+            "(참여|가입|가입자|고객|회원|이용자) ?대상|대상자|대상(은|는|이며|입니다|:)|등급 ?고객|고객만|회원만"),
 
     STEPS("steps", false, true, Source.LLM,
             "참여 방법 2~4단계",
@@ -82,10 +91,13 @@ public enum Block {
     //   펼침(아코디언)은 class 만으로 못 만든다. 닫힌 <details> 의 내용은 CSS 로 꺼낼 수 없어서
     //   목록형 변형(plain · cards · qa)과 마크업이 갈린다. 그래서 must · container 가 둘 다 받는다.
     //   shape 는 하나만 시킨다(dl). 펼침형은 변형 안내에서 "이걸 고르면 이 마크업" 으로 따로 말한다.
+    //
+    // ★ "질문" · "궁금" 단독은 쓰지 않는다 — 퀴즈 이벤트("질문에 답하면 경품")와 홍보 문구("궁금하시죠?")에 걸린다.
     FAQ("faq", false, false, Source.LLM,
             "자주 묻는 질문 2~4개 — 페이지에 나온 내용으로만 답한다",
             "<h2> 소제목과 <dl> 안에 질문은 <dt>, 답은 <dd> 로 쓴다",
-            "dl dt, details summary", "dl, .ev-accordion", 2, "질문|FAQ|faq|Q&A|문답|궁금"),
+            "dl dt, details summary", "dl, .ev-accordion", 2,
+            "(?i)(자주 묻는|질문과 답|(?<![a-z])faq(?![a-z])|(?<![a-z])q ?& ?a(?![a-z])|문답|궁금한 점)"),
 
     NOTICES("notices", true, true, Source.SERVER,
             "유의사항 — 승인된 문구만 서버가 삽입",

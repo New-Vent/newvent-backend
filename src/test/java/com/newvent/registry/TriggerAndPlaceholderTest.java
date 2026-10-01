@@ -46,6 +46,40 @@ class TriggerAndPlaceholderTest {
     }
 
     @Test
+    @DisplayName("다른 단어 속에서 열쇠말이 걸리지 않는다 — 발표를 · 비교적 · 3GB 이상 · 퀴즈 질문")
+    void 열쇠말_오탐() {
+        String[] noise = {
+                "당첨자 발표를 10월에 합니다.",
+                "데이터 3GB 이상 사용 시 1만원 이상 할인",
+                "비교적 간단한 퀴즈 이벤트입니다. 질문에 답하면 경품을 드려요. 궁금하시죠?",
+                "canvas 앱에서 참여하세요",
+        };
+        for (String s : noise) {
+            assertFalse(Block.COMPARE.allowedFor(s), "compare 오탐: " + s);
+            assertFalse(Block.AUDIENCE.allowedFor(s), "audience 오탐: " + s);
+            assertFalse(Block.FAQ.allowedFor(s), "faq 오탐: " + s);
+        }
+    }
+
+    @Test
+    @DisplayName("요청문이 직접 말하면 열린다 — Bedrock 실측 요청문 포함")
+    void 열쇠말_정탐() {
+        // 실측에 쓴 가을 요청문 — 비교표 · FAQ · 참여 대상이 모두 들어 있다
+        String autumn = "만 19세 이상 5G 요금제 가입자가 대상입니다. 자주 묻는 질문(중복 참여 불가)과 "
+                + "베이직(3GB, 29,000원)·프리미엄(무제한, 59,000원) 요금제 비교표도 넣어 주세요.";
+        assertTrue(Block.COMPARE.allowedFor(autumn));
+        assertTrue(Block.FAQ.allowedFor(autumn));
+        assertTrue(Block.AUDIENCE.allowedFor(autumn));
+
+        assertTrue(Block.AUDIENCE.allowedFor("신규 가입자 대상 여름 쿠폰 이벤트입니다."));
+        assertTrue(Block.AUDIENCE.allowedFor("VIP 등급 고객에게 데이터 10GB 를 드립니다."));
+        assertTrue(Block.COMPARE.allowedFor("베이직 vs 프리미엄"));
+        assertTrue(Block.COMPARE.allowedFor("두 요금제를 비교해 주세요"));
+        assertTrue(Block.FAQ.allowedFor("FAQ 도 넣어줘"));
+        assertTrue(Block.FAQ.allowedFor("Q&A 형식으로"));
+    }
+
+    @Test
     @DisplayName("생성 프롬프트에서 열쇠말 없는 블록은 빠지고, 만들지 말라고 이름을 댄다")
     void 프롬프트에서_뺀다() {
         String p = PromptBuilder.generate("여름 쿠폰 이벤트입니다.");
