@@ -11,6 +11,8 @@ import java.util.concurrent.Executors;
 
 import jakarta.annotation.PreDestroy;
 
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,7 @@ import com.newvent.infra.llm.LlmCallGateway;
 import com.newvent.registry.Block;
 import com.newvent.registry.BlockMerge;
 import com.newvent.registry.BlockValidator;
+import com.newvent.registry.PageShell;
 import com.newvent.registry.PromptBuilder;
 
 /**
@@ -218,6 +221,9 @@ public class EditService {
         // ★ 연산을 다 통과한 뒤 한 번만 옮긴다. 진행률은 뒤로 가지 않는다
         job.to(GenerationJob.Phase.VALIDATING);
 
+        // ★ 블록 순서를 맞추고, hero 에 고른 팔레트를 페이지 루트로 옮긴다. 모델은 루트를 못 만진다
+        doc = PageShell.settle(doc);
+
         job.to(GenerationJob.Phase.SAVING);
         VersionStore.Saved saved = versions.save(cmd.eventId(), doc, base.versionId());
         log.info("수정 저장 (event={}, versionId={}, v{}, source=v{}) — 연산 {}개",
@@ -321,7 +327,7 @@ public class EditService {
         String before = BlockValidator.blockOf(doc, block);
 
         // ★ 삭제는 모델을 부르지 않는다. 지우는 데 모델이 필요 없다.
-        //   canDelete() 가 참인 블록은 steps 하나뿐이다(나머지는 필수)
+        //   canDelete() 가 참인 블록은 필수가 아닌 것들이다(steps · highlight · intro · audience · faq)
         if (step.op() == Op.DELETE) {
             // 문서에 있는지는 planAll 의 againstDocument 가 이미 봤다
             log.info("수정 — {} 삭제 (event={}). 모델을 부르지 않는다", block.key(), cmd.eventId());
@@ -339,7 +345,7 @@ public class EditService {
         RetryService.Result res;
         try {
             res = retry.run(ctx,
-                    PromptBuilder.edit(block),
+                    PromptBuilder.edit(block, isTemplateBlock(before)),
                     userPrompt(cmd, step, before),
                     HtmlPolicy.edit(block, before, cmd.requestText()));
         } catch (RetryService.Aborted e) {
@@ -365,6 +371,19 @@ public class EditService {
         return before.isBlank()
                 ? insertBlock(doc, block, res.html().strip())
                 : BlockMerge.merge(doc, block, res.html());
+    }
+
+    /**
+     * 템플릿에서 온 블록인가 — 루트 섹션에 ev-block 이 붙어 있다.
+     *
+     * ★ 템플릿 블록에는 모양 변형(v-*)을 안내하지 않는다.
+     *   event.css 의 변형 규칙이 :not(.ev-block) 에만 걸려서 골라도 화면이 안 바뀐다.
+     *   모델은 "바꿨다" 고 하는데 화면은 그대로인 게 제일 나쁘다.
+     */
+    private static boolean isTemplateBlock(String before) {
+        if (before == null || before.isBlank()) return false;
+        Element root = Jsoup.parseBodyFragment(before).body().selectFirst("section[data-block]");
+        return root != null && root.hasClass("ev-block");
     }
 
     /**

@@ -72,6 +72,7 @@ class TemplateRoundTripTest {
     void 템플릿이_검증을_통과한다() {
         for (TemplateLoader.Source t : LOADER.all()) {
             for (Block b : Block.llmBlocks()) {
+                if (!b.core()) continue;    // 템플릿 5종은 core 블록만 갖는다
                 String block = BlockValidator.blockOf(t.html(), b);
                 assertFalse(block.isBlank(), t.code() + " 에 " + b.key() + " 블록이 없습니다.");
 
@@ -91,6 +92,7 @@ class TemplateRoundTripTest {
     void 정화가_아무것도_안_지운다() {
         for (TemplateLoader.Source t : LOADER.all()) {
             for (Block b : Block.llmBlocks()) {
+                if (!b.core()) continue;    // 템플릿 5종은 core 블록만 갖는다
                 String before = BlockValidator.blockOf(t.html(), b);
                 String after  = BlockValidator.sanitizeEdited(before);
 

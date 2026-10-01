@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -75,8 +77,24 @@ public class BlockValidator {
         return (s >= 0 && e > s) ? t.substring(s, e + 1).trim() : "";
     }
 
+    /** 대괄호 자리표시자 — "[이벤트명]" "[혜택 1]" 같은 것. 15자까지 */
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\[[가-힣A-Za-z0-9 _\\-]{1,15}\\]");
+
     /** 생성 결과 검증 — 필수 블록이 다 있고 형태가 맞는가 */
     public static List<Failure> validateGenerated(String html) {
+        return validateGenerated(html, null);
+    }
+
+    /**
+     * 생성 결과 검증 — 입력에 원래 있던 대괄호는 자리표시자로 보지 않는다.
+     *
+     * ★ 왜 — 이벤트명이 "[단독] 가을 이벤트" 면 모델이 그대로 제목에 옮겨 쓰고,
+     *   그게 자리표시자로 걸려 **매번 첫 시도가 실패했다**(Bedrock 실측 3/3, 제목에서 대괄호를
+     *   빼자 1회 통과). 관리자가 쓴 글자는 자리표시자가 아니다.
+     *
+     * @param sourceText 제목 · 요청문을 이은 것. 여기 그대로 있는 [..] 는 허용한다. null 이면 전부 본다
+     */
+    public static List<Failure> validateGenerated(String html, String sourceText) {
         List<Failure> f = new ArrayList<>();
         if (html == null || html.isBlank()) {
             f.add(Failure.of(FailureCode.NO_HTML, "HTML을 찾을 수 없습니다. <section> 으로 시작하는 HTML만 출력하세요."));
@@ -103,6 +121,14 @@ public class BlockValidator {
                 }
                 continue;
             }
+            // ★ 같은 블록이 두 번이면 실패다 — 병합 · 추출(BlockMerge)이 블록마다 정확히 하나를 전제한다.
+            //   그대로 저장하면 그 블록은 이후 AI 수정이 전부 터진다.
+            //   실측: highlight 를 띠 배너 + 주의 상자로 두 번 냈다. 새 코드 대신 extra_ 로 남긴다.
+            int count = doc.body().select(b.selector()).size();
+            if (count > 1) {
+                f.add(Failure.of(FailureCode.EXTRA_BLOCK, b.key(),
+                        b.key() + " 영역이 " + count + "개입니다. 영역마다 하나만 씁니다. 하나로 합치세요."));
+            }
             checkShape(b, el, f, false);
         }
 
@@ -114,10 +140,34 @@ public class BlockValidator {
             }
         }
 
-        if (html.matches("(?s).*\\[[가-힣A-Za-z0-9 _\\-]{1,15}\\].*")) {
+        Matcher m = PLACEHOLDER.matcher(html);
+        while (m.find()) {
+            if (sourceText != null && sourceText.contains(m.group())) continue;
             f.add(Failure.of(FailureCode.PLACEHOLDER, "자리표시자가 남아 있습니다. 해당 문장을 빼세요."));
+            break;
         }
         return f;
+    }
+
+    /**
+     * 요청문에 열쇠말이 없는 선택 블록을 지운다 — {@link Block#allowedFor}. **생성 결과에만 건다.**
+     *
+     * ★ 프롬프트에서 빼고 "만들지 마라" 까지 말해도 만드는 경우가 남는다. 마지막 거름망이다.
+     *   지우는 블록은 전부 선택(required=false)이라 검증이 깨지지 않는다.
+     */
+    public static String dropUntriggered(String html, String requestText) {
+        if (html == null || requestText == null) return html;
+        Document doc = Jsoup.parseBodyFragment(html);
+        doc.outputSettings().prettyPrint(false);
+        boolean dropped = false;
+        for (Element sec : doc.body().select("section[data-block]")) {
+            Block b = Block.find(sec.attr("data-block")).orElse(null);
+            if (b != null && !b.allowedFor(requestText)) {
+                sec.remove();
+                dropped = true;
+            }
+        }
+        return dropped ? doc.body().html() : html;
     }
 
     /**
@@ -342,6 +392,12 @@ public class BlockValidator {
         Safelist s = Safelist.relaxed()
                 .addAttributes(":all", "style", "data-block", "class")
                 .addTags("section")
+                // ★ JS 없이 동작하는 것만 연다.
+                //   details/summary  아코디언 FAQ — 브라우저가 펼치고 접는다. open 은 처음 펼친 상태
+                //   mark             형광펜 강조 · hr 구분선 · figure/figcaption 그림 설명
+                //   button · input · dialog 는 열지 않는다. 동작을 붙일 스크립트가 생성 결과에는 없다.
+                .addTags("details", "summary", "mark", "hr", "figure", "figcaption")
+                .addAttributes("details", "open")
                 // ★ href="#" 를 살리는 줄. 빼면 CTA 버튼의 링크가 통째로 사라진다.
                 //   Safelist.relaxed() 는 a[href] 에 ftp/http/https/mailto 만 허용하고,
                 //   상대 URL 은 절대 URL 로 바꾼 뒤 검사한다. baseUri 가 비어 있으면
@@ -368,7 +424,49 @@ public class BlockValidator {
             if (safe.isEmpty()) el.removeAttr("style");
             else el.attr("style", safe);
         }
+        cleanLooks(doc);
         return doc.body().html();
+    }
+
+    /**
+     * 모양 변형(v-*)과 팔레트(palette-*) class 를 허용 목록으로 거른다.
+     *
+     * ★ Jsoup Safelist 는 class 속성이 "있는지"만 본다 — style 과 같은 문제다.
+     *   모델이 지어낸 v-* 는 CSS 가 없어 효과가 없지만, 남겨 두면
+     *   다음 수정 때 모델이 그걸 보고 따라 쓴다. 들어오는 자리에서 지운다.
+     *
+     * ★ 팔레트는 hero 섹션에만, 하나만 남긴다. 다른 자리의 것은 지운다.
+     *   서버가 저장 직전에 루트로 옮긴다(PageShell.hoistPalette).
+     *
+     * ★ 문구 꾸밈(t-*)도 같은 방식이다 — {@link Inline#sanitize}
+     *
+     * ★ 접두사가 다른 class 는 건드리지 않는다 — 템플릿 class, btn 등
+     */
+    private static void cleanLooks(Document doc) {
+        for (Element el : doc.body().select("[class]")) {
+            Block b = el.is("section[data-block]")
+                    ? Block.find(el.attr("data-block")).orElse(null)
+                    : null;
+
+            if (b != null) {
+                Variant.sanitize(el, b);
+            } else {
+                for (String c : List.copyOf(el.classNames())) {
+                    if (Variant.looksLike(c)) el.removeClass(c);
+                }
+            }
+            // 문구 꾸밈(t-*)은 span · mark · strong · em 에만. 섹션 루트에 붙은 것도 여기서 떨어진다
+            Inline.sanitize(el);
+
+            boolean paletteKept = false;
+            for (String c : List.copyOf(el.classNames())) {
+                if (!Palette.looksLike(c)) continue;
+                boolean ok = b == Block.HERO && !paletteKept && Palette.find(c).isPresent();
+                if (ok) paletteKept = true;
+                else el.removeClass(c);
+            }
+            if (el.classNames().isEmpty()) el.removeAttr("class");
+        }
     }
 
     /**

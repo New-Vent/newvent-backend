@@ -29,17 +29,30 @@ public interface HtmlPolicy {
     List<Failure> validate(String html);
 
 
-    /** 생성 — 필수 블록 5개가 다 있어야 하고, data-slot 은 지운다 */
+    /** 생성 — 요청문 · 제목을 모를 때(테스트). 선택 블록을 거르지 않고 대괄호는 전부 자리표시자로 본다 */
     static HtmlPolicy generation() {
+        return generation(null, null);
+    }
+
+    /**
+     * 생성 — 필수 블록이 다 있어야 하고, data-slot 은 지운다.
+     *
+     * @param requestText 요청문. 열쇠말이 없는 선택 블록(faq · compare · audience)은 출력에서 지운다
+     * @param title       이벤트명. 요청문과 함께 "원래 있던 대괄호" 의 출처다 — [단독] 같은 것
+     */
+    static HtmlPolicy generation(String requestText, String title) {
+        final String source = (title == null ? "" : title) + "\n" + (requestText == null ? "" : requestText);
+        final boolean known = requestText != null || title != null;
         return new HtmlPolicy() {
             @Override
             public String clean(String raw) {
-                return BlockValidator.sanitizeGenerated(BlockValidator.extract(raw));
+                String html = BlockValidator.sanitizeGenerated(BlockValidator.extract(raw));
+                return BlockValidator.dropUntriggered(html, requestText);
             }
 
             @Override
             public List<Failure> validate(String html) {
-                return BlockValidator.validateGenerated(html);
+                return BlockValidator.validateGenerated(html, known ? source : null);
             }
         };
     }

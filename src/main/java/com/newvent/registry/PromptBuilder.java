@@ -49,6 +49,17 @@ public final class PromptBuilder {
 
     /** 생성용 — 페이지 전체를 한 번에 만든다 */
     public static String generate() {
+        return generate(null);
+    }
+
+    /**
+     * 생성용 — 요청문에 맞춰 블록 목록을 거른다.
+     *
+     * @param requestText 관리자 요청문. 열쇠말이 없는 선택 블록(faq · compare · audience)은
+     *                    목록에서 빠진다 — {@link Block#allowedFor}. null 이면 거르지 않는다.
+     */
+    public static String generate(String requestText) {
+        List<Block> blocks = Block.llmBlocksFor(requestText);
         StringJoiner s = new StringJoiner("\n");
         s.add("너는 통신사 이벤트 페이지를 만드는 도우미다.");
         s.add("");
@@ -59,16 +70,36 @@ public final class PromptBuilder {
         s.add("- 설명, 인사말, 마무리 멘트를 붙이지 마라.");
         s.add("");
         s.add("만들 영역: (모두 만든다. 빠뜨리지 마라)");
-        for (Block b : Block.llmBlocks()) {
+        for (Block b : blocks) {
             // ★ "(선택)" 을 더 이상 붙이지 않는다 — **모델이 그걸 읽고 실제로 건너뛴다.**
             //   Bedrock 백지 생성에서 steps 가 통째로 빠진 채 나왔고,
             //   required=false 라 검증도 통과해서 참여 방법이 없는 페이지가 저장됐다.
             //   required 는 **검증기의 안전망**이지 모델에게 줄 정보가 아니다.
             //   드물게 정말 못 만드는 경우를 위해 required 자체는 그대로 둔다.
-            s.add("- data-block=\"" + b.key() + "\" : " + b.desc());
-            if (b.shape() != null) {
-                s.add("    형태: " + b.shape());
-            }
+            if (!b.core()) continue;
+            addBlockLine(s, b);
+        }
+        s.add("");
+        // ★ 위와 반대로 여기는 건너뛰라고 **시킨다.** 건너뛰는 게 맞는 블록들이다.
+        //   전부 만들게 하면 출력이 두 배가 되고, 요청문에 없는 대상·질문을 지어낸다.
+        // ★ "관련 내용" 만으로는 약했다 — FAQ 를 요청하지 않은 VIP 이벤트에서 질문 4개를 지어냈고
+        //   답이 "별도로 공지됩니다 · 고객센터로 문의" 였다(Bedrock 실측). 직접 요청 기준으로 좁히고
+        //   내용 없는 답을 금지 문구로 박는다.
+        s.add("더할 수 있는 영역: (요청문이 그 내용을 직접 말할 때만 만든다. 추측해서 만들지 마라)");
+        s.add("- 요청문에 질문·답이 없으면 faq 를 만들지 마라. '별도 공지', '고객센터 문의' 같은 내용 없는 답은 쓰지 마라.");
+        s.add("- 요청문에 비교할 값이 없으면 compare 를 만들지 마라.");
+        s.add("- 요청문이 주의·유의 사항을 강조해 달라고 하면 highlight 를 만들고 v-highlight-alert 를 고른다.");
+        s.add("- 같은 영역(data-block)을 두 번 만들지 마라. highlight 도 하나뿐이다.");
+        // ★ 목록에서 빼기만 하면 모델이 이름을 몰라도 비슷한 걸 만든다. 빠진 이름을 직접 말한다.
+        //   그래도 만들면 서버가 지운다(BlockValidator.dropUntriggered).
+        List<String> skipped = Block.llmBlocks().stream()
+                .filter(b -> !blocks.contains(b)).map(Block::key).toList();
+        if (!skipped.isEmpty()) {
+            s.add("- 이번 요청에서는 " + String.join(", ", skipped) + " 영역을 만들지 마라.");
+        }
+        for (Block b : blocks) {
+            if (b.core()) continue;
+            addBlockLine(s, b);
         }
         if (!Block.serverBlocks().isEmpty()) {
             s.add("");
@@ -78,30 +109,35 @@ public final class PromptBuilder {
             }
         }
         s.add("");
+        s.add("");
+        addLooks(s, blocks);
+        s.add("");
+        addInline(s);
+        s.add("");
         s.add("태그를 반드시 쓴다. 맨 텍스트만 두지 마라.");
         // ★ 예시에 benefits 와 steps 를 넣는다.
         //   예전 예시는 hero 와 cta 둘뿐이었고, 출력도 딱 그 정도로 나왔다.
         //   라우터에서 이미 겪은 것과 같다 — 예시가 있고 없고가 실제로 갈렸다.
         //   분량을 말로만 시키는 것보다 보여주는 쪽이 세다.
         s.add("예:");
-        s.add("<section data-block=\"hero\">");
+        s.add("<section data-block=\"hero\" class=\"v-hero-center palette-summer\">");
         s.add("  <h1>여름 데이터 대방출</h1>");
         s.add("  <p>이번 여름, 데이터 걱정 없이 마음껏 즐기세요.</p>");
         s.add("</section>");
-        s.add("<section data-block=\"benefits\">");
+        s.add("<section data-block=\"benefits\" class=\"v-benefits-grid v-surface-tint\">");
         s.add("  <ul>");
         s.add("    <li>데이터 3GB 즉시 지급 — 가입 완료 즉시 사용할 수 있습니다.</li>");
         s.add("    <li>월 요금 30% 할인 — 가입 후 6개월 동안 적용됩니다.</li>");
         s.add("  </ul>");
         s.add("</section>");
-        s.add("<section data-block=\"steps\">");
+        s.add("<section data-block=\"steps\" class=\"v-steps-timeline\">");
         s.add("  <ol>");
         s.add("    <li>이벤트 페이지에서 로그인합니다.</li>");
         s.add("    <li>원하는 요금제를 선택합니다.</li>");
         s.add("    <li>신청하기를 눌러 응모를 완료합니다.</li>");
         s.add("  </ol>");
         s.add("</section>");
-        s.add("<section data-block=\"cta\">");
+        s.add("<section data-block=\"cta\" class=\"v-cta-wide\">");
         s.add("  <a href=\"#\" class=\"btn\">참여하기</a>");
         s.add("</section>");
         s.add("");
@@ -142,12 +178,29 @@ public final class PromptBuilder {
         return s.toString();
     }
 
-    /** 수정용 — 블록 하나만 주고 하나만 받는다 */
+    /** 수정용 — 백지 생성에서 온 블록 기준 (모양 변형을 안내한다) */
     public static String edit(Block b) {
+        return edit(b, false);
+    }
+
+    /**
+     * 수정용 — 블록 하나만 주고 하나만 받는다.
+     *
+     * @param templateBlock 템플릿에서 온 블록인가(.ev-block). 그러면 모양 변형을 안내하지 않는다 —
+     *                      event.css 의 변형 규칙이 템플릿 블록에는 안 걸려서 골라도 안 바뀐다.
+     *                      팔레트는 페이지 루트에 걸리므로 템플릿이어도 안내한다.
+     */
+    public static String edit(Block b, boolean templateBlock) {
         if (b.source() == Block.Source.SERVER) {
             throw new IllegalArgumentException(
                     b.key() + " 는 서버 소유입니다. 모델에게 수정시키면 안 됩니다.");
         }
+        // ★ 모양·색 요청의 길. 고를 게 없으면 관련 문장을 통째로 뺀다 —
+        //   "모양 고르기" 를 언급만 하고 목록이 없으면 모델이 목록 밖 이름을 지어낸다.
+        List<Variant> variants = templateBlock ? List.of() : Variant.of(b);
+        boolean palette = b == Block.HERO;
+        boolean looks = !variants.isEmpty() || palette;
+
         StringJoiner s = new StringJoiner("\n");
         s.add("너는 이벤트 페이지의 영역 하나를 수정하는 도우미다.");
         s.add("");
@@ -170,7 +223,8 @@ public final class PromptBuilder {
         s.add("- data-slot=\"...\" 이 붙은 태그는 지우지 마라. 태그와 속성을 그대로 둔다.");
         s.add("- 그 안의 내용을 채우지 마라. 비어 있으면 비운 채로 둔다. 서버가 채운다.");
         s.add("- data-slot 을 새로 만들지 마라.");
-        s.add("- class 를 바꾸거나 지우지 마라. 디자인과 버튼 동작이 class 에 걸려 있다.");
+        s.add("- class 를 바꾸거나 지우지 마라. 디자인과 버튼 동작이 class 에 걸려 있다."
+                + (looks ? " 단, 아래 '모양 고르기' 에 있는 class 는 바꿀 수 있다." : ""));
         s.add("- id 를 지우거나 새로 만들지 마라. 화면 기능이 id 로 요소를 찾는다.");
         s.add("- <button> 을 <a> 나 <div> 로 바꾸지 마라.");
         // ★ 이모지 보존을 명시한다. 템플릿 블록 안에 58개가 있고,
@@ -179,7 +233,8 @@ public final class PromptBuilder {
         s.add("- 원래 있던 이모지를 지우지 마라. 문구를 바꿀 때도 그대로 둔다.");
         s.add("");
         s.add("금지:");
-        s.add("- 요청받은 것만 바꿔라. href, class 같은 기존 속성은 그대로 둔다.");
+        s.add("- 요청받은 것만 바꿔라. href, class 같은 기존 속성은 그대로 둔다"
+                + (looks ? " (모양 고르기의 class 만 예외)." : "."));
         s.add("- href=\"#\" 는 그대로 둬라. 실제 주소를 만들어 넣지 마라.");
         for (String line : 지어내기_금지()) s.add(line);
         s.add("- 대괄호 자리표시자를 남기지 마라.");
@@ -192,7 +247,83 @@ public final class PromptBuilder {
         if (b.itemsAreFormValues()) {
             s.add("- 항목을 새로 만들거나 지우지 마라. 개수는 그대로 두고 문장만 다듬는다.");
         }
+
+        s.add("");
+        addInline(s);
+
+        if (looks) {
+            s.add("");
+            s.add("모양 고르기: (모양·색·분위기를 바꿔 달라는 요청일 때만. 문구는 그대로 둔다)");
+            s.add("- <section> 의 class 에 아래 이름을 붙이거나 다른 이름으로 바꾼다. 목록에 없는 이름은 쓰지 마라.");
+            addVariantLines(s, variants);
+            if (palette) {
+                s.add("- 페이지 전체 색감: 아래 중 하나 (하나만). 페이지 전체에 적용된다.");
+                for (Palette p : Palette.all()) {
+                    s.add("    " + p.cssClass() + " : " + p.desc());
+                }
+            }
+        }
         return s.toString();
+    }
+
+    private static void addBlockLine(StringJoiner s, Block b) {
+        s.add("- data-block=\"" + b.key() + "\" : " + b.desc());
+        if (b.shape() != null) {
+            s.add("    형태: " + b.shape());
+        }
+    }
+
+    /**
+     * 생성용 모양 안내 — 블록마다 고를 수 있는 변형과 팔레트.
+     *
+     * ★ "다양하게 섞어라" 를 명시한다. 안 그러면 예시에 나온 것만 매번 고른다
+     *   (라우터 · 분량에서 이미 겪었다 — 모델은 예시를 정답으로 읽는다).
+     */
+    private static void addLooks(StringJoiner s, List<Block> blocks) {
+        s.add("모양 고르기:");
+        s.add("- 각 <section> 의 class 에 아래 이름을 붙여 모양을 고른다. 묶음마다 하나씩만.");
+        s.add("- 요청문의 분위기에 맞게 고르고, 영역마다 다른 모양을 섞어 단조롭지 않게 한다.");
+        s.add("- 목록에 없는 class 이름은 쓰지 마라.");
+        for (Block b : blocks) {
+            List<Variant> vs = Variant.of(b);
+            if (vs.isEmpty()) continue;
+            // ★ 대괄호로 묶지 않는다. 검증기가 [..] 를 자리표시자로 본다(placeholder).
+            //   "[hero]" 로 썼더니 모델이 그 표기를 출력에 따라 써서 첫 시도의 2/3 가 떨어졌다(Bedrock 실측).
+            s.add("  " + b.key() + " 영역:");
+            addVariantLines(s, vs);
+        }
+        s.add("- 페이지 전체 색감: hero 의 class 에 아래 중 하나를 붙인다 (하나만).");
+        for (Palette p : Palette.all()) {
+            if (p == Palette.BASE) continue;     // 생성에는 되돌릴 원래 색이 없다
+            s.add("    " + p.cssClass() + " : " + p.desc());
+        }
+    }
+
+    /**
+     * 문구 꾸밈 안내 — 생성 · 수정 공통.
+     *
+     * ★ "아껴 써라" 를 붙인다. 안 붙이면 문장마다 배지를 단다 —
+     *   배지는 드물어야 눈에 띈다. 개수는 검증기가 안 세므로 프롬프트가 유일한 압력이다.
+     */
+    private static void addInline(StringJoiner s) {
+        s.add("문구 꾸밈: (꼭 필요한 단어에만, 영역마다 1~2개까지)");
+        s.add("- 배지(t-badge)는 " + Inline.BADGE_MAX + "글자 이하의 짧은 말에만 붙인다 (예: 한정, NEW, 무료). 문장에 붙이지 마라.");
+        s.add("- <span> · <mark> · <strong> 의 class 에 아래 이름을 붙인다. 목록에 없는 이름은 쓰지 마라.");
+        s.add("  예) <span class=\"t-badge t-badge-red\">한정</span> · <strong class=\"t-accent\">3GB</strong>");
+        for (Inline i : Inline.values()) {
+            s.add("    " + i.cssClass() + " : " + i.desc());
+        }
+        s.add("- 구분선이 필요하면 <hr> 를 쓴다.");
+    }
+
+    private static void addVariantLines(StringJoiner s, List<Variant> vs) {
+        for (Variant.Group g : Variant.Group.values()) {
+            List<Variant> in = vs.stream().filter(v -> v.group() == g).toList();
+            if (in.isEmpty()) continue;
+            StringJoiner line = new StringJoiner(" | ");
+            for (Variant v : in) line.add(v.cssClass() + " (" + v.desc() + ")");
+            s.add("    " + (g == Variant.Group.LAYOUT ? "배치" : "배경") + ": " + line);
+        }
     }
 
     public static String router() {
@@ -229,6 +360,11 @@ public final class PromptBuilder {
         s.add("");
         s.add("\"혜택 하나 더 추가해줘\"");
         s.add("{\"ops\":[{\"op\":\"ADD\",\"target\":\"benefits\",\"content\":null}]}");
+        s.add("");
+        // ★ 페이지 전체 색감은 hero 의 STYLE 로 보낸다. 팔레트를 고르는 자리가 hero 다
+        //   (Palette · PageShell.hoistPalette). 이 예시가 없으면 "알 수 없는 영역" 으로 떨어진다.
+        s.add("\"전체 색감을 가을 느낌으로 바꿔줘\"");
+        s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null}]}");
         s.add("");
         s.add("\"제목 바꾸고 참여방법도 더 친절하게 다듬어줘\"");
         s.add("{\"ops\":[{\"op\":\"EDIT\",\"target\":\"hero\",\"content\":null},"

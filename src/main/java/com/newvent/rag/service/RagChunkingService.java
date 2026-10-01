@@ -32,7 +32,7 @@ public class RagChunkingService {
 		List<Chunk> out = new ArrayList<>();
 		// ★ 모델이 만드는 블록만 돈다. notices는 모든 이벤트에 같은 문구라 검색 결과만 오염시킨다.
 		// 	 블록 키는 Block enum 에서만 가져옴 (rag_chunks CHECK 값과 같아야 함)
-		for (Block block : Block.llmBlocks()) {
+		for (Block block : Block.llmBlocksFor(html)) {
 			Element el = doc.body().selectFirst(block.selector());
 			if(el == null) {
 				continue;

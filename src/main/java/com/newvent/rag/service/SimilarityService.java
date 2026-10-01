@@ -69,7 +69,8 @@ public class SimilarityService {
 		List<PromptCandidate> out = new ArrayList<>(hits.size());
 		for (RagChunk h : hits) {
 			// ★ 색인된 블록은 llmBlocks() 뿐 shape() 이 비어 있지 않음
-			String guide = Block.of(h.getBlockKey()).shape();
+			Block block = Block.find(h.getBlockKey()).orElse(null);
+			String guide = block != null ? block.shape() : "";
 			out.add(new PromptCandidate(h.getEvent().getId(), h.getEvent().getTitle(),
 	                h.getBlockKey(), guide + " (예시: " + h.getContent() + ")"));
 		}

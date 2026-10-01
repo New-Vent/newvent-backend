@@ -11,19 +11,17 @@ import com.newvent.event.domain.EventVersion;
 public interface EventVersionRepository extends JpaRepository<EventVersion, Long> {
 
     @EntityGraph(attributePaths = {"requestMessage", "sourceVersion"})
-    List<EventVersion> findByEventIdAndCheckpointTrueOrderByVersionNoDesc(Long eventId);
+    List<EventVersion> findByEventIdOrderByVersionNoDesc(Long eventId);
 
     Optional<EventVersion> findByIdAndEventId(Long versionId, Long eventId);
-
-    Optional<EventVersion> findByIdAndEventIdAndCheckpointTrue(Long versionId, Long eventId);
 
     /**
      * 이 이벤트의 마지막 버전. version_no 최대값 하나.
      */
     Optional<EventVersion> findTopByEventIdOrderByVersionNoDesc(Long eventId);
-    
+
     /**
-     * 일괄 재색인용. 버전 번호 순서대로.
+     * 일괄 재색인용. 오래된 버전부터.
      */
     List<EventVersion> findByEventIdOrderByVersionNoAsc(Long eventId);
 

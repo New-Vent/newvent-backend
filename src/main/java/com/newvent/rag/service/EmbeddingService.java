@@ -60,7 +60,7 @@ public class EmbeddingService {
 				.orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
 		List<Chunk> parts = chunking.chunk(version.getHtmlContent());
 		// 지우기와 저장을 한 트랜잭션으로 묶음. 중간에 실패하면 둘 다 없던 일이 되어 절반만 저장되는 일은 없음.
-		chunks.deleteByEvent_IdandVersion_Id(eventId, versionId);
+		chunks.deleteByEventIdAndVersionId(eventId, versionId);
 		List<RagChunk> entities = new ArrayList<>(parts.size());
 		for(Chunk p : parts) {
 			float[] vec = embedding.embed(p.content());

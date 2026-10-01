@@ -36,7 +36,7 @@ public interface RagChunkRepository extends JpaRepository<RagChunk, Long>{
 			@Param("limit") int limit);
 	
 	// 같은 버전을 다시 색인할 때 묵은 청크를 지우는 용도
-	void deleteByEvent_IdandVersion_Id(Long eventId, Long versionId);
+	void deleteByEventIdAndVersionId(Long eventId, Long versionId);
 	
 	// 청크가 하나라도 들어간 버전 수
 	@Query("select count(distinct r.version.id) from RagChunk r where r.event.id = :eventId")
