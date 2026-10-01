@@ -148,9 +148,14 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     // 이미 알림 보낸 건 각 notifiedAt 컬럼으로 걸러 중복 발송을 막는다.
 
+    // endDate > now를 같이 본다 — EventExpirationJob(자동 종료)과 별도 스케줄러라
+    // 서버 재시작 등으로 타이밍이 어긋나면 종료일이 이미 지났는데도 아직 ENDED로
+    // 안 바뀐 PUBLISHED 이벤트가 섞여 들어올 수 있다. 그런 이벤트까지 "시작" 알림을
+    // 보내지 않도록 막는다.
     @Query("SELECT e FROM Event e JOIN FETCH e.ownerAdmin "
             + "WHERE e.status = :published AND e.deletedAt IS NULL "
-            + "AND e.startDate IS NOT NULL AND e.startDate <= :now AND e.startNotifiedAt IS NULL")
+            + "AND e.startDate IS NOT NULL AND e.startDate <= :now AND e.startNotifiedAt IS NULL "
+            + "AND (e.endDate IS NULL OR e.endDate > :now)")
     List<Event> findStartingEvents(@Param("published") EventStatus published, @Param("now") OffsetDateTime now);
 
     @Query("SELECT e FROM Event e JOIN FETCH e.ownerAdmin "

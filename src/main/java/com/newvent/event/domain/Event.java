@@ -1,6 +1,7 @@
 package com.newvent.event.domain;
 
 import java.time.OffsetDateTime;
+import java.util.Objects;
 
 import jakarta.persistence.*;
 
@@ -138,6 +139,15 @@ public class Event extends BaseTimeEntity {
             OffsetDateTime startDate,
             OffsetDateTime endDate,
             MembershipGrade grade) {
+        // 날짜가 실제로 바뀌면 그 날짜 기준으로 이미 보낸 알림 표시를 지운다 —
+        // 안 지우면 연장된 새 날짜가 와도 "이미 보냈다"고 착각해 재발송을 안 한다.
+        if (!Objects.equals(this.startDate, startDate)) {
+            this.startNotifiedAt = null;
+        }
+        if (!Objects.equals(this.endDate, endDate)) {
+            this.closingSoonNotifiedAt = null;
+        }
+
         this.title = title;
         this.template = template;
         this.startDate = startDate;
