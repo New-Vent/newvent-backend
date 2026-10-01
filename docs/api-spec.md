@@ -1,8 +1,8 @@
 # API 명세
 
-관리자 이벤트 조회 API의 현재 구현을 적는다. 인증/인가·JPA·쓰기 API는 이 문서 범위 밖이다.
+관리자 이벤트·템플릿 API의 현재 구현을 적는다. `/api/admin/**` 는 관리자 로그인(ADMIN)이 필요하다.
 
-> Status: Draft — `feat/event-admin-query`
+> Status: Draft
 
 ## 공통
 
@@ -31,12 +31,7 @@
 
 ## 아직 안 한 것
 
-- 인증/인가 (Security 미사용. `/api/admin/**` 도 토큰 없이 호출됨)
-- JPA/Flyway — 지금은 메모리 더미 (이벤트 시드 6건 · 템플릿 5종)
-- 템플릿 `baseContent`(HTML 조각) — 메타데이터만 제공
-- 삭제·상태변경·게시 **본구현** (엔드포인트 자리만 501)
-- 공개 조회 `/api/public/events`
-- LLM HTML 생성 (생성 API 는 DRAFT 메타만 저장)
+- 템플릿 HTML 본문 — 템플릿 API 는 메타데이터만 제공
 
 ## 이벤트 상태
 
@@ -251,21 +246,52 @@ Content-Type: application/json
 
 ---
 
-## 쓰기 골격 (501 Not Implemented)
+## `PATCH /api/admin/events/{id}/status`
 
-본구현 전. 자리만 잡혀 있고 호출하면 `501` 을 반환한다.
+관리자 이벤트 종료 (REQ-EVT-07). 지금은 종료(`PUBLISHED` → `ENDED`)만 받는다. 게시는 `POST /{id}/publish` 로 한다.
+상태는 `DRAFT` → `PUBLISHED` → `ENDED` 단방향이고, 종료한 이벤트는 수정할 수 없다. 게시 버전(`completedHtml`)은 그대로 남는다.
 
-| Method | Path | Request | 비고 |
-| --- | --- | --- | --- |
-| `DELETE` | `/api/admin/events/{id}` | — | 소프트 삭제 (`deletedAt`) |
-| `PATCH` | `/api/admin/events/{id}/status` | `EventStatusChangeRequest` | `DRAFT` → `PUBLISHED` → `ENDED` |
-| `POST` | `/api/admin/events/{id}/publish` | — | `DRAFT` → `PUBLISHED` |
-
-### `EventStatusChangeRequest`
+### Request body
 
 | 필드 | 필수 | 설명 |
 | --- | --- | --- |
-| `status` | O | `DRAFT` / `PUBLISHED` / `ENDED` |
+| `status` | O | `ENDED` 만 허용 |
+
+```json
+{ "status": "ENDED" }
+```
+
+### 200
+
+`EventDetailResponse`. `status` 는 `ENDED`, `closingSoon` 은 `false`.
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| `status` 누락·없는 값 | 400 | `COMMON400-0` |
+| `ENDED` 가 아닌 상태 요청 | 400 | `EVENT400-2` |
+| 없거나 삭제된 이벤트 | 404 | `EVENT404-0` |
+| 게시 중(`PUBLISHED`)이 아닌 이벤트 | 409 | `EVENT409-6` |
+
+---
+
+## 삭제·휴지통
+
+| Method | Path | 설명 | 오류 |
+| --- | --- | --- | --- |
+| `DELETE` | `/api/admin/events/{id}` | 휴지통으로 보낸다 (`deletedAt` 기록). 응답 `data` 없음 | 404 `EVENT404-0` · 게시 중 409 `EVENT409-2` · 생성 작업 중 409 `EVENT409-3` |
+| `GET` | `/api/admin/events/trash` | 휴지통 목록. `page`·`size` 는 목록 API 와 같음. 삭제일 내림차순 | — |
+| `POST` | `/api/admin/events/{id}/restore` | 휴지통에서 복구. 복구된 `EventDetailResponse` | 휴지통에 없으면 404 `EVENT404-0` |
+| `DELETE` | `/api/admin/events/{id}/permanent` | 휴지통에서 영구 삭제. 되돌릴 수 없음 | 휴지통에 없으면 404 `EVENT404-0` |
+
+---
+
+## 게시
+
+| Method | Path | 설명 | 오류 |
+| --- | --- | --- | --- |
+| `POST` | `/api/admin/events/{id}/publish` | 요청 `{ "versionId": 10 }`. 게시(`DRAFT` → `PUBLISHED`) 또는 재게시(다른 버전으로 교체). 고른 버전은 저장 지점으로 표시된다. 게시된 `EventDetailResponse` | `versionId` 누락 400 `COMMON400-0` · 없는 이벤트 404 `EVENT404-0` · 없는 버전 404 `EVENT404-3` · 종료된 이벤트 409 `EVENT409-5` |
 
 ---
 
@@ -311,4 +337,115 @@ http://localhost:8080/api/admin/templates
 
 ```text
 http://localhost:8080/api/admin/templates/sports_cheer
+```
+
+---
+
+## `GET /api/admin/llm-calls`
+
+LLM 호출 로그 목록 (관리자). 쓰기는 `LlmCallLogService.record*` 가 담당하므로 이 API 는 조회 전용.
+정렬은 생성 시각 내림차순 (최신이 먼저).
+
+### Query
+
+| 이름 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- |
+| `eventId` | X | | 이벤트 필터 |
+| `callOk` | X | | 호출 성공 여부 필터 (`true` / `false`) |
+| `from` | X | | 생성 시각 시작 (ISO-8601 + 오프셋) |
+| `to` | X | | 생성 시각 끝 (ISO-8601 + 오프셋) |
+| `page` | X | `0` | 0부터. 목록을 넘으면 빈 `content` |
+| `size` | X | `10` | 1~50 |
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| 잘못된 쿼리 (page, size) | 400 | `COMMON400-0` |
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 1,
+        "eventId": 3,
+        "requestId": "cf3f3b66-8ef0-4d30-9d25-4b52a9f0ae24",
+        "attemptNo": 1,
+        "modelName": "bedrock.gemma3",
+        "provider": "bedrock",
+        "callOk": true,
+        "validOk": true,
+        "inputTokens": 420,
+        "outputTokens": 310,
+        "responseTimeMs": 1820,
+        "ragUsed": false,
+        "createdAt": "2026-09-30T16:30:00+09:00"
+      }
+    ],
+    "page": 0,
+    "size": 10,
+    "totalElements": 1,
+    "totalPages": 1
+  },
+  "message": null
+}
+```
+
+`ragUsed` 는 RAG 본 구현 전까지 `false` 로 나온다 (정상).
+
+```text
+http://localhost:8080/api/admin/llm-calls
+http://localhost:8080/api/admin/llm-calls?eventId=3&callOk=true
+```
+
+---
+
+## `GET /api/admin/llm-calls/{id}`
+
+LLM 호출 로그 상세 1건. 목록에 없는 실패 분류·잘림·RAG 청크 아이디까지 내려간다.
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "eventId": 3,
+    "versionId": 12,
+    "requestId": "cf3f3b66-8ef0-4d30-9d25-4b52a9f0ae24",
+    "attemptNo": 1,
+    "modelName": "bedrock.gemma3",
+    "provider": "bedrock",
+    "callOk": true,
+    "validOk": false,
+    "failureType": "VALIDATION_FAIL",
+    "failureMessage": null,
+    "failCodes": "INVALID_AMOUNT",
+    "truncated": false,
+    "inputTokens": 420,
+    "outputTokens": 310,
+    "responseTimeMs": 1820,
+    "ragUsed": false,
+    "chunkIds": null,
+    "createdAt": "2026-09-30T16:30:00+09:00"
+  },
+  "message": null
+}
+```
+
+`failureType` 값: `VALIDATION_FAIL` / `TRUNCATED`. `versionId` 는 저장까지 이어진 마지막 성공 시도에만 있다 (선행 실패·실패 결과는 `null`).
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| 없는 로그 | 404 | `LLM404-0` |
+
+```text
+http://localhost:8080/api/admin/llm-calls/1
 ```

@@ -196,6 +196,21 @@ public class EventService {
         return EventDetailResponse.from(event, closingSoon(event));
     }
 
+    /** 상태 변경 API 는 종료(PUBLISHED → ENDED)만 한다. 게시는 게시 API 로 한다. */
+    @Transactional
+    public EventDetailResponse changeStatus(Long id, EventStatus target) {
+        Event event = findActiveEvent(id);
+        if (target != EventStatus.ENDED) {
+            throw new EventException(EventErrorCode.UNSUPPORTED_STATUS_CHANGE);
+        }
+        if (!event.published()) {
+            throw new EventException(EventErrorCode.EVENT_NOT_ENDABLE);
+        }
+        event.end();
+        eventRepository.flush();
+        return EventDetailResponse.from(event, closingSoon(event));
+    }
+
     private Event findActiveEvent(Long id) {
         return eventRepository.findAdminEventById(id)
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
