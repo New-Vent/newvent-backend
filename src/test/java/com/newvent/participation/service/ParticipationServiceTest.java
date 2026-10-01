@@ -10,7 +10,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+import java.util.Map;
+
 import org.hibernate.exception.ConstraintViolationException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.BeanUtils;
@@ -22,10 +26,14 @@ import com.newvent.event.domain.EventStatus;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.service.PublicEventService;
+import com.newvent.participation.domain.EventGameConfig;
 import com.newvent.participation.domain.EventParticipation;
+import com.newvent.participation.domain.Game;
+import com.newvent.participation.dto.request.ParticipationCreateRequest;
 import com.newvent.participation.dto.response.ParticipationCreateResponse;
 import com.newvent.participation.exception.ParticipationErrorCode;
 import com.newvent.participation.exception.ParticipationException;
+import com.newvent.participation.repository.EventGameConfigRepository;
 import com.newvent.participation.repository.EventParticipationRepository;
 import com.newvent.user.domain.MembershipGrade;
 import com.newvent.user.domain.User;
@@ -35,11 +43,29 @@ class ParticipationServiceTest {
 
     private final PublicEventService publicEventService = mock(PublicEventService.class);
     private final UserService userService = mock(UserService.class);
-    private final EventParticipationRepository participationRepository =
-            mock(EventParticipationRepository.class);
+    private final EventParticipationRepository participationRepository = mock(EventParticipationRepository.class);
+    private final EventGameConfigRepository eventGameConfigRepository = mock(EventGameConfigRepository.class);
 
     private final ParticipationService service = new ParticipationService(
-            publicEventService, userService, participationRepository);
+            publicEventService,
+            userService,
+            participationRepository,
+            eventGameConfigRepository,
+            new ParticipationValidator()
+    );
+
+    @BeforeEach
+    void setUpBasicConfig() {
+        Game game = mock(Game.class);
+        when(game.getCode()).thenReturn("BASIC");
+        when(game.isActive()).thenReturn(true);
+
+        EventGameConfig config = mock(EventGameConfig.class);
+        when(config.getGame()).thenReturn(game);
+        when(config.getConfig()).thenReturn(Map.of());
+
+        when(eventGameConfigRepository.findAllByEventId(1L)).thenReturn(List.of(config));
+    }
 
     @Test
     void 참여하면_사용자와_이벤트를연결하고_빈JSON데이터로저장한다() {
@@ -55,7 +81,7 @@ class ParticipationServiceTest {
                     return participation;
                 });
 
-        ParticipationCreateResponse result = service.participate(1L, 7L);
+        ParticipationCreateResponse result = service.participate(1L, 7L, null);
 
         assertEquals(30L, result.participationId());
         assertEquals(1L, result.eventId());
@@ -79,7 +105,7 @@ class ParticipationServiceTest {
 
         ParticipationException exception = assertThrows(
                 ParticipationException.class,
-                () -> service.participate(1L, 7L));
+                () -> service.participate(1L, 7L, null));
 
         assertEquals(ParticipationErrorCode.INSUFFICIENT_GRADE, exception.getErrorCode());
         verify(participationRepository, never()).saveAndFlush(any(EventParticipation.class));
@@ -95,7 +121,7 @@ class ParticipationServiceTest {
 
         ParticipationException exception = assertThrows(
                 ParticipationException.class,
-                () -> service.participate(1L, 7L));
+                () -> service.participate(1L, 7L, null));
 
         assertEquals(ParticipationErrorCode.ALREADY_PARTICIPATED, exception.getErrorCode());
         verify(participationRepository, never()).saveAndFlush(any(EventParticipation.class));
@@ -118,7 +144,7 @@ class ParticipationServiceTest {
 
         ParticipationException exception = assertThrows(
                 ParticipationException.class,
-                () -> service.participate(1L, 7L));
+                () -> service.participate(1L, 7L, null));
 
         assertEquals(ParticipationErrorCode.ALREADY_PARTICIPATED, exception.getErrorCode());
     }
@@ -143,7 +169,7 @@ class ParticipationServiceTest {
 
         DataIntegrityViolationException thrown = assertThrows(
                 DataIntegrityViolationException.class,
-                () -> service.participate(1L, 7L));
+                () -> service.participate(1L, 7L, null));
 
         assertSame(databaseException, thrown);
     }
@@ -155,7 +181,7 @@ class ParticipationServiceTest {
 
         assertThrows(
                 EventNotAccessibleException.class,
-                () -> service.participate(1L, 7L));
+                () -> service.participate(1L, 7L, null));
 
         verify(participationRepository, never()).saveAndFlush(any(EventParticipation.class));
     }
@@ -165,7 +191,7 @@ class ParticipationServiceTest {
         when(publicEventService.getPublicEvent(1L))
                 .thenReturn(event(EventStatus.ENDED, MembershipGrade.NORMAL));
 
-        assertThrows(EventException.class, () -> service.participate(1L, 7L));
+        assertThrows(EventException.class, () -> service.participate(1L, 7L, null));
         verify(participationRepository, never()).saveAndFlush(any(EventParticipation.class));
     }
 
@@ -180,13 +206,66 @@ class ParticipationServiceTest {
 
         ParticipationException exception = assertThrows(
                 ParticipationException.class,
-                () -> service.participate(1L, 7L));
+                () -> service.participate(1L, 7L, null));
 
         assertEquals(
                 ParticipationErrorCode.ALREADY_PARTICIPATED,
                 exception.getErrorCode());
         verify(participationRepository, never())
                 .saveAndFlush(any(EventParticipation.class));
+    }
+
+    @Test
+    void 예측형_참여는_제출한_예측값을_참여기록에_저장한다() {
+        Event event = event(EventStatus.PUBLISHED, MembershipGrade.NORMAL);
+        User user = user(MembershipGrade.NORMAL);
+
+        when(publicEventService.getPublicEvent(1L)).thenReturn(event);
+        when(userService.getById(7L)).thenReturn(user);
+
+        Game game = mock(Game.class);
+        when(game.getCode()).thenReturn("SPORTS_PREDICTION");
+        when(game.isActive()).thenReturn(true);
+
+        EventGameConfig config = mock(EventGameConfig.class);
+        when(config.getGame()).thenReturn(game);
+        when(config.getConfig()).thenReturn(
+                Map.of(
+                        "predictionOptions",
+                        List.of("HOME_WIN", "DRAW", "AWAY_WIN")));
+
+        // setUpBasicConfig()의 기본형 설정을 이 테스트에서는 예측형으로 덮어쓴다.
+        when(eventGameConfigRepository.findAllByEventId(1L))
+                .thenReturn(List.of(config));
+
+        when(participationRepository.saveAndFlush(any(EventParticipation.class)))
+                .thenAnswer(invocation -> {
+                    EventParticipation participation = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(participation, "id", 30L);
+                    return participation;
+                });
+
+        ParticipationCreateResponse response = service.participate(
+                1L,
+                7L,
+                new ParticipationCreateRequest("HOME_WIN", null, null));
+
+        ArgumentCaptor<EventParticipation> captor =
+                ArgumentCaptor.forClass(EventParticipation.class);
+
+        verify(participationRepository).saveAndFlush(captor.capture());
+
+        EventParticipation saved = captor.getValue();
+
+        assertSame(event, saved.getEvent());
+        assertSame(user, saved.getUser());
+        assertEquals(
+                Map.of("prediction", "HOME_WIN"),
+                saved.getSubmittedData());
+        assertTrue(saved.getResultData().isEmpty());
+
+        assertEquals(30L, response.participationId());
+        assertEquals(1L, response.eventId());
     }
 
     private Event event(EventStatus status, MembershipGrade grade) {
