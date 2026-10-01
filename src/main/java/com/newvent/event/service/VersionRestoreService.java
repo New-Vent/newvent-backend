@@ -35,7 +35,6 @@ public class VersionRestoreService {
 
     /**
      * 그 버전의 HTML 로 <b>새 버전</b>을 만든다.
-
      */
     @Transactional
     public DirectEditResponse restore(Long eventId, Long versionId, Long adminId) {
@@ -50,11 +49,11 @@ public class VersionRestoreService {
             throw new AccessDeniedException("이벤트 소유 관리자만 버전을 되돌릴 수 있습니다.");
         }
 
-        // 2. 되돌릴 버전 — eventId 와 저장 지점 여부를 쿼리가 같이 본다.
+        // 2. 되돌릴 버전 — eventId 를 쿼리가 같이 본다.
         //    ★ 남의 이벤트 버전도 "없음" 으로 답한다. 403 으로 답하면 버전 id 를 훑어
         //      남의 이벤트가 몇 개인지 셀 수 있다.
         EventVersion source = eventVersionRepository
-                .findByIdAndEventIdAndCheckpointTrue(versionId, eventId)
+                .findByIdAndEventId(versionId, eventId)
                 .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
 
         // 3. 그 내용으로 새 버전. source_version_id 가 되돌린 원본을 가리킨다.

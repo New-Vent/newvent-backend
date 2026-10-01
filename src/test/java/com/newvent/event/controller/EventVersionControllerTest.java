@@ -24,6 +24,7 @@ import com.newvent.common.exception.handler.GlobalExceptionHandler;
 import com.newvent.event.dto.response.DirectEditResponse;
 import com.newvent.event.dto.response.EventVersionDetailResponse;
 import com.newvent.event.dto.response.EventVersionListResponse;
+import com.newvent.event.dto.response.EventVersionSummaryResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.service.DirectEditService;
@@ -245,12 +246,39 @@ class EventVersionControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void getVersions_returnsCheckpointFlagForEachVersion() throws Exception {
+        EventVersionListResponse response = EventVersionListResponse.builder()
+                .eventId(12L)
+                .title("테스트 이벤트")
+                .versions(List.of(
+                        EventVersionSummaryResponse.builder()
+                                .versionId(103L)
+                                .versionNo(3)
+                                .checkpoint(false)
+                                .build(),
+                        EventVersionSummaryResponse.builder()
+                                .versionId(102L)
+                                .versionNo(2)
+                                .checkpoint(true)
+                                .build()))
+                .build();
+
+        when(eventVersionService.getVersions(12L)).thenReturn(response);
+
+        mockMvc.perform(get("/api/admin/events/{eventId}/versions", 12L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.versions.length()").value(2))
+                .andExpect(jsonPath("$.data.versions[0].checkpoint").value(false))
+                .andExpect(jsonPath("$.data.versions[1].checkpoint").value(true));
+    }
+
     // ── 되돌리기 ─────────────────────────────────────────────────
 
     @Test
     void restore_whenAdmin_returnsNewVersion() throws Exception {
         when(versionRestoreService.restore(12L, 102L, 1L))
-                .thenReturn(new com.newvent.event.dto.response.DirectEditResponse(205L, 9));
+                .thenReturn(new DirectEditResponse(205L, 9));
 
         mockMvc.perform(post("/api/admin/events/{eventId}/versions/{versionId}/restore", 12L, 102L)
                         .principal(ADMIN))

@@ -31,7 +31,7 @@ import com.newvent.generation.service.VersionStore;
  * ★ 이 테스트가 지키는 계약 셋
  *     ① 되돌리기는 <b>새 버전</b>이다 — 기존 버전을 지우거나 version_no 를 되감지 않는다
  *     ② source_version_id 가 되돌린 원본을 가리킨다 — "언제 무엇으로 되돌렸나" 가 남는다
- *     ③ 남의 이벤트 버전·저장 지점이 아닌 버전은 <b>똑같이 "없음"</b> 이다
+ *     ③ 남의 이벤트 버전은 403 이 아니라 <b>"없음"</b> 이다
  *
  * ★ 지우지 않는다는 것을 어떻게 보나
  *   versionStore 는 목이라 "지웠다" 를 직접 볼 수 없다. 대신 <b>save 외의 쓰기가
@@ -74,10 +74,15 @@ class VersionRestoreServiceTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(EVENT_ID)).thenReturn(Optional.of(event));
     }
 
-    private void 저장지점_v2_가_있다() {
+    /**
+     * ★ 저장 지점(checkpoint) 여부를 보지 않는다.
+     *   버전 목록(getVersions)이 그 이벤트의 버전을 전부 주므로, 되돌리기만 저장 지점으로
+     *   조이면 <b>목록에 보이는데 누르면 404 가 나는 버전</b>이 생긴다.
+     */
+    private void v2_가_있다() {
         EventVersion v2 = mock(EventVersion.class);
         when(v2.getHtmlContent()).thenReturn(V2_HTML);
-        when(eventVersionRepository.findByIdAndEventIdAndCheckpointTrue(V2_ID, EVENT_ID))
+        when(eventVersionRepository.findByIdAndEventId(V2_ID, EVENT_ID))
                 .thenReturn(Optional.of(v2));
     }
 
@@ -87,7 +92,7 @@ class VersionRestoreServiceTest {
     @DisplayName("★ 그 버전의 HTML 로 새 버전을 만들고, source 는 되돌린 원본을 가리킨다")
     void 되돌리면_새_버전이_생긴다() {
         이벤트가_있다(ownedEvent());
-        저장지점_v2_가_있다();
+        v2_가_있다();
         when(versionStore.save(EVENT_ID, V2_HTML, V2_ID))
                 .thenReturn(new VersionStore.Saved(99L, 9));
 
@@ -103,7 +108,7 @@ class VersionRestoreServiceTest {
     @DisplayName("★ 기존 버전을 지우거나 되감지 않는다 — 쓰기는 save 한 번뿐")
     void 이력을_건드리지_않는다() {
         이벤트가_있다(ownedEvent());
-        저장지점_v2_가_있다();
+        v2_가_있다();
         when(versionStore.save(EVENT_ID, V2_HTML, V2_ID))
                 .thenReturn(new VersionStore.Saved(99L, 9));
 
@@ -123,11 +128,11 @@ class VersionRestoreServiceTest {
     void 연속으로_되돌린다() {
         Long v9Id = 99L;
         이벤트가_있다(ownedEvent());
-        저장지점_v2_가_있다();
+        v2_가_있다();
 
         EventVersion v9 = mock(EventVersion.class);
         when(v9.getHtmlContent()).thenReturn(V2_HTML);
-        when(eventVersionRepository.findByIdAndEventIdAndCheckpointTrue(v9Id, EVENT_ID))
+        when(eventVersionRepository.findByIdAndEventId(v9Id, EVENT_ID))
                 .thenReturn(Optional.of(v9));
 
         when(versionStore.save(eq(EVENT_ID), eq(V2_HTML), eq(V2_ID)))
@@ -145,10 +150,10 @@ class VersionRestoreServiceTest {
     // ── 거부 ─────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("저장 지점이 아닌 버전은 VERSION_NOT_FOUND — 이력에 보이는 것만 되돌린다")
-    void 저장지점이_아니면_거부한다() {
+    @DisplayName("그 이벤트의 버전이 아니면 VERSION_NOT_FOUND")
+    void 없는_버전은_거부한다() {
         이벤트가_있다(ownedEvent());
-        when(eventVersionRepository.findByIdAndEventIdAndCheckpointTrue(V2_ID, EVENT_ID))
+        when(eventVersionRepository.findByIdAndEventId(V2_ID, EVENT_ID))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.restore(EVENT_ID, V2_ID, ADMIN_ID))
@@ -164,7 +169,7 @@ class VersionRestoreServiceTest {
     void 남의_버전은_없음이다() {
         이벤트가_있다(ownedEvent());
         // ★ 쿼리에 eventId 가 걸려 있어 남의 버전은 애초에 안 나온다
-        when(eventVersionRepository.findByIdAndEventIdAndCheckpointTrue(999L, EVENT_ID))
+        when(eventVersionRepository.findByIdAndEventId(999L, EVENT_ID))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.restore(EVENT_ID, 999L, ADMIN_ID))
@@ -184,7 +189,7 @@ class VersionRestoreServiceTest {
         // ★ 소유자 검사가 버전 조회보다 먼저여야 한다.
         //   뒤에 두면 "그 이벤트에 그 버전이 있나" 를 남이 알아낼 수 있다.
         verify(eventVersionRepository, never())
-                .findByIdAndEventIdAndCheckpointTrue(any(), any());
+                .findByIdAndEventId(any(), any());
         verify(versionStore, never()).save(any(), any(), any());
     }
 

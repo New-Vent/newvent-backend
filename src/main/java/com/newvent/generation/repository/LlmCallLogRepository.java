@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -42,4 +44,19 @@ public interface LlmCallLogRepository extends JpaRepository<LlmCallLog, Long>{
 		long getInputTokens();
 		long getOutputTokens();
 	}
+
+	// 관리자 목록용. null 조건은 무시한다.
+	// JPQL이라 카운트 쿼리는 Spring Data 가 자동 생성한다.
+	@Query("""
+			select l from LlmCallLog l
+			 where (:eventId is null or l.event.id = :eventId)
+			   and (:callOk is null or l.callOk = :callOk)
+			   and (:from is null or l.createdAt >= :from)
+			   and (:to is null or l.createdAt <= :to)
+			""")
+	Page<LlmCallLog> search(@Param("eventId") Long eventId,
+			@Param("callOk") Boolean callOk,
+			@Param("from") Instant from,
+			@Param("to") Instant to,
+			Pageable pageable);
 }
