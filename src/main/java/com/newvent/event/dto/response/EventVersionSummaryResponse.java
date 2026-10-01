@@ -14,6 +14,7 @@ public record EventVersionSummaryResponse(
         Long versionId,
         Integer versionNo,
         OffsetDateTime createdAt,
+        boolean checkpoint,
         boolean published,
         Integer sourceVersionNo,
         String requestContent
@@ -29,6 +30,7 @@ public record EventVersionSummaryResponse(
                 .versionId(version.getId())
                 .versionNo(version.getVersionNo())
                 .createdAt(version.getCreatedAt())
+                .checkpoint(version.isCheckpoint())
                 .published(published)
                 .sourceVersionNo(version.getSourceVersion() == null
                         ? null : version.getSourceVersion().getVersionNo())
