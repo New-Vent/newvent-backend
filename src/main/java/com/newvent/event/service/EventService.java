@@ -17,6 +17,7 @@ import com.newvent.admin.repository.AdminRepository;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventTemplate;
+import com.newvent.event.domain.EventVersion;
 import com.newvent.event.dto.request.EventCreateRequest;
 import com.newvent.event.dto.request.EventUpdateRequest;
 import com.newvent.event.dto.response.EventDetailResponse;
@@ -26,6 +27,7 @@ import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.event.repository.EventTemplateRepository;
+import com.newvent.event.repository.EventVersionRepository;
 import com.newvent.generation.service.GenerationJobStore;
 
 @Service
@@ -35,6 +37,7 @@ public class EventService {
 
     private final EventRepository eventRepository;
     private final EventTemplateRepository eventTemplateRepository;
+    private final EventVersionRepository eventVersionRepository;
     private final AdminRepository adminRepository;
     private final GenerationJobStore generationJobStore;
     private final Clock clock;
@@ -42,11 +45,13 @@ public class EventService {
     public EventService(
             EventRepository eventRepository,
             EventTemplateRepository eventTemplateRepository,
+            EventVersionRepository eventVersionRepository,
             AdminRepository adminRepository,
             GenerationJobStore generationJobStore,
             Clock clock) {
         this.eventRepository = eventRepository;
         this.eventTemplateRepository = eventTemplateRepository;
+        this.eventVersionRepository = eventVersionRepository;
         this.adminRepository = adminRepository;
         this.generationJobStore = generationJobStore;
         this.clock = clock;
@@ -94,8 +99,7 @@ public class EventService {
     }
 
     // 게시 중인 이벤트는 휴지통으로 보낼 수 없다(먼저 게시를 종료해야 함).
-    // 생성 작업이 진행 중인 이벤트도 거부한다 — 안 그러면 휴지통으로 보낸 뒤에도
-    // 백그라운드 생성이 끝나면서 삭제된 이벤트에 새 버전이 저장될 수 있다.
+    // 생성 작업이 진행 중인 이벤트도 거부한다 — 안 그러면 휴지통으로 보낸 뒤에도 백그라운드 생성이 끝나면서 삭제된 이벤트에 새 버전이 저장될 수 있다.
     @Transactional
     public void delete(Long id) {
         Event event = eventRepository.findByIdAndDeletedAtIsNull(id)
@@ -117,12 +121,29 @@ public class EventService {
         return EventDetailResponse.from(event, closingSoon(event));
     }
 
-    /** 휴지통에서 영구 삭제. 되돌릴 수 없다 — event_versions 등 하위 데이터는 DB CASCADE 로 함께 지워진다. */
+    // 휴지통에서 영구 삭제. 되돌릴 수 없다 — event_versions 등 하위 데이터는 DB CASCADE 로 함께 지워진다
     @Transactional
     public void hardDelete(Long id) {
         Event event = eventRepository.findByIdAndDeletedAtIsNotNull(id)
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
         eventRepository.delete(event);
+    }
+
+    // 게시(DRAFT→PUBLISHED) 및 재게시(PUBLISHED 상태에서 다른 버전으로 교체)
+    // 선택한 버전이 체크포인트가 아니면 게시 시점에 자동으로 체크포인트 처리한다
+    @Transactional
+    public EventDetailResponse publish(Long id, Long versionId) {
+        Event event = eventRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        if (event.getStatus() == EventStatus.ENDED) {
+            throw new EventException(EventErrorCode.EVENT_ENDED_PUBLISH_FORBIDDEN);
+        }
+        EventVersion version = eventVersionRepository.findByIdAndEventId(versionId, id)
+                .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
+
+        version.markCheckpoint(OffsetDateTime.now(clock));
+        event.publish(version);
+        return EventDetailResponse.from(event, closingSoon(event));
     }
 
     @Transactional
@@ -171,6 +192,21 @@ public class EventService {
                 endAt,
                 request.grade() != null ? request.grade() : event.getGrade());
         // updatedAt 은 flush 시점에 Auditing 이 채우므로, 응답에 새 수정일을 담으려면 먼저 flush 한다.
+        eventRepository.flush();
+        return EventDetailResponse.from(event, closingSoon(event));
+    }
+
+    /** 상태 변경 API 는 종료(PUBLISHED → ENDED)만 한다. 게시는 게시 API 로 한다. */
+    @Transactional
+    public EventDetailResponse changeStatus(Long id, EventStatus target) {
+        Event event = findActiveEvent(id);
+        if (target != EventStatus.ENDED) {
+            throw new EventException(EventErrorCode.UNSUPPORTED_STATUS_CHANGE);
+        }
+        if (!event.published()) {
+            throw new EventException(EventErrorCode.EVENT_NOT_ENDABLE);
+        }
+        event.end();
         eventRepository.flush();
         return EventDetailResponse.from(event, closingSoon(event));
     }

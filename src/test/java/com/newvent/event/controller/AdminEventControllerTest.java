@@ -388,20 +388,127 @@ class AdminEventControllerTest {
     }
 
     @Test
-    @DisplayName("상태 변경 골격은 501 을 반환한다")
-    void 이벤트_상태변경_골격은_501이다() throws Exception {
-        mockMvc.perform(patch("/api/admin/events/1/status")
+    @DisplayName("종료 API 는 종료된 이벤트 상세를 ApiResponse 로 감싼다")
+    void 이벤트_종료에_성공한다() throws Exception {
+        EventDetailResponse ended = new EventDetailResponse(
+                3L, "가을 멤버십 더블 혜택", EventStatus.ENDED,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-09-30T23:59:59+09:00"),
+                OffsetDateTime.parse("2026-09-30T13:00:00+09:00"),
+                "member_appreciation", null, MembershipGrade.NORMAL,
+                "<h1>가을 멤버십 더블 혜택</h1>", false);
+        given(eventService.changeStatus(3L, EventStatus.ENDED)).willReturn(ended);
+
+        mockMvc.perform(patch("/api/admin/events/3/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "status": "ENDED" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(3))
+                .andExpect(jsonPath("$.data.status").value("ENDED"));
+    }
+
+    @Test
+    @DisplayName("상태 없이 종료를 요청하면 400 과 COMMON400-0 을 반환한다")
+    void 상태_누락은_400을_반환한다() throws Exception {
+        mockMvc.perform(patch("/api/admin/events/3/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400-0"));
+    }
+
+    @Test
+    @DisplayName("게시 중이 아닌 이벤트 종료는 409 와 EVENT409-6 을 반환한다")
+    void 게시중이_아닌_이벤트_종료는_409를_반환한다() throws Exception {
+        given(eventService.changeStatus(2L, EventStatus.ENDED))
+                .willThrow(new EventException(EventErrorCode.EVENT_NOT_ENDABLE));
+
+        mockMvc.perform(patch("/api/admin/events/2/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "status": "ENDED" }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-6"));
+    }
+
+    @Test
+    @DisplayName("종료가 아닌 상태를 요청하면 400 과 EVENT400-2 를 반환한다")
+    void 종료가_아닌_상태_요청은_400을_반환한다() throws Exception {
+        given(eventService.changeStatus(3L, EventStatus.PUBLISHED))
+                .willThrow(new EventException(EventErrorCode.UNSUPPORTED_STATUS_CHANGE));
+
+        mockMvc.perform(patch("/api/admin/events/3/status")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "status": "PUBLISHED" }
                                 """))
-                .andExpect(status().isNotImplemented());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("EVENT400-2"));
     }
 
     @Test
-    @DisplayName("게시 골격은 501 을 반환한다")
-    void 이벤트_게시_골격은_501이다() throws Exception {
-        mockMvc.perform(post("/api/admin/events/1/publish"))
-                .andExpect(status().isNotImplemented());
+    @DisplayName("게시 API 는 게시된 이벤트 상세를 반환한다")
+    void 이벤트_게시에_성공한다() throws Exception {
+        EventDetailResponse published = new EventDetailResponse(
+                1L, "테스트 이벤트", EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
+                OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
+                null, null, MembershipGrade.NORMAL,
+                "<h1>게시된 버전</h1>", false);
+        given(eventService.publish(1L, 10L)).willReturn(published);
+
+        mockMvc.perform(post("/api/admin/events/1/publish")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "versionId": 10 }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.status").value("PUBLISHED"));
+    }
+
+    @Test
+    @DisplayName("게시할 버전을 지정하지 않으면 400 과 COMMON400-0 을 반환한다")
+    void 게시_버전_누락은_400을_반환한다() throws Exception {
+        mockMvc.perform(post("/api/admin/events/1/publish")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400-0"));
+    }
+
+    @Test
+    @DisplayName("종료된 이벤트 게시는 409 와 EVENT409-5 를 반환한다")
+    void 종료된_이벤트_게시는_409를_반환한다() throws Exception {
+        given(eventService.publish(1L, 10L))
+                .willThrow(new EventException(EventErrorCode.EVENT_ENDED_PUBLISH_FORBIDDEN));
+
+        mockMvc.perform(post("/api/admin/events/1/publish")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "versionId": 10 }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-5"));
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 버전으로 게시하면 404 와 EVENT404-3 을 반환한다")
+    void 없는_버전으로_게시하면_404를_반환한다() throws Exception {
+        given(eventService.publish(1L, 999L))
+                .willThrow(new EventException(EventErrorCode.VERSION_NOT_FOUND));
+
+        mockMvc.perform(post("/api/admin/events/1/publish")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "versionId": 999 }
+                                """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("EVENT404-3"));
     }
 }

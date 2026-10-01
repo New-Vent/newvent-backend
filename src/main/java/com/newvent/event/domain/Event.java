@@ -84,6 +84,12 @@ public class Event extends BaseTimeEntity {
         this.deletedAt = null;
     }
 
+    // 게시(DRAFT→PUBLISHED) 및 재게시(다른 버전으로 교체)
+    public void publish(EventVersion version) {
+        this.status = EventStatus.PUBLISHED;
+        this.publishedVersion = version;
+    }
+
     public String templateCode() {
         return template == null ? null : template.getCode();
     }
@@ -140,5 +146,10 @@ public class Event extends BaseTimeEntity {
 
     public boolean published() {
         return status == EventStatus.PUBLISHED;
+    }
+
+    /** 게시 중인지는 서비스가 확인한 뒤 호출한다. 게시 버전(publishedVersion)은 그대로 둔다. */
+    public void end() {
+        this.status = EventStatus.ENDED;
     }
 }

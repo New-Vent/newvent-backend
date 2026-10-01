@@ -17,11 +17,16 @@ public interface RefreshTokenService {
 
     String issue(AuthUser owner);
 
-    /**토큰을 1회 사용 처리하고 돌려준다. 새 토큰은 발급하지 않는다. */
-    AuthUser consume(String raw);
+    /**
+     * 토큰을 1회 사용 처리하고 주인을 돌려준다. 새 토큰은 발급하지 않는다.
+     *
+     * @param admin 관리자 토큰만 받을지(true) 사용자 토큰만 받을지(false).
+     *              다른 대상의 토큰이면 무효로 보고 **소비하지 않는다** — 그 토큰의 주인은 계속 쓸 수 있다.
+     */
+    AuthUser consume(String raw, boolean admin);
 
-    /** 로그아웃. 없는 토큰이어도 조용히 넘어간다. */
-    void revoke(String raw);
+    /** 로그아웃. 없는 토큰이거나 다른 대상의 토큰이면 조용히 넘어간다. */
+    void revoke(String raw, boolean admin);
 
     /**
      * @return 폐기한 토큰 수

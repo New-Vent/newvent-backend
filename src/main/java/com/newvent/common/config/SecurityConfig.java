@@ -28,12 +28,13 @@ import com.newvent.auth.config.AuthProps;
 import com.newvent.auth.filter.CsrfOriginFilter;
 import com.newvent.auth.filter.JwtAuthenticationFilter;
 import com.newvent.auth.jwt.JwtProvider;
+import com.newvent.auth.web.AccountType;
 
 /**
  * 인가 규칙.
  *
- *   POST /auth/login, /auth/admin/login,
- *        /auth/refresh, /auth/logout          public
+ *   POST /api/auth/{login,refresh,logout},
+ *        /api/admin/auth/{login,refresh,logout} public (AccountType.publicPaths())
  *   POST /api/public/users/signup             public
  *   GET  /api/public/events                   public (목록 조회)
  *   GET  /api/public/events/{id}              public
@@ -73,8 +74,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
-                        .requestMatchers(HttpMethod.POST,
-                                "/auth/login", "/auth/admin/login", "/auth/refresh", "/auth/logout").permitAll()
+                        // ★ /api/admin/** · /api/** 규칙보다 앞에 있어야 한다. 뒤에 두면 로그인하려면 로그인이 필요해진다
+                        .requestMatchers(HttpMethod.POST, AccountType.publicPaths()).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/public/users/signup").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/public/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/public/events/*").permitAll()

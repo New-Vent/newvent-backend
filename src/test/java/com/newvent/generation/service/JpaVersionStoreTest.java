@@ -1,10 +1,6 @@
 package com.newvent.generation.service;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 import jakarta.persistence.EntityManager;
 
@@ -100,9 +96,10 @@ class JpaVersionStoreTest {
         tem.flush();
         tem.clear();
 
-        assertTrue(versions.findByEventIdAndCheckpointTrueOrderByVersionNoDesc(eventId).isEmpty(),
-                "자동 저장 버전이 저장 지점 목록에 나옵니다.");
-        assertNotNull(versions.findById(v1.versionId()).orElseThrow());
+        EventVersion version = versions.findById(v1.versionId()).orElseThrow();
+
+        assertFalse(version.isCheckpoint(), "새로 자동 저장된 버전은 저장 지점이 아니어야 합니다.");
+        assertNull(version.getCheckpointedAt(), "저장 지점 지정 시각은 없어야 합니다.");
     }
 
     // ── sourceVersion ────────────────────────────────────────────

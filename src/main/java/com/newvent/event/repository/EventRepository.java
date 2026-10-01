@@ -3,9 +3,12 @@ package com.newvent.event.repository;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
+import jakarta.persistence.LockModeType;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +19,14 @@ import com.newvent.event.domain.EventStatus;
 public interface EventRepository extends JpaRepository<Event, Long> {
 
     Optional<Event> findByIdAndDeletedAtIsNull(Long eventId);
+
+    /**
+     * 버전을 덧붙이기 전에 이벤트 행을 잠근다 — {@code SELECT … FOR UPDATE}.
+     *
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT e.id FROM Event e WHERE e.id = :eventId")
+    Optional<Long> lockForVersionAppend(@Param("eventId") Long eventId);
 
     Optional<Event> findByIdAndDeletedAtIsNotNull(Long eventId);
 
@@ -32,6 +43,17 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     // 관리자 목록 조회 — 이름(부분 일치)·상태·기간(구간 겹침) 조건은 전달되지 않으면(null) 제외한다.
     // namePattern은 Service에서 이미 "%값%" 형태로 소문자 변환까지 마친 LIKE 패턴을 그대로 받는다.
     // 정렬은 기존 인메모리 저장소와 동일하게 수정일 내림차순(동률이면 id 내림차순)으로 맞춘다.
+    default Page<Event> findAdminEvents(String namePattern, EventStatus status,
+                                        OffsetDateTime periodFrom, OffsetDateTime periodTo,
+                                        Pageable pageable) {
+        return searchAdminEvents(namePattern, status,
+                periodFrom == null, periodFrom, periodTo == null, periodTo, pageable);
+    }
+
+    // ★ 기간은 "있나" 를 따로 받는다 — (:periodFrom IS NULL OR …) 로 쓰면 PostgreSQL 이
+    //   $n IS NULL 의 타입을 못 정해 값이 있든 없든 항상 실패했다 (could not determine data type of parameter).
+    //   기간 값은 컬럼과 비교하는 자리에만 두어 타입을 컬럼에서 정하게 한다.
+    //   조건이 없으면 TRUE OR (…) 라 날짜가 비어 있는 이벤트도 그대로 나온다 — 예전 뜻과 같다.
     @Query(
             value = """
             SELECT e FROM Event e
@@ -39,8 +61,8 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             WHERE e.deletedAt IS NULL
               AND (:namePattern IS NULL OR LOWER(e.title) LIKE :namePattern)
               AND (:status IS NULL OR e.status = :status)
-              AND (:periodFrom IS NULL OR e.endDate >= :periodFrom)
-              AND (:periodTo IS NULL OR e.startDate <= :periodTo)
+              AND (:noFrom = true OR e.endDate >= :periodFrom)
+              AND (:noTo = true OR e.startDate <= :periodTo)
             ORDER BY e.updatedAt DESC, e.id DESC
             """,
             countQuery = """
@@ -48,13 +70,15 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             WHERE e.deletedAt IS NULL
               AND (:namePattern IS NULL OR LOWER(e.title) LIKE :namePattern)
               AND (:status IS NULL OR e.status = :status)
-              AND (:periodFrom IS NULL OR e.endDate >= :periodFrom)
-              AND (:periodTo IS NULL OR e.startDate <= :periodTo)
+              AND (:noFrom = true OR e.endDate >= :periodFrom)
+              AND (:noTo = true OR e.startDate <= :periodTo)
             """)
-    Page<Event> findAdminEvents(
+    Page<Event> searchAdminEvents(
             @Param("namePattern") String namePattern,
             @Param("status") EventStatus status,
+            @Param("noFrom") boolean noFrom,
             @Param("periodFrom") OffsetDateTime periodFrom,
+            @Param("noTo") boolean noTo,
             @Param("periodTo") OffsetDateTime periodTo,
             Pageable pageable);
 

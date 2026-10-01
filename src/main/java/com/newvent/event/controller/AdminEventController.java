@@ -24,6 +24,7 @@ import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.request.EventCreateRequest;
+import com.newvent.event.dto.request.EventPublishRequest;
 import com.newvent.event.dto.request.EventStatusChangeRequest;
 import com.newvent.event.dto.request.EventUpdateRequest;
 import com.newvent.event.dto.response.EventDetailResponse;
@@ -102,17 +103,19 @@ public class AdminEventController {
         return ResponseEntity.ok(ApiResponse.successNoData());
     }
 
-    /** 골격 — DRAFT → PUBLISHED → ENDED. 본구현 전. */
+    /** 종료(PUBLISHED → ENDED)만 받는다. 게시는 POST /{id}/publish. */
     @PatchMapping("/{id}/status")
-    public ResponseEntity<ApiResponse<EventDetailResponse>> changeStatus(
+    public ApiResponse<EventDetailResponse> changeStatus(
             @PathVariable Long id,
             @Valid @RequestBody EventStatusChangeRequest request) {
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        return ApiResponse.success(eventService.changeStatus(id, request.status()));
     }
 
-    /** 골격 — DRAFT 게시(PUBLISHED). 본구현 전. */
+    // 게시(DRAFT→PUBLISHED) 또는 재게시(다른 버전으로 교체)
     @PostMapping("/{id}/publish")
-    public ResponseEntity<ApiResponse<EventDetailResponse>> publish(@PathVariable Long id) {
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+    public ApiResponse<EventDetailResponse> publish(
+            @PathVariable Long id,
+            @Valid @RequestBody EventPublishRequest request) {
+        return ApiResponse.success(eventService.publish(id, request.versionId()));
     }
 }
