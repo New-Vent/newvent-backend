@@ -54,11 +54,35 @@ public enum Block {
             "<h2> 소제목 하나와 <p> 문단 1~2개로 쓴다",
             "p", null, 0, null),
 
+    // ★ 숫자만 모은 블록이라 지어내기 위험이 제일 크다. 열쇠말이 있을 때만 열고,
+    //   desc 로 "요청문 숫자만" 을 박는다. 수정에서는 ValueCheck 가 새 숫자를 잡는다.
+    STATS("stats", false, false, Source.LLM,
+            "숫자로 보는 혜택 — 요청문에 있는 숫자만 크게 보여준다. 숫자를 지어내지 마라",
+            "<h2> 소제목과 <ul> 안에 <li><strong>숫자</strong> 설명</li> 을 2~4개",
+            "ul li", "ul", 2,
+            "숫자로|한눈에|수치로"),
+
     BENEFITS("benefits", true, true, Source.MIXED,
             "혜택 — 항목은 폼 값, 문장만 다듬는다",
             "<ul> 안에 <li> 로 항목을 나열한다. 2개 이상",
             // 백지: ul li · 템플릿: .benefit-card (계약 EVENT_STRUCTURE_CONTRACT §3)
             "ul li, .benefit-card", "ul, .benefits-list", 2, null),
+
+    // ★ 경품은 실제로 지급해야 하는 약속이다 — benefits 와 같이 항목은 폼 값(MIXED + minItems).
+    //   그래서 itemsAreFormValues() 가 참이 되어 "경품 하나 더" 같은 ADD 는 관문이 거절한다.
+    //   "응모" 는 열쇠말로 쓰지 않는다 — "응모를 완료합니다" 처럼 거의 모든 이벤트 문장에 나온다.
+    PRIZE("prize", false, false, Source.MIXED,
+            "경품 — 등수와 경품은 요청문에 있는 것만 쓴다. 경품을 지어내지 마라",
+            "<h2> 소제목과 <ul> 안에 <li> 로 등수 · 경품을 나열한다",
+            "ul li", "ul", 1,
+            "경품|추첨|[0-9]등|등수"),
+
+    // ★ 쿠폰 코드는 쓰지 않는다 — 코드는 서버가 발급해야 하는 값이다(슬롯이 아직 없다).
+    COUPON("coupon", false, false, Source.LLM,
+            "쿠폰 안내 — 쿠폰 이름 · 할인 · 사용 조건은 요청문에 있는 것만. 쿠폰 코드는 쓰지 마라",
+            "<h2> 소제목, <p> 로 쿠폰 이름과 할인, <ul> 안에 <li> 로 사용 조건",
+            "p", null, 0,
+            "쿠폰"),
 
     // ★ 표는 수치가 몰리는 자리다. "지어내지 마라" 를 역할 설명에 박아 둔다 —
     //   생성 프롬프트와 수정 프롬프트 둘 다 desc 를 읽는다. 수정에서는 ValueCheck 가 한 겹 더 막는다.
@@ -86,6 +110,15 @@ public enum Block {
             "참여 방법 2~4단계",
             "<ol> 안에 <li> 로 순서대로 나열한다",
             "ol li, .step-card", "ol, .steps-list", 2, null),
+
+    // ★ 날짜를 다루는 블록이다. 이벤트 기간은 서버가 슬롯으로 채우지만, 발표일 · 지급일은
+    //   요청문에만 있다. 열쇠말이 있을 때만 열고 desc 로 "날짜를 지어내지 마라" 를 박는다.
+    //   "발표" 단독은 쓰지 않는다 — "당첨자 발표" 는 일정이 아니라 문장 속 말인 경우가 많다.
+    SCHEDULE("schedule", false, false, Source.LLM,
+            "일정 — 응모 · 발표 · 지급 날짜는 요청문에 있는 것만 쓴다. 날짜를 지어내지 마라",
+            "<h2> 소제목과 <ol> 안에 <li><strong>단계</strong> 날짜</li> 를 순서대로",
+            "ol li", "ol", 2,
+            "일정|발표일|지급일|마감일|발표 날짜|지급 날짜"),
 
     // ★ 모양이 두 벌이다 — 목록형 <dl> 과 펼침형 <details>.
     //   펼침(아코디언)은 class 만으로 못 만든다. 닫힌 <details> 의 내용은 CSS 로 꺼낼 수 없어서
@@ -169,6 +202,17 @@ public enum Block {
      */
     public boolean allowedFor(String requestText) {
         return trigger == null || requestText == null || trigger.matcher(requestText).find();
+    }
+
+    /**
+     * 요청문이 이 블록을 직접 요청했는가 — 열쇠말이 있고, 요청문에서 걸린다.
+     *
+     * ★ allowedFor 와 다르다. allowedFor 는 "만들어도 된다"(열쇠말 없는 블록은 늘 참),
+     *   이건 "만들어야 한다" 다. 요청문에 "숫자로 한눈에 보여 주세요" 가 있었는데 모델이
+     *   stats 를 안 만들었다(Bedrock 실측) — 선택 블록 안내가 "만들 수 있다" 로만 읽혀서다.
+     */
+    public boolean requestedBy(String requestText) {
+        return trigger != null && requestText != null && trigger.matcher(requestText).find();
     }
 
     /** 요청문 기준으로 만들어도 되는 모델 블록 */

@@ -153,7 +153,8 @@ class InlineAndTagsTest {
             assertTrue(gen.contains(i.cssClass()), i.cssClass());
             assertTrue(edit.contains(i.cssClass()), "템플릿 블록 수정에도 문구 꾸밈은 안내해야 합니다: " + i.cssClass());
         }
-        assertTrue(gen.contains("<details><summary>질문</summary><p>답</p></details>"));
+        // 생성 프롬프트는 변형을 표본으로만 싣는다 — 아코디언 마크업 안내는 FAQ 수정 프롬프트에 늘 있다
+        assertTrue(PromptBuilder.edit(Block.FAQ).contains("<details><summary>질문</summary><p>답</p></details>"));
         assertTrue(gen.contains("data-block=\"compare\""));
     }
 

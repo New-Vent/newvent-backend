@@ -41,7 +41,16 @@ public interface HtmlPolicy {
      * @param title       이벤트명. 요청문과 함께 "원래 있던 대괄호" 의 출처다 — [단독] 같은 것
      */
     static HtmlPolicy generation(String requestText, String title) {
-        final String source = (title == null ? "" : title) + "\n" + (requestText == null ? "" : requestText);
+        return generation(requestText, title, null);
+    }
+
+    /**
+     * @param period 이벤트 기간 표기 ("2026.12.01 ~ 12.31"). 연도 검사가 허용하는 연도의 출처다 —
+     *               요청문에 연도가 없어도 이벤트 기간의 연도는 쓸 수 있다
+     */
+    static HtmlPolicy generation(String requestText, String title, String period) {
+        final String source = (title == null ? "" : title) + "\n" + (requestText == null ? "" : requestText)
+                + "\n" + (period == null ? "" : period);
         final boolean known = requestText != null || title != null;
         return new HtmlPolicy() {
             @Override

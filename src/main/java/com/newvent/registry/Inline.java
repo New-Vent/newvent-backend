@@ -33,9 +33,16 @@ public enum Inline {
     BADGE_GREEN("t-badge-green", Kind.COLOR, "초록 배지 — 혜택 · 무료"),
     BADGE_TEAL("t-badge-teal", Kind.COLOR, "청록 배지 — 신규"),
     BADGE_OUTLINE("t-badge-outline", Kind.COLOR, "테두리만 있는 배지"),
+    BADGE_BLUE("t-badge-blue", Kind.COLOR, "파란 배지 — 안내 · 정보"),
+    BADGE_PURPLE("t-badge-purple", Kind.COLOR, "보라 배지 — 프리미엄 · VIP"),
+    BADGE_HOT("t-badge-hot", Kind.COLOR, "주황→빨강 그라데이션 배지 — HOT · 인기"),
 
     HIGHLIGHT("t-highlight", Kind.TEXT, "형광펜 밑줄 — 핵심 단어"),
-    ACCENT("t-accent", Kind.TEXT, "브랜드색 굵은 글씨 — 숫자 · 혜택명");
+    ACCENT("t-accent", Kind.TEXT, "브랜드색 굵은 글씨 — 숫자 · 혜택명"),
+    // ★ 원래 가격 · 할인 가격은 요청문에 있는 값만 — 수정에서는 ValueCheck 가 새 숫자를 잡는다
+    STRIKE("t-strike", Kind.TEXT, "취소선 — 할인 전 원래 가격 (요청문에 있는 값만)"),
+    BIG("t-big", Kind.TEXT, "크게 키운 숫자 — 3GB · 30% 같은 핵심 수치"),
+    UNDERLINE("t-underline", Kind.TEXT, "물결 밑줄 — 조건 · 마감 강조");
 
     /** 배지 바탕(BASE)은 색(COLOR)과 함께 쓴다. TEXT 는 따로 쓴다 */
     public enum Kind { BASE, COLOR, TEXT }
