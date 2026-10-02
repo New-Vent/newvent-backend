@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.newvent.event.domain.Event;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.generation.domain.FailureType;
+import com.newvent.generation.domain.LlmCallLog;
 import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmClient;
 import com.newvent.registry.BlockValidator.Failure;
@@ -33,9 +34,16 @@ public class LlmCallRecorder {
 
     /** 재시도 묶음 전체 — 검증 통과·실패 행을 한 번에 */
     public void recordAttempts(LlmCallContext ctx, RetryService.Result result) {
+        recordAttempts(ctx, result, null); 
+    }
+
+    /**
+     * 재시도 묶음 전체 + RAG 사용 표시. chunkIds 가 null·blank 면 표시 없이 저장만 한다.
+     */
+    public void recordAttempts(LlmCallContext ctx, RetryService.Result result, String chunkIds) {
         if (!ctx.recordable() || result.traces().isEmpty()) return;
         try {
-            tx.attempts(ctx, result);
+            tx.attempts(ctx, result, chunkIds);
         } catch (RuntimeException e) {
             warn(ctx, e);
         }
@@ -72,6 +80,7 @@ public class LlmCallRecorder {
     public static LlmCallRecorder none() {
         return new LlmCallRecorder(null) {
             @Override public void recordAttempts(LlmCallContext c, RetryService.Result r) { }
+            @Override public void recordAttempts(LlmCallContext c, RetryService.Result r, String chunkIds) { }
             @Override public void recordCallFailure(LlmCallContext c, FailureType t) { }
             @Override public void recordSingle(LlmCallContext c, LlmClient.Response r, List<Failure> f) { }
         };
@@ -102,8 +111,15 @@ public class LlmCallRecorder {
 
         @Transactional(propagation = Propagation.REQUIRES_NEW)
         public void attempts(LlmCallContext ctx, RetryService.Result result) {
-            // version 은 항상 null — VersionStore 가 EventVersion 을 안 돌려준다 (아직 메모리다)
-            logs.record(result, event(ctx), null, ctx.requestId(), llm.modelName(), llm.providerName());
+            attempts(ctx, result, null);   // ★★★ 기존 본문 → 위임 1줄로 교체
+        }
+
+        @Transactional(propagation = Propagation.REQUIRES_NEW)
+        public void attempts(LlmCallContext ctx, RetryService.Result result, String chunkIds) {
+            List<LlmCallLog> rows = logs.record(result, event(ctx), null, ctx.requestId(), llm.modelName(), llm.providerName());
+            if (chunkIds != null && !chunkIds.isBlank()) {
+                rows.forEach(r -> r.markRagUsed(chunkIds));
+            }
         }
 
         @Transactional(propagation = Propagation.REQUIRES_NEW)
