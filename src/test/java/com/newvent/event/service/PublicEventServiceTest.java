@@ -215,6 +215,51 @@ class PublicEventServiceTest {
         assertTrue(html.contains("기간 미정"), "실제: " + html);
     }
 
+    // ── 목록 썸네일 (hero 만 잘라내기) ───────────────────────────
+
+    @Test
+    @DisplayName("썸네일은 hero 블록만 담고, 루트 래퍼(테마 클래스)는 껍데기로 유지하며 기간 슬롯이 채워진다")
+    void 썸네일_hero만_루트유지() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        setPublishedHtml(event, "<div class=\"ev-container event-page theme-sale\">"
+                + "<section data-block=\"hero\"><h1>제목</h1><p data-slot=\"period\">기간</p></section>"
+                + "<section data-block=\"benefits\"><h2>혜택</h2></section>"
+                + "</div>");
+
+        String thumb = publicEventService.thumbnailHtmlOf(event);
+
+        assertTrue(thumb.contains("theme-sale"), "실제: " + thumb);
+        assertTrue(thumb.contains("제목"), "실제: " + thumb);
+        assertTrue(thumb.contains("2026.10.01 ~ 10.31"), "실제: " + thumb);
+        assertFalse(thumb.contains("benefits"), "실제: " + thumb);
+    }
+
+    @Test
+    @DisplayName("루트 래퍼가 없는 조각이면 hero 만 반환")
+    void 썸네일_루트없음() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED, null, null);
+        setPublishedHtml(event, "<section data-block=\"hero\"><h1>제목</h1></section>"
+                + "<section data-block=\"cta\"><button>참여</button></section>");
+
+        String thumb = publicEventService.thumbnailHtmlOf(event);
+
+        assertTrue(thumb.contains("제목"));
+        assertFalse(thumb.contains("참여"));
+    }
+
+    @Test
+    @DisplayName("게시 버전이 없거나 hero 가 없으면 썸네일은 null")
+    void 썸네일_없음() {
+        Event noVersion = newEvent(1L, EventStatus.PUBLISHED, null, null);
+        assertNull(publicEventService.thumbnailHtmlOf(noVersion));
+
+        Event noHero = newEvent(2L, EventStatus.PUBLISHED, null, null);
+        setPublishedHtml(noHero, "<section data-block=\"cta\"><button>참여</button></section>");
+        assertNull(publicEventService.thumbnailHtmlOf(noHero));
+    }
+
     private void setPublishedHtml(Event event, String html) {
         EventVersion version = BeanUtils.instantiateClass(EventVersion.class);
         ReflectionTestUtils.setField(version, "htmlContent", html);

@@ -100,6 +100,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             value = """
             SELECT e FROM Event e
             LEFT JOIN FETCH e.template t
+            LEFT JOIN FETCH e.publishedVersion
             WHERE e.deletedAt IS NULL
               AND e.status = com.newvent.event.domain.EventStatus.PUBLISHED
               AND (:templateCode IS NULL OR t.code = :templateCode)

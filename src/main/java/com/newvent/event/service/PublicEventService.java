@@ -19,6 +19,7 @@ import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.exception.EventNotFoundException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.generation.service.PeriodText;
+import com.newvent.registry.PageShell;
 import com.newvent.registry.Slots;
 
 @Service
@@ -56,23 +57,7 @@ public class PublicEventService {
         return event.getEndDate() == null || !now.isAfter(event.getEndDate());
     }
 
-    /**
-     * 사용자에게 내려보낼 게시 HTML. <b>슬롯을 여기서 채운다.</b>
-     *
-     * ★ 저장된 HTML 은 슬롯이 빈 상태다 (Slots.clear 를 거쳐 저장된다).
-     *   저장할 때 채우면 그 날짜가 굳어서, 이벤트에서 기간만 고쳐도 화면이 안 바뀐다.
-     *   그래서 채우는 건 보여줄 때다 — 관리자 미리보기는 GenerationService.render 가,
-     *   공개 조회는 여기가 한다.
-     *
-     * ★ latest 가 아니라 <b>게시 버전</b>을 본다
-     *   GenerationService.render 는 versions.latest 를 보는 관리자 미리보기용이다.
-     *   공개 페이지가 그걸 쓰면 게시하지 않은 초안이 사용자에게 보인다.
-     *   여기서 보는 건 events.published_version_id 에 고정된 버전이다.
-     *
-     * ★ 참여 링크(CTA_LINK)는 아직 null 이다
-     *   담을 칸이 없다(GenerateCommand.ctaUrl 주석 참고). 관리자 미리보기와 같은 상태다.
-     *   Slots.fill 이 null 값을 건너뛰므로 버튼은 링크 없이 그대로 남는다.
-     */
+    //사용자에게 내려보낼 게시 HTML
     public String publishedHtmlOf(Event event) {
         EventVersion published = event.getPublishedVersion();
         if (published == null) {
@@ -82,6 +67,12 @@ public class PublicEventService {
                 published.getHtmlContent(),
                 PeriodText.of(event.getStartDate(), event.getEndDate()),
                 null);
+    }
+
+     // 목록 썸네일용 HTML. 슬롯은 publishedHtmlOf 와 같은 규칙으로 채운 뒤 자른다(기간이 hero 안에 있다)
+    public String thumbnailHtmlOf(Event event) {
+        String html = publishedHtmlOf(event);
+        return html == null ? null : PageShell.heroOnly(html);
     }
 
     // 마감임박은 이미 시작한(진행중) 이벤트에만 표시한다 — 시작 전 이벤트가 종료일만 가까워서
@@ -108,7 +99,7 @@ public class PublicEventService {
                 category, keywordPattern, progressName, now, PageRequest.of(page, size));
 
         List<PublicEventSummaryResponse> content = result.getContent().stream()
-                .map(event -> PublicEventSummaryResponse.from(event, isClosingSoon(event, now)))
+                .map(event -> PublicEventSummaryResponse.from(event, isClosingSoon(event, now), thumbnailHtmlOf(event)))
                 .toList();
         return PageResponse.of(content, page, size, result.getTotalElements());
     }
