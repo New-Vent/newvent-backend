@@ -117,7 +117,7 @@ class InlineAndTagsTest {
     @Test
     @DisplayName("목록형 FAQ 를 아코디언으로 바꾸는 수정은 항목이 늘지 않았으면 통과한다")
     void 목록형에서_아코디언으로_바꾸기() {
-        String before = "<section data-block=\"faq\" class=\"v-faq-plain\"><dl>"
+        String before = "<section data-block=\"faq\"><dl>"
                 + "<dt>q1</dt><dd>a1</dd><dt>q2</dt><dd>a2</dd></dl></section>";
         String after = BlockValidator.sanitizeEdited("<section data-block=\"faq\" class=\"v-faq-accordion\">"
                 + "<div class=\"ev-accordion\"><details><summary>q1</summary><p>a1</p></details>"

@@ -33,9 +33,19 @@ public enum Inline {
     BADGE_GREEN("t-badge-green", Kind.COLOR, "초록 배지 — 혜택 · 무료"),
     BADGE_TEAL("t-badge-teal", Kind.COLOR, "청록 배지 — 신규"),
     BADGE_OUTLINE("t-badge-outline", Kind.COLOR, "테두리만 있는 배지"),
+    // ★ 아래 3색은 event.css 70-components/02-inline.css 에 먼저 들어왔는데
+    //   여기 이름이 없어 쓰이지 못하고 있었다. BADGE 와 같이 붙인다(Kind.COLOR).
+    BADGE_BLUE("t-badge-blue", Kind.COLOR, "파란 배지 — 안내 · 정보"),
+    BADGE_PURPLE("t-badge-purple", Kind.COLOR, "보라 배지 — 프리미엄 · 특별"),
+    BADGE_HOT("t-badge-hot", Kind.COLOR, "주황→빨강 그라데이션 배지 — 인기 · 급상승"),
 
     HIGHLIGHT("t-highlight", Kind.TEXT, "형광펜 밑줄 — 핵심 단어"),
-    ACCENT("t-accent", Kind.TEXT, "브랜드색 굵은 글씨 — 숫자 · 혜택명");
+    ACCENT("t-accent", Kind.TEXT, "브랜드색 굵은 글씨 — 숫자 · 혜택명"),
+    // ★ 같은 이유로 늦게 들어온 셋. 전부 TEXT 라 배지와 섞어 쓰지 않는다.
+    //   t-big 은 1.6em 이라 문장에 쓰면 줄 간격이 무너진다 — 설명에 못 박는다.
+    BIG("t-big", Kind.TEXT, "아주 크고 굵은 숫자 — 숫자나 단어 하나에만. 문장에 쓰지 마라"),
+    STRIKE("t-strike", Kind.TEXT, "취소선 — 할인 전 원래 가격"),
+    UNDERLINE("t-underline", Kind.TEXT, "물결 밑줄 — 가볍게 짚는 말");
 
     /** 배지 바탕(BASE)은 색(COLOR)과 함께 쓴다. TEXT 는 따로 쓴다 */
     public enum Kind { BASE, COLOR, TEXT }

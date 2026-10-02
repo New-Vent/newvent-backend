@@ -75,7 +75,8 @@ class BlankCardMarkupTest {
               <p>이번 여름, 데이터 걱정 없이 마음껏 즐기세요.</p>
             </section>
             <section data-block="benefits" class="v-benefits-grid v-surface-tint">
-              <h2>이벤트 혜택</h2>
+              <div class="block-header"><div class="sub-label">Event Benefits</div>
+                <h2 class="title">이벤트 혜택</h2></div>
               <ul>
                 <li>
                   <div class="benefit-icon">📶</div>
@@ -84,16 +85,18 @@ class BlankCardMarkupTest {
                   <div class="benefit-value">즉시 지급</div>
                 </li>
                 <li>
-                  <span class="benefit-tag">한정</span>
+                  <span class="benefit-tag">6개월 한정</span>
                   <div class="benefit-icon">🎟️</div>
-                  <div class="benefit-name">월 요금 <strong class="t-accent">30%</strong> 할인</div>
+                  <div class="benefit-name">월 요금 할인</div>
                   <div class="benefit-desc">가입 후 6개월 동안 자동으로 적용됩니다.</div>
-                  <div class="benefit-value">6개월</div>
+                  <div class="benefit-value"><span class="t-strike">55,000원</span>
+                    <strong class="t-big">38,500</strong>원</div>
                 </li>
               </ul>
             </section>
             <section data-block="steps" class="v-steps-timeline">
-              <h2>참여 방법</h2>
+              <div class="block-header"><div class="sub-label">How to Join</div>
+                <h2 class="title">참여 방법</h2></div>
               <ol>
                 <li>
                   <div class="step-title">로그인</div>
@@ -147,6 +150,22 @@ class BlankCardMarkupTest {
         }
 
         /**
+         * ★ 머리말 묶음은 블록마다 {@code shape} 에 적지 않고 프롬프트 한 줄로 둔다 —
+         *   소제목이 있는 블록이 여섯이라 여섯 곳에 베껴 두면 다음에 한 곳만 고치게 된다.
+         */
+        @Test
+        @DisplayName("머리말 묶음과 가격 강조를 시킨다")
+        void 머리말과_가격을_시킨다() {
+            String p = PromptBuilder.generate(REQ);
+            assertTrue(p.contains("class=\"block-header\""));
+            assertTrue(p.contains("class=\"sub-label\""));
+            assertTrue(p.contains("<h2 class=\"title\">"));
+            assertTrue(p.contains("t-strike"), "원가 취소선 용례가 없습니다");
+            assertTrue(p.contains("t-big"), "할인가 큰 숫자 용례가 없습니다");
+            assertTrue(p.contains("benefit-tag 에 쓴다"), "꼬리말 용례가 없습니다");
+        }
+
+        /**
          * ★ 이 줄이 유일한 방어선이다.
          *   {@code benefit-*} 는 허용 목록 검사를 지나가므로(아래 ⑤ 참고)
          *   "지어내지 마라" 를 프롬프트가 말해 주는 것 말고는 막을 방법이 없다.
@@ -155,6 +174,50 @@ class BlankCardMarkupTest {
         @DisplayName("이름을 지어내지 말라고 분명히 말한다")
         void 이름을_지어내지_말라고_한다() {
             assertTrue(PromptBuilder.generate(REQ).contains("글자 그대로"));
+        }
+
+        /**
+         * ★ 열쇠말이 걸린 블록은 "만들어라" 라고 시킨다.
+         *
+         *   예전에는 둘째 묶음 머리말이 "추측해서 만들지 마라" 하나였고, 그 아래 세 줄도
+         *   전부 부정문이었다. 모델이 묶음 전체를 금지로 읽고 <b>경품·쿠폰·일정·숫자를
+         *   benefits 카드로 몰아넣었다</b>(여름 수영장 실측).
+         *
+         *   trigger 가 달린 블록이 목록에 남아 있다는 건 서버가 이미
+         *   "요청문이 그 내용을 말한다" 고 판정했다는 뜻이다. 판정 뒤에 금지하면 앞뒤가 안 맞는다.
+         */
+        @Test
+        @DisplayName("★ 열쇠말이 걸린 블록은 '꼭 넣을 영역' 으로 시킨다 — benefits 로 몰리지 않게")
+        void 걸린_블록은_만들라고_시킨다() {
+            String p = PromptBuilder.generate(
+                    "1등 경품은 여행권입니다. 할인 쿠폰도 드립니다. "
+                    + "사전예약 1차는 7월 1일입니다. 지금까지 8,200명이 신청했습니다.");
+
+            int must = p.indexOf("이번 요청에 꼭 넣을 영역:");
+            assertTrue(must > 0, "열쇠말이 걸렸는데 '꼭 넣을 영역' 묶음이 없습니다");
+
+            // ★ 자리를 나누라는 지시. 한 줄로는 모자랐다 —
+            //   실측에서 경품 3개가 benefits 와 prize 에 똑같이 두 번 나왔다.
+            assertTrue(p.contains("각 내용은 한 영역에만 쓴다"),
+                    "중복을 막는 줄이 없습니다");
+            assertTrue(p.contains("benefits 에 다시 쓰지 마라"),
+                    "benefits 로 몰리는 것을 막는 줄이 없습니다");
+            // 블록 이름이 그 줄에 나열돼야 한다 — 조사를 붙이지 않고 key 만 쓴다
+            assertTrue(p.contains("prize · coupon") || p.contains("prize"),
+                    "어떤 영역으로 나눠야 하는지 이름이 없습니다");
+
+            // 걸린 네 블록이 그 묶음 안에 있어야 한다 (다음 묶음 전까지)
+            int next = p.indexOf("더할 수 있는 영역:");
+            String section = p.substring(must, next > must ? next : p.length());
+            for (String key : List.of("stats", "prize", "coupon", "schedule")) {
+                assertTrue(section.contains("data-block=\"" + key + "\""),
+                        key + " 가 '꼭 넣을 영역' 에 없습니다");
+            }
+
+            // ★ 서버 판정과 어긋나는 금지는 빠져야 한다
+            String noFaq = PromptBuilder.generate("자주 묻는 질문을 넣어주세요");
+            assertFalse(noFaq.contains("faq 를 만들지 마라"),
+                    "faq 가 목록에 있는데 만들지 말라고 하면 앞뒤가 안 맞습니다");
         }
 
         @Test
@@ -307,12 +370,35 @@ class BlankCardMarkupTest {
             }
         }
 
+        /**
+         * ★ 소제목은 맨 {@code <h2>} 가 아니라 머리말 묶음 안에 들어간다.
+         *   {@code .block-header} · {@code .sub-label} · {@code .title} 은 event.css 406행,
+         *   <b>{@code :not(.ev-block)} 제약이 없어서</b> 백지 페이지에도 그대로 걸린다.
+         *   템플릿 5종이 전부 쓰는 모양인데(Flash Deals · Lucky Fortune Pouch)
+         *   백엔드가 이름을 안 내보내서 안 쓰이고 있었다.
+         */
         @Test
-        @DisplayName("소제목 <h2> 가 들어간다")
-        void h2_가_있다() {
+        @DisplayName("소제목이 block-header 묶음 안에 들어간다")
+        void 머리말_묶음이_있다() {
             Document d = Jsoup.parseBodyFragment(cleaned());
-            assertNotNull(d.selectFirst("[data-block=\"benefits\"] h2"));
-            assertNotNull(d.selectFirst("[data-block=\"steps\"] h2"));
+            for (String key : List.of("benefits", "steps")) {
+                String sel = "[data-block=\"" + key + "\"] .block-header";
+                assertNotNull(d.selectFirst(sel + " .sub-label"), key + " 에 영문 머리말이 없습니다");
+                assertNotNull(d.selectFirst(sel + " h2.title"), key + " 소제목이 .title 이 아닙니다");
+            }
+        }
+
+        /**
+         * 할인 혜택은 원가에 취소선, 할인가를 크게 — 템플릿 5종이 쓰는 모양이다.
+         * {@code t-strike} · {@code t-big} 은 {@code <span>} · {@code <strong>} 이라
+         * {@link Inline#sanitize} 를 통과한다.
+         */
+        @Test
+        @DisplayName("가격 강조가 정화를 통과한다 — t-strike · t-big")
+        void 가격_강조가_남는다() {
+            String html = cleaned();
+            assertTrue(html.contains("t-strike"), "원가 취소선이 지워졌습니다");
+            assertTrue(html.contains("t-big"), "할인가 큰 숫자가 지워졌습니다");
         }
     }
 
