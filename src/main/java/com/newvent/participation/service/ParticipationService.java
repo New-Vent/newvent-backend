@@ -1,5 +1,8 @@
 package com.newvent.participation.service;
 
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -9,10 +12,13 @@ import com.newvent.event.domain.EventStatus;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.service.PublicEventService;
+import com.newvent.participation.domain.EventGameConfig;
 import com.newvent.participation.domain.EventParticipation;
+import com.newvent.participation.dto.request.ParticipationCreateRequest;
 import com.newvent.participation.dto.response.ParticipationCreateResponse;
 import com.newvent.participation.exception.ParticipationErrorCode;
 import com.newvent.participation.exception.ParticipationException;
+import com.newvent.participation.repository.EventGameConfigRepository;
 import com.newvent.participation.repository.EventParticipationRepository;
 import com.newvent.user.domain.MembershipGrade;
 import com.newvent.user.domain.User;
@@ -27,9 +33,12 @@ public class ParticipationService {
     private final PublicEventService publicEventService;
     private final UserService userService;
     private final EventParticipationRepository participationRepository;
+    private final EventGameConfigRepository eventGameConfigRepository;
+    private final ParticipationValidator participationValidator;
+    private final ParticipationResultProcessor participationResultProcessor;
 
     @Transactional
-    public ParticipationCreateResponse participate(Long eventId, Long userId) {
+    public ParticipationCreateResponse participate(Long eventId, Long userId, ParticipationCreateRequest request) {
         Event event = publicEventService.getPublicEvent(eventId);
 
         // 실제 참여는 게시 중인 이벤트에만 허용함
@@ -47,11 +56,22 @@ public class ParticipationService {
             throw new ParticipationException(ParticipationErrorCode.INSUFFICIENT_GRADE);
         }
 
+        List<EventGameConfig> configs = eventGameConfigRepository.findAllByEventId(eventId);
+
+        if (configs.size() != 1) {
+            throw new ParticipationException(ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED);
+        }
+
+        EventGameConfig config = configs.getFirst();
+
+        Map<String, Object> submittedData = participationValidator.validate(config, request);
+        Map<String, Object> resultData = participationResultProcessor.process(config);
         try {
-            EventParticipation participation = participationRepository.saveAndFlush(EventParticipation.create(event, user));
+            EventParticipation participation = participationRepository.saveAndFlush(EventParticipation.create(event, user, submittedData, resultData));
             return ParticipationCreateResponse.builder()
                     .participationId(participation.getId())
                     .eventId(eventId)
+                    .resultData(participation.getResultData())
                     .build();
 
         } catch (DataIntegrityViolationException exception) {

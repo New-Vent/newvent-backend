@@ -39,24 +39,12 @@ public enum Block {
     //   core 는 모델에게 "빠뜨리지 마라" 라고 시킬지다(steps 는 true).
     //   core=false 블록은 요청문에 관련 내용이 있을 때만 만들라고 시킨다.
     //   전부 시키면 페이지마다 출력이 두 배가 되고, 없는 내용을 지어낸다.
-    // ★ .badge 를 shape 에 넣는다 — event.css 가 hero 안의 .badge 를 테두리 알약으로 그리는데
-    //   (그라데이션 배경 위 흰 반투명 테두리) 백엔드가 이 이름을 내보낸 적이 없다.
-    //   t-badge 가 아니라 .badge 다. 이건 hero 전용이고, 자리가 제목 위로 정해져 있다.
     HERO("hero", true, true, Source.MIXED,
             "이벤트 제목과 한 줄 소개. 기간은 서버가 넣는다",
             "제목은 <h1>, 소개는 <p> 로 감싼다. 제목 위에 짧은 꼬리말을 둘 수 있다 — "
             + "<span class=\"badge\"> 안에 10글자 이하로 쓴다 (예: 선착순, 신규 가입자 전용)",
             "h1", null, 0, null),
 
-    // ★ <p> 를 두 개까지 쓴다 — event.css 가 둘째를 작고 흐리게 그린다
-    //     [data-block="highlight"]:not(.ev-block) p + p
-    //       { font-size: 0.92rem; font-weight: 500; opacity: 0.92 }
-    //   그동안 shape 가 "<p> 하나" 라고 시켜서 이 자리가 비어 있었다.
-    //   안내 상자 변형(v-highlight-alert · info · success · danger)도 같은 규칙을 쓴다 —
-    //   "무엇을" 한 줄, "어떤 조건으로" 를 그 아래 작은 줄로 나누면 읽기가 훨씬 낫다.
-    //
-    // ★ 단, v-highlight-marquee 는 둘째 <p> 를 숨긴다(display:none).
-    //   그래서 변형 설명에 "문장 하나만 쓴다" 를 박아 뒀다(Variant.HIGHLIGHT_MARQUEE).
     HIGHLIGHT("highlight", false, false, Source.LLM,
             "핵심 혜택을 한 줄로 강조하는 띠 배너 — 요청문에 있는 혜택으로만 쓴다",
             "<p> 에 강조 문구를 한 문장으로 쓴다. 덧붙일 조건이 있으면 "
@@ -68,48 +56,17 @@ public enum Block {
             "<h2> 소제목 하나와 <p> 문단 1~2개로 쓴다",
             "p", null, 0, null),
 
-    // ★ shape 가 카드 **안쪽** class 이름을 말한다 — event.css 에 이미 있는데 안 쓰이고 있었다.
-    //   예전 shape 는 "<ul> 안에 <li>" 뿐이었고, 그러면 <li> 안이 맨 텍스트 한 줄이다.
-    //   .benefit-icon(54px 알약 아이콘) · .benefit-name · .benefit-desc · .benefit-value ·
-    //   .benefit-tag 는 어떤 변형도 건드리지 않아서 백지 페이지에서 그대로 걸린다.
-    //   백엔드가 이름을 한 번도 내보내지 않아 쓰이지 않았을 뿐이다.
-    //
-    // ★ <li> 와 <ul> 에는 class 를 붙이지 않는다 — 카드 **껍데기**는 변형이 이미 만든다.
-    //   event.css 의 변형 규칙은 특이도가 높다:
-    //     [data-block="benefits"].v-benefits-grid:not(.ev-block) li   → 0,3,1
-    //       { padding 18px 16px; border 1px; border-top 4px primary; radius 14px;
-    //         background surface; box-shadow md }   ← 이게 이미 카드다
-    //     .benefit-card-default                                       → 0,1,0
-    //   benefit-card-default 를 붙여도 **변형이 이긴다. 아무 효과가 없다.**
-    //   (event.css 주석이 설계를 밝혀 둔다 — "기본 폴백이 :where() 라 여기서 덮을 수 있다".
-    //    백지용 기본값만 특이도 0 이고, 변형은 그걸 덮는 쪽이다.)
-    //   껍데기는 변형, 안쪽 내용은 템플릿 class — 역할을 갈라 둔다.
-    //
-    // ★ 꼬리말은 benefit-tag 를 쓴다. t-badge 가 아니다.
-    //   t-* 는 문장 **안쪽** 강조 전용이다(t-accent 로 숫자를 강조하는 자리).
-    // ★ 아래 네 블록(stats · prize · coupon · schedule)은 event.css 가 먼저 들여왔다.
-    //   레지스트리에 이름이 없어서 **쓰이지 못하고 있었다** — 백지 결과가 늘 같은 네 블록
-    //   (hero · benefits · steps · cta)으로만 나오던 이유다. 템플릿 5종이 서로 달라 보이는 것도
-    //   대부분 이 자리들이다: sports 스코어보드 = stats, 경품 = prize,
-    //   vip 쿠폰 = coupon, launch 타임라인 = schedule.
-    //
-    // ★ 전부 core=false 다. 요청문이 그 내용을 직접 말할 때만 만든다 —
-    //   네 개를 다 만들면 페이지가 길어지고, 없는 경품·일정을 지어낸다.
-
-    // 숫자로 보는 혜택. event.css 가 <strong> 을 큰 숫자로 그린다(1.8rem · 900)
-    // ★ minItems 가 2 라서 숫자가 하나뿐이면 모델이 **두 번째를 지어낸다.**
-    //   실측에서 "지금까지 8,200명" 하나만 줬더니 "1명 · 제주도 여행권 당첨 기회" 를 만들어
-    //   숫자 칸을 채웠다. 검증기의 하한이 지어내기를 부른 셈이다.
-    //   하한을 1 로 내리면 2열 격자에 카드 하나만 덩그러니 남는다 — 그래서
-    //   **"모자라면 아예 만들지 마라" 를 desc 에 박는다.** 안 만들면 아무 일도 안 일어난다.
+    // ★ 숫자만 모은 블록이라 지어내기 위험이 제일 크다. 열쇠말이 있을 때만 열고,
+    //   desc 로 "요청문 숫자만" 을 박는다. 수정에서는 ValueCheck 가 새 숫자를 잡는다.
     STATS("stats", false, false, Source.LLM,
-            "숫자로 보는 혜택 — 요청문에 나온 수치만 쓴다. 숫자를 지어내지 마라. "
-            + "요청문에 쓸 숫자가 2개 미만이면 이 영역을 만들지 마라",
+            "숫자로 보는 혜택 — 요청문에 **숫자로 적혀 있는 값만** 쓴다. "
+            + "세어서 만든 수는 숫자가 아니다 — 차수가 둘이라고 '2회', 혜택이 셋이라고 '3종' 이라고 쓰지 마라. "
+            + "그렇게 쓸 숫자가 2개 미만이면 이 영역을 만들지 마라",
             "<h2> 소제목과 <ul> 안에 <li> 2개 이상. 각 <li> 는 "
             + "<strong>14,820명</strong> 처럼 숫자를 <strong> 로 먼저 쓰고 "
             + "그 뒤에 무엇의 숫자인지 짧게 붙인다",
             "ul li strong", "ul", 2,
-            "(?i)(누적|돌파|달성률|참여자 ?수|명이 참여|지금까지 [0-9])"),
+            "(?i)(숫자로|한눈에|수치로|누적|돌파|달성률|참여자 ?수|명이 참여|지금까지 [0-9])"),
 
     BENEFITS("benefits", true, true, Source.MIXED,
             "혜택 — 항목은 폼 값, 문장만 다듬는다",
@@ -121,31 +78,26 @@ public enum Block {
             // 백지: ul li · 템플릿: .benefit-card (계약 EVENT_STRUCTURE_CONTRACT §3)
             "ul li, .benefit-card", "ul, .benefits-list", 2, null),
 
-    // 경품. event.css 가 li::before 로 🎁 를, 첫 항목에만 🏆 를 붙인다 — 순서가 곧 등수다
-    //
-    // ★ "당첨" 을 열쇠말에 넣지 않았다 — 유의사항 문구에 흔해서 오탐이 난다.
-    //   "[1-9]등" 은 "3등급" 에 걸리므로 뒤에 "급" 이 오면 뺀다.
-    // ★ 이모지를 쓰지 말라고 못 박는다 — steps 번호와 같은 사고였다.
-    //   event.css 가 li::before 로 🎁 를, 첫 항목에만 🏆 를 붙인다.
-    //   그런데 shape 가 "화면이 트로피를 붙인다" 라고 알려주기만 하고 금지하지 않아서
-    //   모델이 본문에 🏆 를 또 써서 **트로피가 두 개 겹쳤다**(여름 수영장 실측).
-    //   알려주는 것과 금지하는 것은 다르다.
-    PRIZE("prize", false, false, Source.LLM,
-            "경품 — 요청문에 나온 경품만 쓴다. 지어내지 마라",
-            "<h2> 소제목과 <ul> 안에 <li> 2개 이상으로 경품을 나열한다. "
+    // ★ 경품은 실제로 지급해야 하는 약속이다 — benefits 와 같이 항목은 폼 값(MIXED + minItems).
+    //   그래서 itemsAreFormValues() 가 참이 되어 "경품 하나 더" 같은 ADD 는 관문이 거절한다.
+    //   "응모" 는 열쇠말로 쓰지 않는다 — "응모를 완료합니다" 처럼 거의 모든 이벤트 문장에 나온다.
+    PRIZE("prize", false, false, Source.MIXED,
+            "경품 — 등수와 경품은 요청문에 있는 것만 쓴다. 경품을 지어내지 마라",
+            "<h2> 소제목과 <ul> 안에 <li> 로 경품을 나열한다. "
+            + "요청문에 등수가 있으면 <strong>1등</strong> 처럼 등수를 <strong> 로 먼저 쓰고 "
+            + "그 뒤에 경품 이름을 붙인다. 등수가 없으면 경품 이름만 쓴다. "
             + "가장 큰 경품을 맨 앞에 쓴다. "
             + "선물·트로피 이모지를 쓰지 마라 — 화면이 자동으로 붙인다",
-            "ul li", "ul", 2,
-            "(?i)(경품|추첨|상품권|기프티콘|[1-9]등(?!급))"),
+            "ul li", "ul", 1,
+            "(?i)(경품|추첨|상품권|기프티콘|등수|[1-9]등(?!급))"),
 
-    // 쿠폰 티켓. event.css 가 양옆이 파인 그라데이션 티켓으로 그린다.
-    // 다른 블록과 달리 <h2> 가 작은 머리말이고 <p> 가 주인공이다 — shape 에 그대로 적는다
+    // ★ 쿠폰 코드는 쓰지 않는다 — 코드는 서버가 발급해야 하는 값이다(슬롯이 아직 없다).
     COUPON("coupon", false, false, Source.LLM,
-            "쿠폰 안내 — 요청문에 나온 쿠폰만 쓴다. 금액·비율을 지어내지 마라",
+            "쿠폰 안내 — 쿠폰 이름 · 할인 · 사용 조건은 요청문에 있는 것만. 쿠폰 코드는 쓰지 마라",
             "<h2> 에 짧은 영문 머리말(예: WELCOME COUPON), "
             + "<p> 에 쿠폰 내용을 한 줄로(예: 전 상품 30% 할인), "
             + "<ul> 안에 <li> 로 사용 조건을 쓴다",
-            "p", "ul", 1,
+            "p", null, 0,
             "(?i)(쿠폰|할인권|바우처|적립금)"),
 
     // ★ 표는 수치가 몰리는 자리다. "지어내지 마라" 를 역할 설명에 박아 둔다 —
@@ -170,15 +122,6 @@ public enum Block {
             "ul li", "ul", 1,
             "(참여|가입|가입자|고객|회원|이용자) ?대상|대상자|대상(은|는|이며|입니다|:)|등급 ?고객|고객만|회원만"),
 
-    // ★ 번호를 글자로 적지 않는다. step-badge 를 쓰지 않는다.
-    //   steps 변형이 번호를 CSS 로 이미 그린다 —
-    //     v-steps-numbered  li::before { content: counter(nv-step) }        → 동그라미 ①
-    //     v-steps-timeline  li::before { content: "STEP " counter(nv-step) } → "STEP 1"
-    //   여기에 <div class="step-badge">1</div> 를 넣으면 **번호가 두 번 보인다** ("STEP 1" 다음에 "1").
-    //   step-card-default 도 안 쓴다 — 변형의 li 규칙(0,3,1)이 이긴다. benefits 와 같은 이유다.
-    //
-    // ★ 안쪽만 쓴다 — step-title(15px 진하게) · step-desc(13px 흐리게).
-    //   둘을 갈라 쓰면 "제목 한 줄 + 설명 한 줄" 이 되고, 변형의 번호가 그 위에 붙는다.
     STEPS("steps", false, true, Source.LLM,
             "참여 방법 2~4단계",
             "<h2> 소제목과 <ol>. <ol> 안에 <li> 로 순서대로 나열한다. <li> 와 <ol> 에는 class 를 붙이지 않는다. "
@@ -187,14 +130,15 @@ public enum Block {
             + "단계 번호는 적지 마라 — 화면이 자동으로 붙인다",
             "ol li, .step-card", "ol, .steps-list", 2, null),
 
-    // 일정. event.css 가 세로 타임라인으로 그리고 <strong> 을 때(when)로 강조한다.
-    // steps(참여 방법)와 다르다 — steps 는 "무엇을 하는가", schedule 은 "언제 무엇이 열리는가" 다
+    // ★ 날짜를 다루는 블록이다. 이벤트 기간은 서버가 슬롯으로 채우지만, 발표일 · 지급일은
+    //   요청문에만 있다. 열쇠말이 있을 때만 열고 desc 로 "날짜를 지어내지 마라" 를 박는다.
+    //   "발표" 단독은 쓰지 않는다 — "당첨자 발표" 는 일정이 아니라 문장 속 말인 경우가 많다.
     SCHEDULE("schedule", false, false, Source.LLM,
-            "일정 — 요청문에 나온 날짜만 쓴다. 날짜를 지어내지 마라",
+            "일정 — 응모 · 발표 · 지급 날짜는 요청문에 있는 것만 쓴다. 날짜를 지어내지 마라",
             "<h2> 소제목과 <ol> 안에 <li> 2개 이상. 각 <li> 는 "
             + "<strong>1차 · 10월 1일</strong> 처럼 때를 <strong> 로 먼저 쓰고 설명을 붙인다",
             "ol li strong", "ol", 2,
-            "(?i)(일정|차수|[1-9]차 |오픈일|마감일|타임라인|사전 ?예약)"),
+            "(?i)(일정|발표일|지급일|마감일|발표 날짜|지급 날짜|차수|[1-9]차 |오픈일|타임라인|사전 ?예약)"),
 
     // ★ 모양이 두 벌이다 — 목록형 <dl> 과 펼침형 <details>.
     //   펼침(아코디언)은 class 만으로 못 만든다. 닫힌 <details> 의 내용은 CSS 로 꺼낼 수 없어서
@@ -281,16 +225,14 @@ public enum Block {
     }
 
     /**
-     * 열쇠말 조건이 달린 블록인가.
+     * 요청문이 이 블록을 직접 요청했는가 — 열쇠말이 있고, 요청문에서 걸린다.
      *
-     * ★ 프롬프트가 세 묶음으로 갈리는 기준이다 — {@code PromptBuilder.generate}
-     *   {@code trigger} 가 있는 블록이 목록에 남아 있다는 건 <b>열쇠말이 이미 걸렸다</b>는 뜻이고
-     *   ({@link #llmBlocksFor} 가 걸러서 넣는다), 그러면 "만들지 마라" 가 아니라
-     *   "이번엔 만들어라" 가 맞다. 반대로 trigger 가 없는 블록(highlight · intro)은
-     *   늘 목록에 있으므로 여전히 모델이 판단한다.
+     * ★ allowedFor 와 다르다. allowedFor 는 "만들어도 된다"(열쇠말 없는 블록은 늘 참),
+     *   이건 "만들어야 한다" 다. 요청문에 "숫자로 한눈에 보여 주세요" 가 있었는데 모델이
+     *   stats 를 안 만들었다(Bedrock 실측) — 선택 블록 안내가 "만들 수 있다" 로만 읽혀서다.
      */
-    public boolean hasTrigger() {
-        return trigger != null;
+    public boolean requestedBy(String requestText) {
+        return trigger != null && requestText != null && trigger.matcher(requestText).find();
     }
 
     /** 요청문 기준으로 만들어도 되는 모델 블록 */

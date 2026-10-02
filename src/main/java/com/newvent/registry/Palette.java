@@ -33,20 +33,16 @@ public enum Palette {
     PASTEL("palette-pastel", "파스텔 — 연보라, 민트"),
     MONO("palette-mono", "모노 · 미니멀 — 검정, 회색"),
     FESTIVE("palette-festive", "축제 · 명절 — 빨강, 금색"),
-
-    // ★ 아래 8개는 event.css 의 90-palettes/02-extra-set.css 와 짝이다.
-    //   프런트가 먼저 넣었고 여기에 이름이 없어서 **쓰이지 못하고 있었다** —
-    //   레지스트리에 없는 이름은 프롬프트 목록에 안 들어가고(PromptBuilder),
-    //   모델이 어쩌다 써도 허용 목록 밖이라 지워진다(BlockValidator.cleanLooks).
-    //   "크리스마스 분위기로" 가 안 먹던 이유가 이것이다.
-    CHRISTMAS("palette-christmas", "크리스마스 — 전나무 초록, 선물 빨강"),
+    CHRISTMAS("palette-christmas", "크리스마스 — 진한 초록, 빨강"),
     NEWYEAR("palette-newyear", "새해 — 남색, 금색"),
-    VALENTINE("palette-valentine", "발렌타인 · 화이트데이 — 분홍, 자주"),
-    KIDS("palette-kids", "어린이 · 가족 — 밝은 파랑, 노랑"),
-    ESPORTS("palette-esports", "게임 · e스포츠 — 네온 초록, 검정"),
-    LAVENDER("palette-lavender", "라벤더 — 연보라, 차분한 분위기"),
-    COFFEE("palette-coffee", "카페 · 베이커리 — 갈색, 크림"),
-    BRAND("palette-brand", "브랜드 기본 — 핑크");
+    VALENTINE("palette-valentine", "발렌타인 — 분홍, 버건디"),
+    KIDS("palette-kids", "어린이 · 가족 — 밝은 원색"),
+    ESPORTS("palette-esports", "게임 · e스포츠 — 검정, 네온 초록"),
+    LAVENDER("palette-lavender", "라벤더 — 연보라, 차분한"),
+    COFFEE("palette-coffee", "카페 · 따뜻한 — 갈색, 크림"),
+    // ★ 설명에서 회사명을 뺐다. 이 문장이 그대로 프롬프트에 실리는데,
+    //   PR 리뷰의 "회사명 NewVent 를 문구에 넣는다 (요청에 없음)" 이 여기서 샜을 가능성이 높다.
+    BRAND("palette-brand", "브랜드 기본 — 마젠타 (특별한 분위기 요청이 없을 때)");
 
     public static final String PREFIX = "palette-";
 

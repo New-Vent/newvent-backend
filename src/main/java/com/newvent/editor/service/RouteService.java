@@ -72,8 +72,8 @@ public class RouteService {
 
         Optional<List<RawRoute>> ops = RouteParser.parse(res.content());
         if (ops.isEmpty()) {
-            // ★ 원문을 로그에 남긴다.
-            log.info("라우터 출력을 읽지 못했습니다: {}", brief(res.content()));
+            // 입력을 재현할 수 있는 모델 출력 원문은 로그에 남기지 않는다.
+            log.info("라우터 출력을 읽지 못했습니다 (event={}, request={})", ctx.eventId(), ctx.requestId());
             recorder.recordSingle(ctx, res, List.of(UNPARSABLE));
             return ops;
         }
@@ -82,8 +82,4 @@ public class RouteService {
         return ops;
     }
 
-    private static String brief(String s) {
-        if (s == null) return "(없음)";
-        return s.length() > 200 ? s.substring(0, 200) + "…" : s;
-    }
 }

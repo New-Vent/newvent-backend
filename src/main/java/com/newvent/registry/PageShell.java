@@ -244,6 +244,20 @@ public final class PageShell {
         return doc.body().html();
     }
 
+    // hero 블록만 잘라낸다 - 목록 썸네일용 hero 가 없으면 null
+    public static String heroOnly(String fragment) {
+        Document doc = parse(fragment);
+        Element hero = doc.body().selectFirst(Block.HERO.selector());
+        if (hero == null) return null;
+
+        Element root = doc.body().selectFirst(ROOT_SELECTOR);
+        if (root == null) return hero.outerHtml();
+
+        Element shell = root.shallowClone();
+        shell.appendChild(hero.clone());
+        return shell.outerHtml();
+    }
+
     private static Document parse(String html) {
         Document doc = Jsoup.parseBodyFragment(html == null ? "" : html);
         // ★ 조각의 공백을 그대로 둔다. 여기서 재정렬하면 버전 diff 가 통째로 번진다.

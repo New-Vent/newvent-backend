@@ -6,6 +6,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -13,12 +17,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
 
 import com.newvent.admin.domain.Admin;
 import com.newvent.event.domain.Event;
+import com.newvent.event.domain.EventVersion;
 import com.newvent.event.dto.request.ButtonStyle;
 import com.newvent.event.dto.request.DirectEditRequest;
 import com.newvent.event.dto.request.TextEdit;
@@ -31,11 +38,14 @@ import com.newvent.event.repository.EventRepository;
 import com.newvent.generation.service.ResourceTemplateLoader;
 import com.newvent.generation.service.TemplateLoader;
 import com.newvent.generation.service.VersionStore;
+import com.newvent.user.domain.MembershipGrade;
 
 @ExtendWith(MockitoExtension.class)
 class DirectEditServiceTest {
 
     private static final TemplateLoader TEMPLATES = new ResourceTemplateLoader();
+    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-10-02T00:00:00Z"), ZoneOffset.UTC);
+    private static final OffsetDateTime NOW = OffsetDateTime.now(CLOCK);
 
     @Mock
     private EventRepository eventRepository;
@@ -47,7 +57,7 @@ class DirectEditServiceTest {
 
     @BeforeEach
     void setUp() {
-        directEditService = new DirectEditService(eventRepository, versionStore);
+        directEditService = new DirectEditService(eventRepository, versionStore, CLOCK);
     }
 
     @Test
@@ -166,6 +176,60 @@ class DirectEditServiceTest {
         assertThatThrownBy(() -> directEditService.directEdit(eventId, request, 2L))
                 .isInstanceOf(AccessDeniedException.class);
         verifyNoInteractions(versionStore);
+    }
+
+    @Test
+    @DisplayName("종료 상태이면 종료일과 관계없이 HTML 조회·저장 전에 409로 거절한다")
+    void directEdit_종료상태_거부() {
+        Event event = realOwnedEvent(NOW.plusDays(1));
+        event.end();
+        assertEndedRequestRejected(event);
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {-1, 0})
+    @DisplayName("게시 중 종료일이 지났거나 현재 시각과 같으면 HTML 조회·저장 전에 거절한다")
+    void directEdit_게시종료일_거부(long secondsFromNow) {
+        Event event = realOwnedEvent(NOW.plusSeconds(secondsFromNow));
+        event.publish(mock(EventVersion.class));
+        assertEndedRequestRejected(event);
+    }
+
+    private void assertEndedRequestRejected(Event event) {
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        DirectEditRequest request = new DirectEditRequest(12L,
+                List.of(new TextEdit(0, "이전", "변경")), null);
+
+        assertThatThrownBy(() -> directEditService.directEdit(1L, request, 1L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode())
+                .isEqualTo(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
+        verifyNoInteractions(versionStore);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("기간 지난 초안과 종료 전 게시 이벤트는 직접 편집할 수 있다")
+    void directEdit_편집가능상태_유지(boolean published) {
+        Event event = realOwnedEvent(published ? NOW.plusSeconds(1) : NOW.minusDays(1));
+        if (published) event.publish(mock(EventVersion.class));
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(versionStore.htmlOf(1L, 12L)).thenReturn(Optional.of(
+                "<section data-block='hero'><h1>이전</h1></section>"));
+        when(versionStore.save(eq(1L), any(String.class), eq(12L)))
+                .thenReturn(new VersionStore.Saved(13L, 2));
+
+        var response = directEditService.directEdit(1L, new DirectEditRequest(12L,
+                List.of(new TextEdit(0, "이전", "변경")), null), 1L);
+
+        assertThat(response.versionId()).isEqualTo(13L);
+        verify(versionStore).save(eq(1L), argThat(html -> html.contains("변경")), eq(12L));
+    }
+
+    private static Event realOwnedEvent(OffsetDateTime endAt) {
+        Admin owner = mock(Admin.class);
+        when(owner.getId()).thenReturn(1L);
+        return Event.createDraft(owner, null, "이벤트", NOW.minusDays(2), endAt, MembershipGrade.NORMAL);
     }
 
     private static Event ownedEvent() {
