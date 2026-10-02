@@ -151,7 +151,7 @@ public class EventService {
         if (!request.endAt().isAfter(request.startAt())) {
             throw new EventException(EventErrorCode.INVALID_PERIOD);
         }
-        EventTemplate template = resolveTemplate(request.templateKey());
+        EventTemplate template = resolveTemplate(request.templateKey(), adminId);
         Admin owner = adminRepository.getReferenceById(adminId);
 
         Event draft = Event.createDraft(
@@ -182,7 +182,7 @@ public class EventService {
             throw new EventException(EventErrorCode.INVALID_PERIOD);
         }
         EventTemplate template = request.templateKey() != null
-                ? resolveTemplate(request.templateKey())
+                ? resolveTemplate(request.templateKey(), event.getOwnerAdmin().getId())
                 : event.getTemplate();
 
         event.updateInfo(
@@ -235,12 +235,13 @@ public class EventService {
         return !Objects.equals(requested, event.templateCode());
     }
 
-    private EventTemplate resolveTemplate(String templateKey) {
+    private EventTemplate resolveTemplate(String templateKey, Long adminId) {
         if (templateKey == null || templateKey.isBlank()) {
             return null;
         }
         return eventTemplateRepository.findByKey(templateKey.trim())
                 .filter(EventTemplate::isActive)
+                .filter(t -> t.visibleTo(adminId))
                 .orElseThrow(() -> new EventException(EventErrorCode.TEMPLATE_NOT_FOUND));
     }
 }

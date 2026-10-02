@@ -2,6 +2,7 @@ package com.newvent.event.domain;
 
 import jakarta.persistence.*;
 
+import com.newvent.admin.domain.Admin;
 import com.newvent.common.domain.BaseTimeEntity;
 
 import lombok.AccessLevel;
@@ -38,6 +39,33 @@ public class EventTemplate extends BaseTimeEntity {
 
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_admin_id")
+    private Admin ownerAdmin;
+
+    public boolean visibleTo(Long adminId) {
+        return builtin || (ownerAdmin != null && java.util.Objects.equals(ownerAdmin.getId(), adminId));
+    }
+
+    public static EventTemplate custom(String code, Admin owner, String name, String description, String html) {
+        EventTemplate t = new EventTemplate();
+        t.code = code;
+        t.ownerAdmin = java.util.Objects.requireNonNull(owner);
+        t.name = name.trim();
+        t.description = description == null ? null : description.trim();
+        t.htmlContent = html;
+        return t;
+    }
+
+    public void updateMetadata(String name, String description) {
+        this.name = name.trim();
+        this.description = description == null ? null : description.trim();
+    }
+
+    public void deactivate() {
+        this.active = false;
+    }
 
     /** 인메모리 시드·테스트용. */
     public static EventTemplate seed(
