@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -728,6 +729,19 @@ class EventServiceTest {
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
     }
 
+    @Test
+    void 다른_관리자_템플릿으로_이벤트를_생성할_수_없다() {
+        Admin other = BeanUtils.instantiateClass(Admin.class);
+        ReflectionTestUtils.setField(other, "id", 99L);
+        EventTemplate custom = EventTemplate.custom("custom_other", other, "등록본", null, "<div/>");
+        when(eventTemplateRepository.findByKey("custom_other")).thenReturn(Optional.of(custom));
+        EventCreateRequest request = new EventCreateRequest("새 이벤트",
+                OffsetDateTime.parse("2026-10-10T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-20T00:00:00+09:00"), "custom_other", MembershipGrade.NORMAL);
+        assertThatThrownBy(() -> eventService.create(1L, request)).isInstanceOf(EventException.class);
+        verify(eventRepository, never()).save(any());
+    }
+
     private Event draftWorldCupEvent() {
         Event event = newEvent(2L, EventStatus.DRAFT,
                 OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
@@ -752,6 +766,9 @@ class EventServiceTest {
     private Event newEvent(Long id, EventStatus status, OffsetDateTime startDate, OffsetDateTime endDate) {
         Event event = BeanUtils.instantiateClass(Event.class);
         ReflectionTestUtils.setField(event, "id", id);
+        Admin owner = BeanUtils.instantiateClass(Admin.class);
+        ReflectionTestUtils.setField(owner, "id", 1L);
+        ReflectionTestUtils.setField(event, "ownerAdmin", owner);
         ReflectionTestUtils.setField(event, "status", status);
         ReflectionTestUtils.setField(event, "startDate", startDate);
         ReflectionTestUtils.setField(event, "endDate", endDate);

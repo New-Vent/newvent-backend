@@ -12,6 +12,7 @@ import com.newvent.event.domain.Event;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
+import com.newvent.event.service.TemplateLibraryService;
 import com.newvent.generation.dto.GenerateRequest;
 import com.newvent.generation.dto.GenerateStartResponse;
 import com.newvent.generation.exception.GenerationErrorCode;
@@ -33,10 +34,13 @@ public class GenerateController {
 
     private final GenerationService generation;
     private final EventRepository events;
+    private final TemplateLibraryService library;
 
-    public GenerateController(GenerationService generation, EventRepository events) {
+    public GenerateController(GenerationService generation, EventRepository events,
+            TemplateLibraryService library) {
         this.generation = generation;
         this.events = events;
+        this.library = library;
     }
 
     @PostMapping
@@ -54,6 +58,9 @@ public class GenerateController {
             throw new org.springframework.security.access.AccessDeniedException("이벤트 소유 관리자만 생성할 수 있습니다.");
         }
         GenerateCommand initial = GenerateCommand.of(event, req.templateCode(), req.requestText());
+        if (initial.templateCode() != null) {
+            library.checkSelection(admin.id(), initial.templateCode(), !initial.templateFromEvent());
+        }
         GenerateCommand cmd = new GenerateCommand(initial.eventId(), initial.templateCode(), initial.templateFromEvent(),
                 initial.title(), initial.period(), initial.ctaUrl(), initial.requestText(),
                 req.privacyConfirmationJobId(), req.privacyConfirmed());
