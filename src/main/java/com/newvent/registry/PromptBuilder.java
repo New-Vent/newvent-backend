@@ -115,26 +115,66 @@ public final class PromptBuilder {
         addInline(s);
         s.add("");
         s.add("태그를 반드시 쓴다. 맨 텍스트만 두지 마라.");
+        // ★ 이 한 줄이 유일한 방어선이다.
+        //   v-* · palette-* · t-* 는 BlockValidator.cleanLooks 가 허용 목록으로 걸러서
+        //   모델이 지어낸 이름이 지워진다. 그런데 benefit-* · step-* · badge 는
+        //   **접두사가 달라서 그 검사를 통째로 지나간다**(cleanLooks 주석의 "템플릿 class" 자리).
+        //   모델이 benefit-headline 같은 걸 지어내면 CSS 가 없어 아무 효과도 없는데
+        //   지워지지도 않고 그대로 저장된다. 허용 목록을 거는 건 템플릿 블록이 쓰는
+        //   이름 전체를 모아야 해서(sp-* · hl-* 등) 따로 할 일이고, 지금은 프롬프트로 막는다.
+        s.add("형태에 적힌 class 이름은 글자 그대로 쓴다. 비슷한 이름을 지어내지 마라. "
+                + "목록 밖 이름은 꾸미는 규칙이 없어서 아무 효과도 없다.");
         // ★ 예시에 benefits 와 steps 를 넣는다.
         //   예전 예시는 hero 와 cta 둘뿐이었고, 출력도 딱 그 정도로 나왔다.
         //   라우터에서 이미 겪은 것과 같다 — 예시가 있고 없고가 실제로 갈렸다.
         //   분량을 말로만 시키는 것보다 보여주는 쪽이 세다.
+        // ★ 예시를 템플릿 수준으로 올렸다 — 모델은 예시를 정답으로 읽는다
+        //   예전 예시는 <li> 안에 한 줄 텍스트였고, 출력도 정확히 그만큼 나왔다.
+        //   "내용을 채워라" 라고 말로 시키는 것보다 채운 걸 보여주는 쪽이 세다.
+        //
+        // ★ 카드 **껍데기** class 는 넣지 않는다 (benefit-card-default · step-card-default).
+        //   event.css 변형 규칙이 특이도 0,3,1 로 li 를 이미 카드로 만들고,
+        //   그 이름들은 0,1,0 이라 덮이지 않는다. 붙여도 효과가 없다.
+        //   여기서 넣는 건 어떤 변형도 건드리지 않는 **안쪽** 이름들뿐이다.
         s.add("예:");
         s.add("<section data-block=\"hero\" class=\"v-hero-center palette-summer\">");
+        s.add("  <span class=\"badge\">선착순</span>");
         s.add("  <h1>여름 데이터 대방출</h1>");
         s.add("  <p>이번 여름, 데이터 걱정 없이 마음껏 즐기세요.</p>");
         s.add("</section>");
         s.add("<section data-block=\"benefits\" class=\"v-benefits-grid v-surface-tint\">");
+        s.add("  <h2>이벤트 혜택</h2>");
         s.add("  <ul>");
-        s.add("    <li>데이터 3GB 즉시 지급 — 가입 완료 즉시 사용할 수 있습니다.</li>");
-        s.add("    <li>월 요금 30% 할인 — 가입 후 6개월 동안 적용됩니다.</li>");
+        s.add("    <li>");
+        s.add("      <div class=\"benefit-icon\">📶</div>");
+        s.add("      <div class=\"benefit-name\">데이터 <strong class=\"t-accent\">3GB</strong> 지급</div>");
+        s.add("      <div class=\"benefit-desc\">가입을 완료하면 바로 사용할 수 있습니다.</div>");
+        s.add("      <div class=\"benefit-value\">즉시 지급</div>");
+        s.add("    </li>");
+        s.add("    <li>");
+        s.add("      <span class=\"benefit-tag\">한정</span>");
+        s.add("      <div class=\"benefit-icon\">🎟️</div>");
+        s.add("      <div class=\"benefit-name\">월 요금 <strong class=\"t-accent\">30%</strong> 할인</div>");
+        s.add("      <div class=\"benefit-desc\">가입 후 6개월 동안 자동으로 적용됩니다.</div>");
+        s.add("      <div class=\"benefit-value\">6개월</div>");
+        s.add("    </li>");
         s.add("  </ul>");
         s.add("</section>");
         s.add("<section data-block=\"steps\" class=\"v-steps-timeline\">");
+        s.add("  <h2>참여 방법</h2>");
         s.add("  <ol>");
-        s.add("    <li>이벤트 페이지에서 로그인합니다.</li>");
-        s.add("    <li>원하는 요금제를 선택합니다.</li>");
-        s.add("    <li>신청하기를 눌러 응모를 완료합니다.</li>");
+        s.add("    <li>");
+        s.add("      <div class=\"step-title\">로그인</div>");
+        s.add("      <div class=\"step-desc\">이벤트 페이지에서 로그인합니다.</div>");
+        s.add("    </li>");
+        s.add("    <li>");
+        s.add("      <div class=\"step-title\">요금제 선택</div>");
+        s.add("      <div class=\"step-desc\">원하는 요금제를 고릅니다.</div>");
+        s.add("    </li>");
+        s.add("    <li>");
+        s.add("      <div class=\"step-title\">신청 완료</div>");
+        s.add("      <div class=\"step-desc\">신청하기를 눌러 응모를 마칩니다.</div>");
+        s.add("    </li>");
         s.add("  </ol>");
         s.add("</section>");
         s.add("<section data-block=\"cta\" class=\"v-cta-wide\">");
@@ -152,9 +192,20 @@ public final class PromptBuilder {
         // ★ 혜택만 "지어내라" 고 말하지 않는다. 혜택은 실제로 지급해야 하는 약속이고,
         //   없는 걸 만들면 관리자가 모르는 약속이 게시된다. 개수가 아니라 설명을 늘린다.
         s.add("- 혜택은 요청문에 있는 것을 빠짐없이 담고, 항목마다 한 문장으로 설명을 붙인다.");
+        // ★ 칸을 비우면 템플릿보다 **더** 허전해 보인다.
+        //   benefit-icon 이 비면 연한 배경의 54px 빈 사각형만 남는다.
+        //   구조를 시켰으면 채우기도 시켜야 한다.
+        s.add("- 혜택 항목의 칸을 비워 두지 마라. 이모지 · 이름 · 설명 · 받는 값을 모두 채운다.");
+        s.add("- 받는 값은 짧게 쓴다 (예: 3GB, 30% 할인, 6개월, 즉시 지급). 문장을 넣지 마라.");
         //   반대로 참여 방법은 모델이 만드는 영역이다(레지스트리 Source.LLM).
         //   절차를 지어내는 것은 허용이고, 그래서 요청문에 없어도 만들라고 시킨다.
         s.add("- 참여 방법은 3단계로 쓴다. 요청문에 절차가 없으면 일반적인 온라인 응모 절차로 쓴다.");
+        // ★ step-title 과 step-desc 는 글씨 크기·색이 다르다(15px 진하게 / 13px 흐리게).
+        //   둘에 같은 문장을 넣으면 같은 말이 두 번 보인다. 역할을 갈라서 시킨다.
+        s.add("- 참여 방법은 단계마다 제목과 설명을 따로 쓴다. 제목은 두세 단어, 설명은 한 문장이다.");
+        // ★ 번호를 쓰게 하면 화면에 두 번 보인다. 변형이 li::before 로 이미 그린다
+        //   (v-steps-timeline 은 "STEP 1", v-steps-numbered 는 동그라미 ①).
+        s.add("- 단계 번호를 글자로 적지 마라. '1단계', '1.', 'STEP 1' 을 쓰지 마라. 화면이 자동으로 붙인다.");
         s.add("");
         // ★ 왜 문체를 시키는가 — 회차마다 흔들린다 (Bedrock 실측)
         //   같은 요청문에 "즐기세요!" 와 "즐겨봐!" 가 번갈아 나왔다.
@@ -306,8 +357,21 @@ public final class PromptBuilder {
      *   배지는 드물어야 눈에 띈다. 개수는 검증기가 안 세므로 프롬프트가 유일한 압력이다.
      */
     private static void addInline(StringJoiner s) {
-        s.add("문구 꾸밈: (꼭 필요한 단어에만, 영역마다 1~2개까지)");
+        // ★ 1~2개 → 2~4개로 넓혔다.
+        //   "빤짝이를 넣어 달라" 는 요청에 아무 변화가 없다는 보고가 있었고, 원인 중 하나가
+        //   이 상한이었다. 혜택 카드 하나에 숫자가 두 개 들어가면(3GB · 30%) 영역 상한
+        //   1~2개로는 카드 두 장을 못 채운다. 모델은 상한을 그대로 지킨다 —
+        //   분량에서 이미 겪은 것과 같다(하한을 주면 하한에 멈췄다).
+        //
+        //   ★ 그래도 상한을 없애지는 않는다. 배지는 드물어야 눈에 띈다.
+        //     개수를 세는 검증기는 없으므로 이 줄이 유일한 압력이다.
+        s.add("문구 꾸밈: (꼭 필요한 단어에만, 영역마다 2~4개까지)");
+        s.add("- 숫자 · 용량 · 기간 · 할인율에 t-accent 를 붙인다 (예: <strong class=\"t-accent\">3GB</strong>). 여기가 제일 먼저다.");
         s.add("- 배지(t-badge)는 " + Inline.BADGE_MAX + "글자 이하의 짧은 말에만 붙인다 (예: 한정, NEW, 무료). 문장에 붙이지 마라.");
+        // ★ 혜택 <li> 바로 안의 꼬리말은 t-badge 가 아니라 benefit-tag 다.
+        //   t-badge 는 문장 안에 끼우는 작은 배지이고, benefit-tag 는 카드 왼쪽 위에 놓이는
+        //   꼬리말 자리다(연한 primary 배경 알약). 자리가 다르니 이름도 다르다.
+        s.add("- 단, 혜택 <li> 바로 안의 꼬리말은 benefit-tag 를 쓴다. t-badge 를 쓰지 마라.");
         s.add("- <span> · <mark> · <strong> 의 class 에 아래 이름을 붙인다. 목록에 없는 이름은 쓰지 마라.");
         s.add("  예) <span class=\"t-badge t-badge-red\">한정</span> · <strong class=\"t-accent\">3GB</strong>");
         for (Inline i : Inline.values()) {

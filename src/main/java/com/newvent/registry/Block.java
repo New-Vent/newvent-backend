@@ -39,9 +39,13 @@ public enum Block {
     //   core 는 모델에게 "빠뜨리지 마라" 라고 시킬지다(steps 는 true).
     //   core=false 블록은 요청문에 관련 내용이 있을 때만 만들라고 시킨다.
     //   전부 시키면 페이지마다 출력이 두 배가 되고, 없는 내용을 지어낸다.
+    // ★ .badge 를 shape 에 넣는다 — event.css 가 hero 안의 .badge 를 테두리 알약으로 그리는데
+    //   (그라데이션 배경 위 흰 반투명 테두리) 백엔드가 이 이름을 내보낸 적이 없다.
+    //   t-badge 가 아니라 .badge 다. 이건 hero 전용이고, 자리가 제목 위로 정해져 있다.
     HERO("hero", true, true, Source.MIXED,
             "이벤트 제목과 한 줄 소개. 기간은 서버가 넣는다",
-            "제목은 <h1>, 소개는 <p> 로 감싼다",
+            "제목은 <h1>, 소개는 <p> 로 감싼다. 제목 위에 짧은 꼬리말을 둘 수 있다 — "
+            + "<span class=\"badge\"> 안에 10글자 이하로 쓴다 (예: 선착순, 신규 가입자 전용)",
             "h1", null, 0, null),
 
     HIGHLIGHT("highlight", false, false, Source.LLM,
@@ -54,9 +58,19 @@ public enum Block {
             "<h2> 소제목 하나와 <p> 문단 1~2개로 쓴다",
             "p", null, 0, null),
 
+    // ★ shape 가 카드 **안쪽** class 이름을 말한다 — event.css 에 이미 있는데 안 쓰이고 있었다.
+
+    //
+    // ★ <li> 와 <ul> 에는 class 를 붙이지 않는다 — 카드 **껍데기**는 변형이 이미 만든다.
+
+    // ★ 꼬리말은 benefit-tag 를 쓴다. t-badge 가 아니다.
     BENEFITS("benefits", true, true, Source.MIXED,
             "혜택 — 항목은 폼 값, 문장만 다듬는다",
-            "<ul> 안에 <li> 로 항목을 나열한다. 2개 이상",
+            "<h2> 소제목과 <ul>. <ul> 안에 <li> 로 2개 이상 나열한다. <li> 와 <ul> 에는 class 를 붙이지 않는다. "
+            + "<li> 안은 이모지 하나를 담은 <div class=\"benefit-icon\">, "
+            + "혜택 이름 <div class=\"benefit-name\">, 설명 한 문장 <div class=\"benefit-desc\">, "
+            + "받는 값 <div class=\"benefit-value\"> 순서로 쓴다. "
+            + "짧은 꼬리말이 필요하면 <li> 맨 앞에 <span class=\"benefit-tag\">",
             // 백지: ul li · 템플릿: .benefit-card (계약 EVENT_STRUCTURE_CONTRACT §3)
             "ul li, .benefit-card", "ul, .benefits-list", 2, null),
 
@@ -82,9 +96,21 @@ public enum Block {
             "ul li", "ul", 1,
             "(참여|가입|가입자|고객|회원|이용자) ?대상|대상자|대상(은|는|이며|입니다|:)|등급 ?고객|고객만|회원만"),
 
+    // ★ 번호를 글자로 적지 않는다. step-badge 를 쓰지 않는다.
+    //   steps 변형이 번호를 CSS 로 이미 그린다 —
+    //     v-steps-numbered  li::before { content: counter(nv-step) }        → 동그라미 ①
+    //     v-steps-timeline  li::before { content: "STEP " counter(nv-step) } → "STEP 1"
+    //   여기에 <div class="step-badge">1</div> 를 넣으면 **번호가 두 번 보인다** ("STEP 1" 다음에 "1").
+    //   step-card-default 도 안 쓴다 — 변형의 li 규칙(0,3,1)이 이긴다. benefits 와 같은 이유다.
+    //
+    // ★ 안쪽만 쓴다 — step-title(15px 진하게) · step-desc(13px 흐리게).
+    //   둘을 갈라 쓰면 "제목 한 줄 + 설명 한 줄" 이 되고, 변형의 번호가 그 위에 붙는다.
     STEPS("steps", false, true, Source.LLM,
             "참여 방법 2~4단계",
-            "<ol> 안에 <li> 로 순서대로 나열한다",
+            "<h2> 소제목과 <ol>. <ol> 안에 <li> 로 순서대로 나열한다. <li> 와 <ol> 에는 class 를 붙이지 않는다. "
+            + "<li> 안은 두세 단어짜리 제목 <div class=\"step-title\"> 와 "
+            + "설명 한 문장 <div class=\"step-desc\"> 두 개만 쓴다. "
+            + "단계 번호는 적지 마라 — 화면이 자동으로 붙인다",
             "ol li, .step-card", "ol, .steps-list", 2, null),
 
     // ★ 모양이 두 벌이다 — 목록형 <dl> 과 펼침형 <details>.
