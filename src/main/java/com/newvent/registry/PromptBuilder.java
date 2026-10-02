@@ -423,6 +423,11 @@ public final class PromptBuilder {
     private static void addInline(StringJoiner s) {
         s.add("문구 꾸밈: (꼭 필요한 단어에만, 영역마다 1~2개까지)");
         s.add("- 배지(t-badge)는 " + Inline.BADGE_MAX + "글자 이하의 짧은 말에만 붙인다 (예: 한정, NEW, 무료). 문장에 붙이지 마라.");
+        // ★ 혜택 <li> 바로 안의 꼬리말은 t-badge 가 아니라 benefit-tag 다.
+        //   t-badge 는 문장 안에 끼우는 작은 배지이고, benefit-tag 는 카드 왼쪽 위에 놓이는
+        //   꼬리말 자리다(연한 primary 배경 알약). 자리가 다르니 이름도 다르다.
+        //   ★ 병합 해결에서 이 줄을 빠뜨려 BlankCardMarkupTest 가 깨졌다.
+        s.add("- 단, 혜택 <li> 바로 안의 꼬리말은 benefit-tag 를 쓴다. t-badge 를 쓰지 마라.");
         s.add("- <span> · <mark> · <strong> 의 class 에 아래 이름을 붙인다. 목록에 없는 이름은 쓰지 마라.");
         s.add("  예) <span class=\"t-badge t-badge-red\">한정</span> · <strong class=\"t-accent\">3GB</strong>");
         for (Inline i : Inline.values()) {
