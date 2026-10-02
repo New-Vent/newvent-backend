@@ -45,11 +45,14 @@ public class SimilarityService {
 				eventId, RagConstants.MAX_DISTANCE, limit);
 	}
 
-	/** 관리자 미리보기 */
+	/** 관리자 미리보기 — 임베딩은 1회만. search() 를 거치면 2회 나가서 Bedrock 비용 2배다 */
 	@Transactional(readOnly = true)
 	public SearchPreviewResponse searchPreview(Long eventId, String query, int topK) {
-		List<RagChunk> hits = search(eventId, query, topK);
-		float[] q = (query == null || query.isBlank()) ? null : embedding.embed(query);
+		if(query == null || query.isBlank()) {
+			return new SearchPreviewResponse(eventId, query, topK, List.of());
+		}
+		float[] q = embedding.embed(query);
+		List<RagChunk> hits = searchWithVector(eventId, q, topK);
 		List<ChunkResponse> results = new ArrayList<>(hits.size());
 		for(RagChunk c : hits) {
 			double distance = 1.0 - Vectors.cosine(q, Vectors.fromDb(c.getEmbedding()));
@@ -57,6 +60,16 @@ public class SimilarityService {
 					c.getChunkIndex(), c.getContent(), distance));
 		}
 		return new SearchPreviewResponse(eventId, query, topK, results);
+	}
+
+	/** 벡터가 이미 계산된 경우 쓰는 내부 검색. search() 와 미리보기가 공유한다 */
+	@Transactional(readOnly = true)
+	List<RagChunk> searchWithVector(Long eventId, float[] queryVector, int topK) {
+		int limit = topK <= 0 ? RagConstants.DEFAULT_TOP_K : topK;
+		// ★ 자기 이벤트는 빼고 찾는다. 자기 글을 예시로 가져오면 돌고 돌기 때문
+		//   색인과 같은 임베딩 빈을 쓰므로 모델 이름이 항상 맞는다.
+		return chunks.findSimilar(Vectors.toDb(queryVector), embedding.modelName(),
+				eventId, RagConstants.MAX_DISTANCE, limit);
 	}
 
 	/**
