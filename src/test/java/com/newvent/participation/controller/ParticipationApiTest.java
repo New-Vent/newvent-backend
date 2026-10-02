@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.Map;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -39,8 +41,8 @@ class ParticipationApiTest {
 
     @Test
     void 사용자토큰으로_참여하면_201과_참여ID를반환한다() throws Exception {
-        when(participationService.participate(1L, 7L))
-                .thenReturn(new ParticipationCreateResponse(30L, 1L));
+        when(participationService.participate(1L, 7L, null))
+                .thenReturn(new ParticipationCreateResponse(30L, 1L, Map.of()));
 
         mockMvc.perform(post(PATH)
                         .header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.user(7L))))
@@ -49,7 +51,7 @@ class ParticipationApiTest {
                 .andExpect(jsonPath("$.data.participationId").value(30))
                 .andExpect(jsonPath("$.data.eventId").value(1));
 
-        verify(participationService).participate(1L, 7L);
+        verify(participationService).participate(1L, 7L, null);
     }
 
     @Test
@@ -71,7 +73,7 @@ class ParticipationApiTest {
 
     @Test
     void 이미참여했다면_409를반환한다() throws Exception {
-        when(participationService.participate(1L, 7L))
+        when(participationService.participate(1L, 7L, null))
                 .thenThrow(new ParticipationException(
                         ParticipationErrorCode.ALREADY_PARTICIPATED));
 
@@ -82,7 +84,7 @@ class ParticipationApiTest {
 
     @Test
     void 접근할수없는이벤트이면_404를반환한다() throws Exception {
-        when(participationService.participate(1L, 7L))
+        when(participationService.participate(1L, 7L, null))
                 .thenThrow(new EventNotAccessibleException());
 
         mockMvc.perform(post(PATH)

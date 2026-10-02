@@ -19,7 +19,9 @@ public record GenerationJobResponse(
         /**
          * 이 작업이 만든 버전의 id. phase 가 SAVING 을 지나기 전에는 null
          */
-        Long versionId) {
+        Long versionId,
+        boolean privacyConfirmationRequired,
+        java.util.List<String> privacyTypes) {
 
     public static GenerationJobResponse of(GenerationJob j) {
         return new GenerationJobResponse(
@@ -30,6 +32,6 @@ public record GenerationJobResponse(
                 j.done(),
                 j.attempt() > 0 ? j.attempt() : null,
                 j.message(),
-                j.versionId());
+                j.versionId(), j.privacyConfirmationRequired(), j.privacyTypes());
     }
 }

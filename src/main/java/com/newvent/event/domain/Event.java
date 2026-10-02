@@ -1,6 +1,7 @@
 package com.newvent.event.domain;
 
 import java.time.OffsetDateTime;
+import java.util.Objects;
 
 import jakarta.persistence.*;
 
@@ -72,6 +73,15 @@ public class Event extends BaseTimeEntity {
     )
     private EventVersion publishedVersion;
 
+    @Column(name = "start_notified_at")
+    private OffsetDateTime startNotifiedAt;
+
+    @Column(name = "closing_soon_notified_at")
+    private OffsetDateTime closingSoonNotifiedAt;
+
+    @Column(name = "end_notified_at")
+    private OffsetDateTime endNotifiedAt;
+
     public boolean deleted() {
         return deletedAt != null;
     }
@@ -129,6 +139,15 @@ public class Event extends BaseTimeEntity {
             OffsetDateTime startDate,
             OffsetDateTime endDate,
             MembershipGrade grade) {
+        // 날짜가 실제로 바뀌면 그 날짜 기준으로 이미 보낸 알림 표시를 지운다 —
+        // 안 지우면 연장된 새 날짜가 와도 "이미 보냈다"고 착각해 재발송을 안 한다.
+        if (!Objects.equals(this.startDate, startDate)) {
+            this.startNotifiedAt = null;
+        }
+        if (!Objects.equals(this.endDate, endDate)) {
+            this.closingSoonNotifiedAt = null;
+        }
+
         this.title = title;
         this.template = template;
         this.startDate = startDate;
@@ -151,5 +170,18 @@ public class Event extends BaseTimeEntity {
     /** 게시 중인지는 서비스가 확인한 뒤 호출한다. 게시 버전(publishedVersion)은 그대로 둔다. */
     public void end() {
         this.status = EventStatus.ENDED;
+    }
+
+    // 시작·마감임박·종료 알림 — 같은 이벤트에 같은 종류가 두 번 가지 않도록 보낸 시각을 남긴다.
+    public void markStartNotified(OffsetDateTime now) {
+        this.startNotifiedAt = now;
+    }
+
+    public void markClosingSoonNotified(OffsetDateTime now) {
+        this.closingSoonNotifiedAt = now;
+    }
+
+    public void markEndNotified(OffsetDateTime now) {
+        this.endNotifiedAt = now;
     }
 }

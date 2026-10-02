@@ -33,7 +33,7 @@ import com.newvent.generation.service.GenerationJobStore;
 @Service
 public class EventService {
 
-    static final Duration CLOSING_SOON_WINDOW = Duration.ofDays(3);
+    public static final Duration CLOSING_SOON_WINDOW = Duration.ofDays(3);
 
     private final EventRepository eventRepository;
     private final EventTemplateRepository eventTemplateRepository;

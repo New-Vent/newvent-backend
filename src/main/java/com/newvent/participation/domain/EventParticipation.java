@@ -69,4 +69,21 @@ public class EventParticipation {
         participation.user = user;
         return participation;
     }
+
+    public static EventParticipation create(Event event, User user, Map<String, Object> submittedData) {
+        EventParticipation participation = create(event, user);
+        participation.submittedData = new LinkedHashMap<>(submittedData);
+        return participation;
+    }
+
+    public static EventParticipation create(
+            Event event,
+            User user,
+            Map<String, Object> submittedData,
+            Map<String, Object> resultData
+    ) {
+        EventParticipation participation = create(event, user, submittedData);
+        participation.resultData = new LinkedHashMap<>(resultData);
+        return participation;
+    }
 }
