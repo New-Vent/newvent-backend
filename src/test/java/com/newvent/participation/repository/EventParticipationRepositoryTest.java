@@ -160,12 +160,11 @@ class EventParticipationRepositoryTest {
 
     @Test
     void 요약은_본인_전체_기록을_집계하고_빈_결과는_대기에서_제외한다() {
-        assertThat(repository.countByUserId(userId)).isEqualTo(4);
-        assertThat(repository.countByUserIdAndResultStatus(userId, "WON"))
-                .isEqualTo(1);
-        assertThat(repository.countByUserIdAndResultStatus(
-                userId, "PENDING"
-        )).isEqualTo(1);
+        ParticipationSummaryProjection summary = repository.findSummaryByUserId(userId);
+
+        assertThat(summary.getTotalParticipationCount()).isEqualTo(4);
+        assertThat(summary.getRewardCount()).isEqualTo(1);
+        assertThat(summary.getPendingCount()).isEqualTo(1);
     }
 
     @Test
@@ -189,9 +188,7 @@ class EventParticipationRepositoryTest {
 
     @Test
     void 기록이_없는_사용자는_빈_목록과_0을_반환한다() {
-        Long emptyUserId = createUser(
-                "empty-" + UUID.randomUUID()
-        );
+        Long emptyUserId = createUser("empty-" + UUID.randomUUID());
 
         assertThat(repository.findMyParticipations(
                 emptyUserId, PageRequest.of(0, 10)
@@ -201,13 +198,11 @@ class EventParticipationRepositoryTest {
                 emptyUserId, "WON", PageRequest.of(0, 10)
         ).getTotalElements()).isZero();
 
-        assertThat(repository.countByUserId(emptyUserId)).isZero();
-        assertThat(repository.countByUserIdAndResultStatus(
-                emptyUserId, "WON"
-        )).isZero();
-        assertThat(repository.countByUserIdAndResultStatus(
-                emptyUserId, "PENDING"
-        )).isZero();
+        ParticipationSummaryProjection summary = repository.findSummaryByUserId(emptyUserId);
+
+        assertThat(summary.getTotalParticipationCount()).isZero();
+        assertThat(summary.getRewardCount()).isZero();
+        assertThat(summary.getPendingCount()).isZero();
     }
 
     private Long createUser(String loginId) {

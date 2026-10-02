@@ -11,8 +11,10 @@ import com.newvent.participation.domain.EventParticipation;
 
 public interface EventParticipationRepository extends JpaRepository<EventParticipation, Long> {
 
+    // 이벤트당 사용자 1회 참여 제한을 위한 중복 참여 확인
     boolean existsByEventIdAndUserId(Long eventId, Long userId);
 
+    // 본인의 전체 참여 기록을 최신순으로 페이징 조회
     @EntityGraph(attributePaths = "event")
     @Query(
             value = """
@@ -32,6 +34,7 @@ public interface EventParticipationRepository extends JpaRepository<EventPartici
             Pageable pageable
     );
 
+    // 본인의 특정 결과 상태 기록을 페이징 조회 — 받은 혜택 목록은 WON 사용
     @EntityGraph(attributePaths = "event")
     @Query(
             value = """
@@ -62,19 +65,23 @@ public interface EventParticipationRepository extends JpaRepository<EventPartici
             Pageable pageable
     );
 
-    long countByUserId(Long userId);
-
+    // 목록 필터·페이지와 관계없이 본인의 전체 참여·당첨·대기 수를 한 번에 집계
     @Query(
             value = """
-                    SELECT COUNT(*)
+                    SELECT
+                        COUNT(*) AS "totalParticipationCount",
+                        COUNT(*) FILTER (
+                            WHERE p.result_data ->> 'status' = 'WON'
+                        ) AS "rewardCount",
+                        COUNT(*) FILTER (
+                            WHERE p.result_data ->> 'status' = 'PENDING'
+                        ) AS "pendingCount"
                     FROM event_participations p
                     WHERE p.user_id = :userId
-                      AND p.result_data ->> 'status' = :resultStatus
                     """,
             nativeQuery = true
     )
-    long countByUserIdAndResultStatus(
-            @Param("userId") Long userId,
-            @Param("resultStatus") String resultStatus
+    ParticipationSummaryProjection findSummaryByUserId(
+            @Param("userId") Long userId
     );
 }

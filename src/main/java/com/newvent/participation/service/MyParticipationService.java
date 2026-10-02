@@ -14,6 +14,7 @@ import com.newvent.participation.dto.response.MyParticipationListResponse;
 import com.newvent.participation.dto.response.MyParticipationResponse;
 import com.newvent.participation.dto.response.ParticipationSummaryResponse;
 import com.newvent.participation.repository.EventParticipationRepository;
+import com.newvent.participation.repository.ParticipationSummaryProjection;
 
 import lombok.RequiredArgsConstructor;
 
@@ -23,7 +24,6 @@ import lombok.RequiredArgsConstructor;
 public class MyParticipationService {
 
     private static final String WON = "WON";
-    private static final String PENDING = "PENDING";
 
     private final EventParticipationRepository participationRepository;
 
@@ -53,18 +53,13 @@ public class MyParticipationService {
                 .map(MyParticipationResponse::from)
                 .toList();
 
-        ParticipationSummaryResponse summary =
-                new ParticipationSummaryResponse(
-                        participationRepository.countByUserId(userId),
-                        participationRepository.countByUserIdAndResultStatus(
-                                userId,
-                                WON
-                        ),
-                        participationRepository.countByUserIdAndResultStatus(
-                                userId,
-                                PENDING
-                        )
-                );
+        ParticipationSummaryProjection counts = participationRepository.findSummaryByUserId(userId);
+
+        ParticipationSummaryResponse summary = ParticipationSummaryResponse.builder()
+                .totalParticipationCount(counts.getTotalParticipationCount())
+                .rewardCount(counts.getRewardCount())
+                .pendingCount(counts.getPendingCount())
+                .build();
 
         PageResponse<MyParticipationResponse> participations =
                 PageResponse.of(

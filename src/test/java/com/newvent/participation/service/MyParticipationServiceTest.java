@@ -17,6 +17,7 @@ import com.newvent.participation.domain.EventParticipation;
 import com.newvent.participation.dto.request.ParticipationListFilter;
 import com.newvent.participation.dto.response.MyParticipationListResponse;
 import com.newvent.participation.repository.EventParticipationRepository;
+import com.newvent.participation.repository.ParticipationSummaryProjection;
 
 class MyParticipationServiceTest {
 
@@ -109,9 +110,7 @@ class MyParticipationServiceTest {
 
         verify(repository, never())
                 .findMyParticipations(anyLong(), any());
-        verify(repository).countByUserId(7L);
-        verify(repository).countByUserIdAndResultStatus(7L, "WON");
-        verify(repository).countByUserIdAndResultStatus(7L, "PENDING");
+        verify(repository).findSummaryByUserId(7L);
     }
 
     @Test
@@ -189,11 +188,12 @@ class MyParticipationServiceTest {
             long rewards,
             long pending
     ) {
-        when(repository.countByUserId(userId)).thenReturn(total);
-        when(repository.countByUserIdAndResultStatus(userId, "WON"))
-                .thenReturn(rewards);
-        when(repository.countByUserIdAndResultStatus(userId, "PENDING"))
-                .thenReturn(pending);
+        ParticipationSummaryProjection counts = mock(ParticipationSummaryProjection.class);
+
+        when(counts.getTotalParticipationCount()).thenReturn(total);
+        when(counts.getRewardCount()).thenReturn(rewards);
+        when(counts.getPendingCount()).thenReturn(pending);
+        when(repository.findSummaryByUserId(userId)).thenReturn(counts);
     }
 
     private EventParticipation participation(
