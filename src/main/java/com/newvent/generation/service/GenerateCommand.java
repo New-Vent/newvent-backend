@@ -13,7 +13,27 @@ public record GenerateCommand(
         String title,
         String period,
         String ctaUrl,
-        String requestText) {
+        String requestText,
+        java.util.UUID privacyConfirmationJobId, boolean privacyConfirmed) {
+    public GenerateCommand(Long eventId, String templateCode, String title, String period,
+                           String ctaUrl, String requestText, java.util.UUID privacyConfirmationJobId) {
+        this(eventId, templateCode, false, title, period, ctaUrl, requestText, privacyConfirmationJobId, false);
+    }
+    public GenerateCommand(Long eventId, String templateCode, String title, String period,
+                           String ctaUrl, String requestText) {
+        this(eventId, templateCode, false, title, period, ctaUrl, requestText, null, false);
+    }
+    /** templateFromEvent 포함, privacyConfirmation 없음 (테스트용) */
+    public GenerateCommand(Long eventId, String templateCode, boolean templateFromEvent,
+                           String title, String period, String ctaUrl, String requestText) {
+        this(eventId, templateCode, templateFromEvent, title, period, ctaUrl, requestText, null, false);
+    }
+    /** templateFromEvent 없음, privacyConfirmation 있음 (테스트용) */
+    public GenerateCommand(Long eventId, String templateCode, String title, String period,
+                           String ctaUrl, String requestText,
+                           java.util.UUID privacyConfirmationJobId, boolean privacyConfirmed) {
+        this(eventId, templateCode, false, title, period, ctaUrl, requestText, privacyConfirmationJobId, privacyConfirmed);
+    }
 
     /**
      * 생성 시작. **트랜잭션 안에서 부른다** (아래 지연 로딩 주석 참고).
@@ -32,7 +52,8 @@ public record GenerateCommand(
                 event.getTitle(),
                 PeriodText.of(event.getStartDate(), event.getEndDate()),
                 ctaUrl(event),
-                requestText);
+                requestText,
+                null, false);
     }
 
     /**
@@ -44,7 +65,7 @@ public record GenerateCommand(
         return new GenerateCommand(
                 event.getId(), null, false, event.getTitle(),
                 PeriodText.of(event.getStartDate(), event.getEndDate()),
-                ctaUrl(event), null);
+                ctaUrl(event), null, null, false);
     }
 
     /**

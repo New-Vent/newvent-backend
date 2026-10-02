@@ -47,6 +47,7 @@ public class GenerationService {
     private final EventGuard guard;
     private final GenerationJobStore jobs;
     private final LlmCallRecorder recorder;
+    private final com.newvent.filtering.FilteringPolicy filtering;
 
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -58,6 +59,14 @@ public class GenerationService {
     public GenerationService(RetryService retry, TemplateService templates,
                              VersionStore versions, EventGuard guard, GenerationJobStore jobs,
                              LlmCallRecorder recorder) {
+        this(retry, templates, versions, guard, jobs, recorder, new com.newvent.filtering.FilteringPolicy());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public GenerationService(RetryService retry, TemplateService templates,
+                             VersionStore versions, EventGuard guard, GenerationJobStore jobs,
+                             LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering) {
+        this.filtering = filtering;
         this.retry = retry;
         this.templates = templates;
         this.versions = versions;
@@ -132,7 +141,17 @@ public class GenerationService {
             }
         }
 
-        // ④ 이미 돌고 있나 — **자리를 잡지 않고** 먼저 본다
+        // ③ 이미 돌고 있나 — **자리를 잡지 않고** 먼저 본다
+        var input = cmd.hasTemplate()
+                ? com.newvent.filtering.FilteringPolicy.Result.accepted("")
+                : filtering.prepare(cmd.requestText(), cmd.privacyConfirmationJobId(), cmd.eventId(),
+                        "generate", null, jobs, cmd.privacyConfirmed(), cmd.title());
+        if (input.error() != null) return new StartResult.Rejected(input.error());
+        if (cmd.hasTemplate() && (cmd.privacyConfirmationJobId() != null || cmd.privacyConfirmed())) {
+            return new StartResult.Rejected(com.newvent.filtering.FilteringErrorCode.PRIVACY_CONFIRMATION_NOT_FOUND);
+        }
+        GenerateCommand safeCommand = new GenerateCommand(cmd.eventId(), cmd.templateCode(),
+                cmd.title(), cmd.period(), cmd.ctaUrl(), input.text());
         Optional<GenerationJob> already = jobs.ofEvent(cmd.eventId());
         if (already.isPresent()) {
             return new StartResult.AlreadyRunning(already.get());
@@ -140,7 +159,7 @@ public class GenerationService {
 
         // ⑤ 하루 상한 — 백지 경로만. 템플릿 경로는 모델을 아예 안 부른다
 
-        if (!cmd.hasTemplate()) {
+        if (!cmd.hasTemplate() && input.question() == null) {
             retry.reserve();
         }
 
@@ -156,7 +175,14 @@ public class GenerationService {
         }
 
         GenerationJob job = slot.get();
-        worker.submit(() -> runSafely(job, cmd));
+        job.privacyRequest("generate", null);
+        job.privacyConfirmation(input.fingerprint(), input.privacyTypes());
+        if (input.question() != null) {
+            job.askBack(input.question());
+            jobs.finish(job);
+        } else {
+            worker.submit(() -> runSafely(job, safeCommand));
+        }
         return new StartResult.Started(job);
     }
 
