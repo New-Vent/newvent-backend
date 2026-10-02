@@ -19,4 +19,11 @@ public interface EventVersionRepository extends JpaRepository<EventVersion, Long
      * 이 이벤트의 마지막 버전. version_no 최대값 하나.
      */
     Optional<EventVersion> findTopByEventIdOrderByVersionNoDesc(Long eventId);
+
+    /**
+     * 일괄 재색인용. 오래된 버전부터.
+     */
+    List<EventVersion> findByEventIdOrderByVersionNoAsc(Long eventId);
+
+    long countByEventId(Long eventId);
 }
