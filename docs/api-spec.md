@@ -244,6 +244,11 @@ Content-Type: application/json
 | 종료(`ENDED`)됐거나, 게시 중이면서 기존 종료일시가 지난 이벤트 | 409 | `EVENT409-1` |
 | 게시 중인 이벤트의 템플릿 변경·해제 | 409 | `EVENT409-4` |
 
+직접 편집 API(`POST /api/admin/events/{eventId}/versions/direct-edit`)에도 같은 종료 잠금 정책을 적용한다.
+`ENDED` 상태이거나, `PUBLISHED` 상태에서 현재 시각이 종료일시 이상이면 `409 / EVENT409-1`을 반환한다.
+기준 HTML 조회와 새 버전 저장 전에 거절하므로 직접 편집 결과는 저장되지 않는다.
+`DRAFT`는 기간이 지나도 직접 편집할 수 있다. 소유자가 아닌 관리자의 요청은 기존대로 403을 반환한다.
+
 ---
 
 ## `PATCH /api/admin/events/{id}/status`
