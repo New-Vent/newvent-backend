@@ -237,8 +237,18 @@ class VariantPaletteTest {
 
     // ── 프롬프트 ──
 
+    /**
+     * ★ 예전에는 "모든 변형이 생성 프롬프트에 나간다" 였다. 변형이 111개로 늘면서
+     *   전부 실으면 생성 입력이 두 배가 된다. 그래서 생성에는 블록마다
+     *   {@link Variant#sample} 로 고른 몇 개만 싣는다 — 기본(목록 첫 번째)은 빼고.
+     *
+     *   <b>대신 "모든 변형이 어딘가로는 나간다" 는 지킨다</b> — 표본에서 빠진 것은
+     *   수정 프롬프트에 나간다. 수정은 블록 하나치라 전부 실어도 싸고,
+     *   모양을 조목조목 고르는 일이 거기서 일어난다.
+     *   그 대조는 {@code 모든_변형이_어딘가로는_나간다} 가 본다.
+     */
     @Test
-    @DisplayName("생성 프롬프트에 모든 변형과 팔레트가 나가고, 선택 블록은 따로 안내한다")
+    @DisplayName("생성 프롬프트에 변형 표본과 팔레트가 나가고, 선택 블록은 따로 안내한다")
     void 생성_프롬프트() {
         String p = PromptBuilder.generate();
         // 변형은 블록마다 기본을 뺀 몇 개만 싣는다 (아래 표본 테스트). 기본은 class 를 안 붙이면 나온다고 안내한다
@@ -247,8 +257,68 @@ class VariantPaletteTest {
             if (pl != Palette.BASE) assertTrue(p.contains(pl.cssClass()), pl.cssClass());
         }
         assertTrue(p.contains("요청문이 그 내용을 직접 말할 때만"));
-        int core = p.indexOf("만들 영역:"), optional = p.indexOf("더할 수 있는 영역:");
-        assertTrue(p.indexOf("data-block=\"faq\"") > optional && optional > core, "faq 는 선택 영역에 있어야 합니다");
+
+        // ★ 블록 목록이 세 묶음이다 — 만들 영역(core) · 이번 요청에 꼭 넣을 영역(열쇠말이 걸린 것) ·
+        //   더할 수 있는 영역(판단이 남은 것). faq 는 열쇠말이 있는 블록이라,
+        //   요청문을 안 주면(= 거르지 않으면) 둘째 묶음에 들어간다.
+        //   중요한 건 "core 묶음에는 없다" 이므로 첫 선택 묶음 뒤에 있는지를 본다.
+        int core = p.indexOf("만들 영역:");
+        int triggered = p.indexOf("이번 요청에 꼭 넣을 영역:");
+        int optional = p.indexOf("더할 수 있는 영역:");
+        int firstOptionalSection = triggered > 0 ? triggered : optional;
+        assertTrue(firstOptionalSection > core, "선택 묶음은 필수 묶음 뒤에 와야 합니다");
+        assertTrue(p.indexOf("data-block=\"faq\"") > firstOptionalSection,
+                "faq 는 '만들 영역'(항상 만드는 묶음)에 있으면 안 됩니다");
+    }
+
+    /**
+     * 변형이 레지스트리에만 있고 어느 프롬프트에도 안 나가면 <b>죽은 이름</b>이다 —
+     * event.css 에 규칙까지 써 두고 아무도 못 쓰는 상태가 된다. 실제로 그런 게 59개 있었다.
+     *
+     * ★ 생성에는 표본만 나간다. 표본에서 빠진 것은 수정 프롬프트에 나간다.
+     *   어느 쪽에도 없으면 실패다.
+     * ★ SURFACE 변형은 블록 전용이 아니므로 {@link Variant#of} 가 주는 블록 아무거나에서 찾는다.
+     */
+    @Test
+    @DisplayName("★ 모든 변형이 생성이든 수정이든 어딘가로는 나간다 — 죽은 이름이 없다")
+    void 모든_변형이_어딘가로는_나간다() {
+        String gen = PromptBuilder.generate();
+        for (Variant v : Variant.values()) {
+            if (gen.contains(v.cssClass())) continue;
+            boolean inEdit = Block.llmBlocks().stream()
+                    .filter(b -> Variant.of(b).contains(v))
+                    .anyMatch(b -> PromptBuilder.edit(b, false).contains(v.cssClass()));
+            assertTrue(inEdit,
+                    v.cssClass() + " 가 생성에도 수정에도 안 나갑니다. "
+                    + "레지스트리에만 있는 이름은 모델이 영영 못 고릅니다");
+        }
+    }
+
+    /**
+     * ★ 생성 프롬프트가 길어지면 백지 생성 1회 비용이 바로 오른다.
+     *   상한을 숫자로 박아 둔다 — 블록당 표본 수를 올리거나 shape 를 늘리면 여기서 걸린다.
+     *
+     * ★ 두 가지를 같이 본다 — 보통 요청과 <b>최악</b>.
+     *   선택 블록(stats · prize · coupon · schedule · faq · compare · audience)은
+     *   요청문에 열쇠말이 있을 때만 목록에 들어간다. 그래서 보통 요청은 짧고,
+     *   열쇠말이 다 걸린 요청이 제일 길다. <b>한쪽만 재면 늘어난 걸 놓친다.</b>
+     *
+     *   {@code generate(null)} 은 거르지 않으므로 그 자체가 최악이다(테스트 · 내부용).
+     *   오늘 기준 보통 7,355자 · 최악 9,268자다.
+     */
+    @Test
+    @DisplayName("생성 프롬프트가 너무 길어지지 않는다 — 비용 상한")
+    void 생성_프롬프트_길이_상한() {
+        int plain = PromptBuilder.generate("데이터 3GB 를 주는 신규 가입 이벤트").length();
+        assertTrue(plain < 9000,
+                "보통 요청의 생성 프롬프트가 " + plain + "자입니다. 9,000자를 넘기면 "
+                + "생성 1회 비용이 눈에 띄게 오릅니다. "
+                + "PromptBuilder.GENERATE_LAYOUTS_PER_BLOCK 를 줄이는 걸 먼저 검토하세요");
+
+        int worst = PromptBuilder.generate().length();
+        assertTrue(worst < 13000,
+                "모든 블록이 걸린 생성 프롬프트가 " + worst + "자입니다. 13,000자를 넘으면 "
+                + "블록을 늘리기 전에 블록당 표본 수를 먼저 줄이세요");
     }
 
     @Test

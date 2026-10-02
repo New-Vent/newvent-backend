@@ -41,7 +41,7 @@ public enum Inline {
     ACCENT("t-accent", Kind.TEXT, "브랜드색 굵은 글씨 — 숫자 · 혜택명"),
     // ★ 원래 가격 · 할인 가격은 요청문에 있는 값만 — 수정에서는 ValueCheck 가 새 숫자를 잡는다
     STRIKE("t-strike", Kind.TEXT, "취소선 — 할인 전 원래 가격 (요청문에 있는 값만)"),
-    BIG("t-big", Kind.TEXT, "크게 키운 숫자 — 3GB · 30% 같은 핵심 수치"),
+    BIG("t-big", Kind.TEXT, "아주 크고 굵은 숫자 — 숫자나 단어 하나에만. 문장에 쓰지 마라"),
     UNDERLINE("t-underline", Kind.TEXT, "물결 밑줄 — 조건 · 마감 강조");
 
     /** 배지 바탕(BASE)은 색(COLOR)과 함께 쓴다. TEXT 는 따로 쓴다 */

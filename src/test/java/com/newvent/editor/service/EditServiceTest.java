@@ -142,7 +142,17 @@ class EditServiceTest {
             <section data-block="notices"><p>유의사항</p></section>
             <section data-block="cta"><button class="btn">참여하기</button></section>""";
 
+    /**
+     * ★ BASE 의 steps 와 <b>달라야 한다.</b> 예전에는 글자 하나까지 같았고,
+     *   그래서 "바뀐 게 없으면 저장하지 않는다" 가 들어오자 이 테스트가 깨졌다.
+     *   이 테스트가 보려는 것은 "ADD 가 삽입이 아니라 병합인가" 이고,
+     *   내용이 같았던 건 우연이다. 달라야 병합이 실제로 갈아끼웠는지까지 보인다.
+     */
     private static final String NEW_STEPS =
+            "<section data-block=\"steps\"><ol><li>앱 열고 로그인</li><li>버튼 누르기</li></ol></section>";
+
+    /** BASE 의 steps 와 <b>똑같은</b> 응답. 모델이 아무것도 안 바꾼 상황을 만든다 */
+    private static final String SAME_STEPS =
             "<section data-block=\"steps\"><ol><li>앱 열기</li><li>버튼 누르기</li></ol></section>";
 
     private static final String NEW_BENEFITS =
@@ -629,6 +639,65 @@ class EditServiceTest {
         assertTrue(job.message().contains("늘리거나 줄일 수 없습니다"));
         assertEquals(0, retry.calls(), "거절인데 모델을 불렀다");
         assertEquals(1, versionNo());
+    }
+
+    // ── 조용한 실패 ───────────────────────────────────────────────
+
+    /**
+     * ★ 실측(여름 수영장): "참여 버튼을 파란색으로 물고기 느낌나게" 가 v4 로 저장되고
+     *   "반영했어요" 가 나갔는데 화면은 한 글자도 안 바뀌었다. cta 변형 11개가 전부 모양이고
+     *   색은 hero 에만 걸리는 팔레트라, 애초에 할 수 없는 요청이었다.
+     *   관리자는 자기가 잘못 말한 줄 알고 같은 요청을 계속 다시 쓴다.
+     */
+    @Test
+    @DisplayName("★ 모델이 똑같은 내용을 돌려주면 저장하지 않는다 — 틀린 성공보다 정직한 실패")
+    void 안_바뀌면_저장하지_않는다() {
+        router.willReturn(new RawRoute("STYLE", "steps", null));
+        retry.willReturn(ok(SAME_STEPS));
+
+        GenerationJob job = run("참여 방법을 물고기 느낌으로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.FAILED, job.phase());
+        assertEquals(1, versionNo(), "안 바뀌었는데 버전이 생겼다");
+        assertNull(job.versionId());
+    }
+
+    /**
+     * ★ "못 했습니다" 만 말하면 관리자가 같은 요청을 또 쓴다.
+     *   그 영역에 실제로 있는 모양을 사람 말로 보여줘야 다음 요청이 맞는다.
+     */
+    @Test
+    @DisplayName("무엇을 할 수 있는지 같이 알려준다")
+    void 할_수_있는_것을_알려준다() {
+        router.willReturn(new RawRoute("STYLE", "steps", null));
+        retry.willReturn(ok(SAME_STEPS));
+
+        GenerationJob job = run("참여 방법을 물고기 느낌으로 바꿔줘");
+
+        assertTrue(job.message().contains("그대로 두었습니다"), job.message());
+        assertTrue(job.message().contains("세로 타임라인"),
+                "고를 수 있는 모양 이름이 없으면 관리자가 또 같은 요청을 쓴다: " + job.message());
+        assertTrue(job.message().contains("전체 색감"),
+                "색은 영역별로 못 바꾼다는 것을 알려줘야 한다: " + job.message());
+    }
+
+    /**
+     * ★ 두 가지를 시켰는데 하나만 됐으면 된 쪽은 저장하는 게 맞다.
+     *   전부 막으면 "제목은 바뀌었는데 안 저장됨" 이 되어 더 나쁘다.
+     */
+    @Test
+    @DisplayName("연산 두 개 중 하나만 바뀌어도 저장한다")
+    void 일부만_바뀌면_저장한다() {
+        router.willReturn(
+                new RawRoute("EDIT", "hero", "가을 대축제"),
+                new RawRoute("EDIT", "steps", null));
+        retry.willReturn(ok(NEW_HERO), ok(SAME_STEPS));
+
+        GenerationJob job = run("제목 바꾸고 참여방법도 다듬어줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertEquals(2, versionNo());
+        assertTrue(savedHtml().contains("가을 대축제"));
     }
 
     /** 기준 문서를 바꿔 다시 세운다 */

@@ -91,9 +91,53 @@ public final class PromptBuilder {
         // ★ "관련 내용" 만으로는 약했다 — FAQ 를 요청하지 않은 VIP 이벤트에서 질문 4개를 지어냈고
         //   답이 "별도로 공지됩니다 · 고객센터로 문의" 였다(Bedrock 실측). 직접 요청 기준으로 좁히고
         //   내용 없는 답을 금지 문구로 박는다.
+        // ★ 세 묶음으로 가른다. 예전에는 둘이었고, 그게 실측에서 사고가 났다.
+        //   둘째 묶음은 머리말과 그 아래 줄이 전부 **부정문**이었다. 모델이 묶음 전체를
+        //   금지로 읽고 경품·쿠폰·일정·숫자를 전부 benefits 카드로 몰아넣었다(여름 수영장 실측).
+        //
+        //   ★ 열쇠말이 걸린 블록이 목록에 남아 있다는 건 **서버가 이미 "요청문이 그 내용을
+        //     말한다" 고 판정했다**는 뜻이다(Block.llmBlocksFor). 판정 뒤에 "추측해서 만들지
+        //     마라" 라고 하는 건 앞뒤가 안 맞는다. 걸린 것은 만들라고 시킨다.
+        List<Block> triggered = blocks.stream()
+                .filter(b -> !b.core() && b.requestedBy(requestText)).toList();
+        List<Block> optional = blocks.stream()
+                .filter(b -> !b.core() && !b.requestedBy(requestText)).toList();
+
+        if (!triggered.isEmpty()) {
+            StringJoiner keys = new StringJoiner(" · ");
+            for (Block b : triggered) keys.add(b.key());
+            s.add("이번 요청에 꼭 넣을 영역: (요청문에 그 내용이 있다. 빠뜨리지 마라)");
+            s.add("- " + keys + " 영역을 반드시 만든다. 요청문이 직접 요청했다. 다른 영역에 섞어 넣지 마라.");
+            // ★ 단서가 없으면 "반드시" 가 각 영역의 "모자라면 만들지 마라" 를 이긴다.
+            //   stats 가 숫자 하나(8,200명)만 있는데 요금제를 세어 "2종" 을 만들어 두 칸을 채웠다
+            //   (여름 수영장 2차 실측). 억지로 채우느니 그 영역이 없는 편이 낫다.
+            s.add("- 다만 그 영역에 쓸 내용이 요청문에 모자라면 그 영역은 만들지 마라. "
+                    + "칸을 채우려고 숫자나 항목을 만들어내지 마라.");
+            // ★ 자리를 나누라고 직접 말한다. 한 줄로는 모자랐다 —
+            //   실측에서 경품이 benefits 와 prize 에 **똑같이 두 번** 나왔다.
+            s.add("- 각 내용은 한 영역에만 쓴다. 같은 것을 두 영역에 쓰지 마라.");
+            s.add("- 위 " + keys + " 에 쓴 내용을 benefits 에 다시 쓰지 마라. "
+                    + "benefits 에는 그 밖의 혜택만 남긴다.");
+            // ★ 되돌려 훔치는 것을 막는다 — 예전 줄("남는 게 없으면 요청문의 다른 혜택을 쓴다")이
+            //   쿠폰·경품을 도로 가져오는 허락이 되어 coupon 섹션이 통째로 사라졌다(실측).
+            //   금지만 하면 minItems 를 못 채워 재시도가 도니, 쓸 것을 이름으로 정해 준다.
+            s.add("- 나눠 쓰고 나서 benefits 에 쓸 게 모자라면 " + keys
+                    + " 에서 도로 가져오지 마라. 그 영역이 통째로 사라진다.");
+            s.add("- 대신 참여 자체의 이점을 쓴다 — "
+                    + "예: 전원 참여 가능, 별도 응모 없이 자동 참여, 당일 바로 사용 가능.");
+            for (Block b : triggered) addBlockLine(s, b);
+            s.add("");
+        }
+
         s.add("더할 수 있는 영역: (요청문이 그 내용을 직접 말할 때만 만든다. 추측해서 만들지 마라)");
-        s.add("- 요청문에 질문·답이 없으면 faq 를 만들지 마라. '별도 공지', '고객센터 문의' 같은 내용 없는 답은 쓰지 마라.");
-        s.add("- 요청문에 비교할 값이 없으면 compare 를 만들지 마라.");
+        // ★ 아래 두 줄은 그 블록이 **목록에 없을 때만** 의미가 있다.
+        //   목록에 있는데도 "만들지 마라" 라고 하면 서버 판정과 정면으로 어긋난다.
+        if (!blocks.contains(Block.FAQ)) {
+            s.add("- 요청문에 질문·답이 없으면 faq 를 만들지 마라. '별도 공지', '고객센터 문의' 같은 내용 없는 답은 쓰지 마라.");
+        }
+        if (!blocks.contains(Block.COMPARE)) {
+            s.add("- 요청문에 비교할 값이 없으면 compare 를 만들지 마라.");
+        }
         s.add("- 요청문이 주의·유의 사항을 강조해 달라고 하면 highlight 를 만들고 v-highlight-alert 를 고른다.");
         s.add("- 같은 영역(data-block)을 두 번 만들지 마라. highlight 도 하나뿐이다.");
         // ★ 목록에서 빼기만 하면 모델이 이름을 몰라도 비슷한 걸 만든다. 빠진 이름을 직접 말한다.
@@ -103,18 +147,7 @@ public final class PromptBuilder {
         if (!skipped.isEmpty()) {
             s.add("- 이번 요청에서는 " + String.join(", ", skipped) + " 영역을 만들지 마라.");
         }
-        // ★ 반대쪽도 이름을 댄다 — 요청문이 직접 요청한 블록은 "만들 수 있다" 가 아니라 "만든다".
-        //   이름 없이 "직접 말할 때만" 이라고만 하면 모델이 혜택 블록에 섞어 넣고 끝낸다(Bedrock 실측).
-        List<String> required = blocks.stream()
-                .filter(b -> !b.core() && b.requestedBy(requestText)).map(Block::key).toList();
-        if (!required.isEmpty()) {
-            s.add("- 이번 요청에서는 " + String.join(", ", required)
-                    + " 영역을 반드시 만든다. 요청문이 직접 요청했다. 다른 영역에 섞어 넣지 마라.");
-        }
-        for (Block b : blocks) {
-            if (b.core()) continue;
-            addBlockLine(s, b);
-        }
+        for (Block b : optional) addBlockLine(s, b);
         if (!Block.serverBlocks().isEmpty()) {
             s.add("");
             s.add("만들면 안 되는 영역:");
@@ -129,26 +162,59 @@ public final class PromptBuilder {
         addInline(s);
         s.add("");
         s.add("태그를 반드시 쓴다. 맨 텍스트만 두지 마라.");
+        // ★ benefit-* · step-* · badge 는 접두사가 달라서 cleanLooks 의 허용 목록 검사를
+        //   통째로 지나간다. 모델이 benefit-headline 같은 걸 지어내면 CSS 가 없어 효과도 없는데
+        //   지워지지도 않고 그대로 저장된다. 지금은 프롬프트가 유일한 방어선이다.
+        s.add("형태에 적힌 class 이름은 글자 그대로 쓴다. 비슷한 이름을 지어내지 마라. "
+                + "목록 밖 이름은 꾸미는 규칙이 없어서 아무 효과도 없다.");
+        // ★ .block-header 는 event.css 에서 :not(.ev-block) 제약이 없다 — 백지 페이지에도 걸린다.
+        //   소제목이 있는 블록이 여섯이라 shape 여섯 곳에 베끼지 않고 여기 한 줄로 둔다.
+        s.add("소제목은 머리말과 함께 쓴다:");
+        s.add("  <div class=\"block-header\"><div class=\"sub-label\">영문 한두 단어</div>"
+                + "<h2 class=\"title\">한글 소제목</h2></div>");
+        s.add("  sub-label 은 그 영역을 한마디로 말하는 영문이다 (예: Event Benefits, How to Join).");
         // ★ 예시에 benefits 와 steps 를 넣는다.
         //   예전 예시는 hero 와 cta 둘뿐이었고, 출력도 딱 그 정도로 나왔다.
         //   라우터에서 이미 겪은 것과 같다 — 예시가 있고 없고가 실제로 갈렸다.
         //   분량을 말로만 시키는 것보다 보여주는 쪽이 세다.
         s.add("예:");
         s.add("<section data-block=\"hero\" class=\"v-hero-center palette-summer\">");
+        s.add("  <span class=\"badge\">선착순</span>");
         s.add("  <h1>여름 데이터 대방출</h1>");
         s.add("  <p>이번 여름, 데이터 걱정 없이 마음껏 즐기세요.</p>");
         s.add("</section>");
         s.add("<section data-block=\"benefits\" class=\"v-benefits-grid v-surface-tint\">");
+        s.add("  <div class=\"block-header\"><div class=\"sub-label\">Event Benefits</div>");
+        s.add("    <h2 class=\"title\">이벤트 혜택</h2></div>");
         s.add("  <ul>");
-        s.add("    <li>데이터 3GB 즉시 지급 — 가입 완료 즉시 사용할 수 있습니다.</li>");
-        s.add("    <li>월 요금 30% 할인 — 가입 후 6개월 동안 적용됩니다.</li>");
+        s.add("    <li>");
+        s.add("      <div class=\"benefit-icon\">\uD83D\uDCF6</div>");
+        s.add("      <div class=\"benefit-name\">데이터 <strong class=\"t-accent\">3GB</strong> 지급</div>");
+        s.add("      <div class=\"benefit-desc\">가입을 완료하면 바로 사용할 수 있습니다.</div>");
+        s.add("      <div class=\"benefit-value\">즉시 지급</div>");
+        s.add("    </li>");
+        // ★ 둘째 카드는 "할인 혜택" 꼴을 보여준다 — 꼬리말 · 취소선 · 큰 숫자.
+        //   말로 "가격을 강조해라" 라고 하는 것보다 한 번 보여주는 쪽이 세다.
+        s.add("    <li>");
+        s.add("      <span class=\"benefit-tag\">6개월 한정</span>");
+        s.add("      <div class=\"benefit-icon\">\uD83C\uDF9F\uFE0F</div>");
+        s.add("      <div class=\"benefit-name\">월 요금 할인</div>");
+        s.add("      <div class=\"benefit-desc\">가입 후 6개월 동안 자동으로 적용됩니다.</div>");
+        s.add("      <div class=\"benefit-value\"><span class=\"t-strike\">55,000원</span> "
+                + "<strong class=\"t-big\">38,500</strong>원</div>");
+        s.add("    </li>");
         s.add("  </ul>");
         s.add("</section>");
         s.add("<section data-block=\"steps\" class=\"v-steps-timeline\">");
+        s.add("  <div class=\"block-header\"><div class=\"sub-label\">How to Join</div>");
+        s.add("    <h2 class=\"title\">참여 방법</h2></div>");
         s.add("  <ol>");
-        s.add("    <li>이벤트 페이지에서 로그인합니다.</li>");
-        s.add("    <li>원하는 요금제를 선택합니다.</li>");
-        s.add("    <li>신청하기를 눌러 응모를 완료합니다.</li>");
+        s.add("    <li><div class=\"step-title\">로그인</div>"
+                + "<div class=\"step-desc\">이벤트 페이지에서 로그인합니다.</div></li>");
+        s.add("    <li><div class=\"step-title\">요금제 선택</div>"
+                + "<div class=\"step-desc\">원하는 요금제를 고릅니다.</div></li>");
+        s.add("    <li><div class=\"step-title\">신청 완료</div>"
+                + "<div class=\"step-desc\">신청하기를 눌러 응모를 마칩니다.</div></li>");
         s.add("  </ol>");
         s.add("</section>");
         s.add("<section data-block=\"cta\" class=\"v-cta-wide\">");
@@ -165,10 +231,34 @@ public final class PromptBuilder {
         s.add("- 이벤트 소개는 한두 문장으로 쓴다.");
         // ★ 혜택만 "지어내라" 고 말하지 않는다. 혜택은 실제로 지급해야 하는 약속이고,
         //   없는 걸 만들면 관리자가 모르는 약속이 게시된다. 개수가 아니라 설명을 늘린다.
-        s.add("- 혜택은 요청문에 있는 것을 빠짐없이 담고, 항목마다 한 문장으로 설명을 붙인다.");
+        // ★ 이 줄이 자리 나누기를 **이겼다**(여름 수영장 2차 실측).
+        //   "benefits 에 다시 쓰지 마라" 는 21행에 있고 이 줄은 168행에 있었다.
+        //   147줄 뒤에서 "요청문에 있는 것을 빠짐없이" 라고 무조건 말하니
+        //   모델이 뒤엣것을 따랐고, 제주도 여행권이 benefits 와 prize 에,
+        //   할인 쿠폰이 benefits 와 coupon 에 **각각 두 번** 나왔다.
+        //   서로 어긋나는 지시를 두 군데 두면 뒤엣것이 이긴다. 범위를 맞춘다.
+        if (triggered.isEmpty()) {
+            s.add("- 혜택은 요청문에 있는 것을 빠짐없이 담고, 항목마다 한 문장으로 설명을 붙인다.");
+        } else {
+            StringJoiner tk = new StringJoiner(" · ");
+            for (Block b : triggered) tk.add(b.key());
+            s.add("- 혜택은 " + tk + " 로 보낸 것을 뺀 나머지만 담고, 항목마다 한 문장으로 설명을 붙인다.");
+        }
+        // ★ 칸을 비우면 템플릿보다 **더** 허전해 보인다 — benefit-icon 이 비면
+        //   연한 배경의 54px 빈 사각형만 남는다. 구조를 시켰으면 채우기도 시켜야 한다.
+        s.add("- 혜택 항목의 칸을 비워 두지 마라. 이모지 · 이름 · 설명 · 받는 값을 모두 채운다.");
+        s.add("- 받는 값은 짧게 쓴다 (예: 3GB, 30% 할인, 6개월, 즉시 지급). 문장을 넣지 마라.");
+        s.add("- 요청문에 할인 전후 가격이 있으면 받는 값에 "
+                + "<span class=\"t-strike\">원래 가격</span> 과 <strong class=\"t-big\">할인가</strong> 를 같이 쓴다.");
+        s.add("- 할인율 · 수량 한정 · 등수 같은 짧은 꼬리말은 benefit-tag 에 쓴다 (예: 78% OFF, 선착순 100명).");
         //   반대로 참여 방법은 모델이 만드는 영역이다(레지스트리 Source.LLM).
         //   절차를 지어내는 것은 허용이고, 그래서 요청문에 없어도 만들라고 시킨다.
         s.add("- 참여 방법은 3단계로 쓴다. 요청문에 절차가 없으면 일반적인 온라인 응모 절차로 쓴다.");
+        // ★ step-title 과 step-desc 는 글씨 크기·색이 다르다(15px 진하게 / 13px 흐리게).
+        //   둘에 같은 문장을 넣으면 같은 말이 두 번 보인다. 역할을 갈라서 시킨다.
+        s.add("- 참여 방법은 단계마다 제목과 설명을 따로 쓴다. 제목은 두세 단어, 설명은 한 문장이다.");
+        // ★ 번호를 쓰게 하면 화면에 두 번 보인다. 변형이 li::before 로 이미 그린다.
+        s.add("- 단계 번호를 글자로 적지 마라. '1단계', '1.', 'STEP 1' 을 쓰지 마라. 화면이 자동으로 붙인다.");
         s.add("");
         // ★ 왜 문체를 시키는가 — 회차마다 흔들린다 (Bedrock 실측)
         //   같은 요청문에 "즐기세요!" 와 "즐겨봐!" 가 번갈아 나왔다.
@@ -299,6 +389,9 @@ public final class PromptBuilder {
         s.add("- 요청문의 분위기에 맞게 고르고, 영역마다 다른 모양을 섞어 단조롭지 않게 한다.");
         s.add("- 목록에 없는 class 이름은 쓰지 마라.");
         s.add("- 영역마다 아래에서 하나를 골라 붙인다. 붙이지 않으면 평범한 기본 모양이 된다.");
+        // ★ 딱 맞는 이름이 없을 때 모델이 이름을 **지어낸다.** 지어낸 이름은 cleanLooks 가 지우고,
+        //   화면은 그대로인데 "반영했어요" 가 나간다 — 조용한 실패다.
+        s.add("- 요청 분위기에 딱 맞는 이름이 없으면, 목록에서 분위기가 가장 가까운 것을 고른다. 새 이름을 만들지 마라.");
         // ★ 전부 싣지 않는다 — 변형이 100개를 넘어 다 실으면 입력이 두 배가 된다.
         //   블록마다 기본을 뺀 몇 개만 싣는다(Variant.sample). 같은 요청문이면 같은 목록이라
         //   재시도가 흔들리지 않고, 요청문이 다르면 다른 목록이라 페이지마다 모양이 갈린다.
@@ -330,6 +423,11 @@ public final class PromptBuilder {
     private static void addInline(StringJoiner s) {
         s.add("문구 꾸밈: (꼭 필요한 단어에만, 영역마다 1~2개까지)");
         s.add("- 배지(t-badge)는 " + Inline.BADGE_MAX + "글자 이하의 짧은 말에만 붙인다 (예: 한정, NEW, 무료). 문장에 붙이지 마라.");
+        // ★ 혜택 <li> 바로 안의 꼬리말은 t-badge 가 아니라 benefit-tag 다.
+        //   t-badge 는 문장 안에 끼우는 작은 배지이고, benefit-tag 는 카드 왼쪽 위에 놓이는
+        //   꼬리말 자리다(연한 primary 배경 알약). 자리가 다르니 이름도 다르다.
+        //   ★ 병합 해결에서 이 줄을 빠뜨려 BlankCardMarkupTest 가 깨졌다.
+        s.add("- 단, 혜택 <li> 바로 안의 꼬리말은 benefit-tag 를 쓴다. t-badge 를 쓰지 마라.");
         s.add("- <span> · <mark> · <strong> 의 class 에 아래 이름을 붙인다. 목록에 없는 이름은 쓰지 마라.");
         s.add("  예) <span class=\"t-badge t-badge-red\">한정</span> · <strong class=\"t-accent\">3GB</strong>");
         for (Inline i : Inline.values()) {
