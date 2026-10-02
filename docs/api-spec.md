@@ -556,7 +556,7 @@ http://localhost:8080/api/admin/rag/index-status?eventId=3
 
 ## `GET /api/admin/rag/search-preview`
 
-검색 품질 미리보기. 쿼리를 던지면 유사 청크 상위 후보와 거리(`distance`)를 돌려준다.
+검색 미리보기. 쿼리를 던지면 유사 청크 상위 후보와 거리(`distance`)를 돌려준다.
 `distance` 가 작을수록 질문과 가깝다 (`0` 이면 완전 일치, `0.5` 가 잘림 기준).
 
 ### Query
