@@ -478,6 +478,34 @@ class EventServiceTest {
     }
 
     @Test
+    @DisplayName("종료일을 바꾸면 마감임박 알림 발송 표시가 지워진다")
+    void 종료일을_바꾸면_마감임박_알림_표시가_지워진다() {
+        Event event = draftWorldCupEvent();
+        ReflectionTestUtils.setField(event, "startNotifiedAt", OffsetDateTime.parse("2026-07-01T00:00:00+09:00"));
+        ReflectionTestUtils.setField(event, "closingSoonNotifiedAt", OffsetDateTime.parse("2026-07-29T00:00:00+09:00"));
+
+        eventService.update(2L, new EventUpdateRequest(
+                null, null, OffsetDateTime.parse("2026-08-15T00:00:00+09:00"), null, null));
+
+        assertThat(event.getClosingSoonNotifiedAt()).isNull();
+        // startDate는 안 바뀌었으니 시작 알림 표시는 그대로 남아야 한다.
+        assertThat(event.getStartNotifiedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("날짜를 안 바꾸면 알림 발송 표시도 그대로 남는다")
+    void 날짜를_안_바꾸면_알림_표시가_유지된다() {
+        Event event = draftWorldCupEvent();
+        ReflectionTestUtils.setField(event, "startNotifiedAt", OffsetDateTime.parse("2026-07-01T00:00:00+09:00"));
+        ReflectionTestUtils.setField(event, "closingSoonNotifiedAt", OffsetDateTime.parse("2026-07-29T00:00:00+09:00"));
+
+        eventService.update(2L, new EventUpdateRequest("이름만 변경", null, null, null, null));
+
+        assertThat(event.getStartNotifiedAt()).isNotNull();
+        assertThat(event.getClosingSoonNotifiedAt()).isNotNull();
+    }
+
+    @Test
     @DisplayName("templateKey 가 빈 문자열이면 템플릿을 해제한다")
     void 빈_템플릿_키는_템플릿을_해제한다() {
         Event event = draftWorldCupEvent();
