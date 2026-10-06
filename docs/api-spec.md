@@ -648,3 +648,148 @@ http://localhost:8080/api/admin/rag/search-preview?eventId=3&query=회원%20혜�
 ```text
 http://localhost:8080/api/admin/rag/recommend-prompts?eventId=3&query=성과급&topK=3
 ```
+
+---
+
+## `POST /api/admin/events/{eventId}/generate`
+
+백지 이벤트 페이지 생성 시작. 비동기 작업으로 `202 Accepted` 반환, `jobId`로 폴링.
+
+### Path parameters
+
+| 이름 | 필수 | 설명 |
+| --- | --- | --- |
+| `eventId` | O | 생성할 이벤트 ID |
+
+### Request body
+
+| 필드 | 필수 | 설명 |
+| --- | --- | --- |
+| `templateCode` | X | 템플릿 코드. 없으면 백지 생성 |
+| `requestText` | X | 생성 요청문 (최대 500자) |
+| `privacyConfirmationJobId` | X | 개인정보 확인 작업 ID (이전 단계에서 받은 값) |
+| `privacyConfirmed` | X | 개인정보 동의 여부 (`true`면 확인 완료) |
+
+### 202 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "jobId": "01HXK8J7V9F2W1N4M5Q8R7T3Y6",
+    "phase": "PREPARING",
+    "percent": 0
+  },
+  "message": null
+}
+```
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| 필수값 누락·검증 실패 | 400 | `COMMON400-0` |
+| 요청문이 너무 김 (500자 초과) | 400 | `COMMON400-0` |
+| 템플릿 코드 너무 김 (50자 초과) | 400 | `COMMON400-0` |
+| 이벤트 없거나 삭제됨 | 404 | `EVENT404-0` |
+| 이벤트 소유 관리자 아님 | 403 | — |
+| 템플릿 코드 없거나 비활성 | 404 | `EVENT404-1` |
+| 템플릿 경로인데 요청문 있음 | 400 | `GENERATION400-0` |
+| 요청문 비었는데 템플릿 없음 | 400 | `GENERATION400-1` |
+| 개인정보 확인 필요 | 400 | `GENERATION400-2` |
+| 이미 생성 중 | 409 | `GENERATION409-0` |
+| 일일 호출 상한 초과 | 429 | `LLM429-0` |
+
+```text
+POST http://localhost:8080/api/admin/events/3/generate
+Content-Type: application/json
+
+{
+  "templateCode": "",
+  "requestText": "여름 데이터 대방출 이벤트 만들어줘. 데이터 3GB 혜택 강조해줘."
+}
+```
+
+---
+
+## `GET /api/admin/events/{eventId}/generate/{jobId}`
+
+생성 작업 진행 상황 폴링. `phase`가 `DONE`이면 `versionId` 포함.
+
+### Path parameters
+
+| 이름 | 필수 | 설명 |
+| --- | --- | --- |
+| `eventId` | O | 이벤트 ID |
+| `jobId` | O | 생성 작업 ID (시작 응답의 `jobId`) |
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "jobId": "01HXK8J7V9F2W1N4M5Q8R7T3Y6",
+    "phase": "CALLING",
+    "percent": 40,
+    "versionId": null,
+    "message": null
+  },
+  "message": null
+}
+```
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| 없거나 삭제된 작업 | 404 | `GENERATION404-0` |
+| 이벤트 소유 관리자 아님 | 403 | — |
+
+```text
+GET http://localhost:8080/api/admin/events/3/generate/01HXK8J7V9F2W1N4M5Q8R7T3Y6
+```
+
+---
+
+## `POST /api/admin/events/{eventId}/generate/{jobId}/cancel`
+
+진행 중인 생성 작업 취소 요청. 단계 사이에서 중단됨.
+
+### Path parameters
+
+| 이름 | 필수 | 설명 |
+| --- | --- | --- |
+| `eventId` | O | 이벤트 ID |
+| `jobId` | O | 생성 작업 ID |
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": { "cancelRequested": true },
+  "message": null
+}
+```
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| 없거나 삭제된 작업 | 404 | `GENERATION404-0` |
+| 이미 완료된 작업 | 409 | `GENERATION409-1` |
+| 이벤트 소유 관리자 아님 | 403 | — |
+
+---
+
+## RAG 연동 동작 (생성 시 자동 적용)
+
+백지 생성(`templateCode` 빈 값 또는 생략) 시, 요청문(`requestText`)을 쿼리로 RAG 검색을 수행해 유사 청크 상위 3개를 프롬프트에 `## 참고 예시` 섹션으로 자동 주입한다.
+
+- 검색 실패·빈 결과 시 RAG 없이 생성 진행 (`rag_used=false`)
+- 검색 성공 시 청크 상위 3개를 `## 참고 예시` 섹션으로 프롬프트에 주입 (`rag_used=true`, `chunk_ids` 기록)
+- 검색 파라미터: `eventId`(자기 제외), `query=requestText`, `topK=3`, `maxDistance=0.5`
+- 템플릿 경로(`templateCode` 지정)에서는 RAG 미수행 (`rag_used=false`)
+
+생성 완료 시 `llm_call_logs`에 `rag_used`(boolean), `chunk_ids`(CSV, 예: `"41,42,43"`) 기록됨.
