@@ -244,6 +244,11 @@ Content-Type: application/json
 | 종료(`ENDED`)됐거나, 게시 중이면서 기존 종료일시가 지난 이벤트 | 409 | `EVENT409-1` |
 | 게시 중인 이벤트의 템플릿 변경·해제 | 409 | `EVENT409-4` |
 
+직접 편집 API(`POST /api/admin/events/{eventId}/versions/direct-edit`)에도 같은 종료 잠금 정책을 적용한다.
+`ENDED` 상태이거나, `PUBLISHED` 상태에서 현재 시각이 종료일시 이상이면 `409 / EVENT409-1`을 반환한다.
+기준 HTML 조회와 새 버전 저장 전에 거절하므로 직접 편집 결과는 저장되지 않는다.
+`DRAFT`는 기간이 지나도 직접 편집할 수 있다. 소유자가 아닌 관리자의 요청은 기존대로 403을 반환한다.
+
 ---
 
 ## `PATCH /api/admin/events/{id}/status`
@@ -448,4 +453,198 @@ LLM 호출 로그 상세 1건. 목록에 없는 실패 분류·잘림·RAG 청�
 
 ```text
 http://localhost:8080/api/admin/llm-calls/1
+```
+
+---
+
+# RAG (관리자)
+
+이벤트 버전 HTML을 블록 단위로 청킹해 임베딩 벡터(`rag_chunks`)로 저장하고 검색하는 파이프라인.
+임베딩 모델은 `cohere.embed-multilingual-v3` (1024차원, us-east-1) 로 고정되어 있다 (`RagConstants`).
+
+- **자기 이벤트 제외**: 검색은 `eventId` 본인 글을 항상 뺀다. 자기 글을 예시로 가져오면 돌고 돌기 때문.
+- **최소 유사도 0.5**: `distance = 1 - similarity` 기준 `maxDistance = 0.5` 보다 멀면 결과에서 잘린다.
+- `similar-versions` (버전 비교 RAG)는 미구현. `VersionCompareService` 인터페이스만 정의됨.
+
+## `POST /api/admin/rag/reindex`
+
+수동 재색인. `versionId` 가 있으면 그 버전 1개, 없으면 이벤트 전체 버전을 오래된 것부터 순차로 돌린다.
+색인은 버전별로 (묵은 청크 삭제 + 신규 저장) 한 트랜잭션이고, 재색인 전체도 같은 트랜잭션에 묶인다.
+돌린 뒤의 색인 현황을 돌려준다.
+
+### Request body
+
+| 필드 | 필수 | 설명 |
+| --- | --- | --- |
+| `eventId` | O | 색인할 이벤트 |
+| `versionId` | X | 없으면 이벤트 전체 버전 |
+
+```json
+{ "eventId": 3 }
+```
+
+### 200 예시
+
+`index-status` 와 같은 `IndexStatusResponse`. 저장된 청크 개수 합계는 직접 세야 한다 (응답은 현황만).
+
+```json
+{
+  "success": true,
+  "data": {
+    "eventId": 3,
+    "totalVersions": 5,
+    "indexedVersions": 5,
+    "pendingVersions": 0,
+    "chunkCount": 23,
+    "lastIndexedAt": "2026-10-01T01:23:45Z"
+  },
+  "message": null
+}
+```
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| `eventId` 누락 | 400 | `COMMON400-0` |
+| `versionId` 가 없거나 다른 이벤트 소속 | 404 | `EVENT404-3` |
+
+```text
+POST http://localhost:8080/api/admin/rag/reindex
+Content-Type: application/json
+```
+
+---
+
+## `GET /api/admin/rag/index-status`
+
+색인 현황. 전체 버전 대비 몇 개 버전이 청크를 갖고 있는지.
+
+### Query
+
+| 이름 | 필수 | 설명 |
+| --- | --- | --- |
+| `eventId` | O | 조회할 이벤트 |
+
+### 200 예시
+
+`pendingVersions = totalVersions - indexedVersions` (한 번도 색인 안 된 버전 수).
+
+```json
+{
+  "success": true,
+  "data": {
+    "eventId": 3,
+    "totalVersions": 5,
+    "indexedVersions": 3,
+    "pendingVersions": 2,
+    "chunkCount": 18,
+    "lastIndexedAt": "2026-10-01T01:23:45Z"
+  },
+  "message": null
+}
+```
+
+`lastIndexedAt` 은 마지막으로 청크가 저장된 시각 (없으면 `null`). 시각은 `Instant` 라 UTC(`Z`)로 나온다 — 이 문서의 다른 API(+09:00)와 다르다.
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| `eventId` 누락 | 400 | `COMMON400-0` |
+
+```text
+http://localhost:8080/api/admin/rag/index-status?eventId=3
+```
+
+---
+
+## `GET /api/admin/rag/search-preview`
+
+검색 미리보기. 쿼리를 던지면 유사 청크 상위 후보와 거리(`distance`)를 돌려준다.
+`distance` 가 작을수록 질문과 가깝다 (`0` 이면 완전 일치, `0.5` 가 잘림 기준).
+
+### Query
+
+| 이름 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- |
+| `eventId` | O | | 검색에서 제외할 자기 이벤트 |
+| `query` | O | | 검색어. 공백이면 빈 `results` (임베딩 호출 없음) |
+| `topK` | X | `3` | 1~10 |
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "eventId": 3,
+    "query": "회원 혜택 강조",
+    "topK": 3,
+    "results": [
+      {
+        "chunkId": 41,
+        "blockKey": "hero",
+        "chunkIndex": 0,
+        "content": "신규 가입 고객 전원에게 데이터 3GB를 드립니다",
+        "distance": 0.11
+      }
+    ]
+  },
+  "message": null
+}
+```
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| `eventId` 누락 | 400 | `COMMON400-0` |
+| `topK` 가 1 미만·10 초과 | 400 | `COMMON400-0` |
+
+```text
+http://localhost:8080/api/admin/rag/search-preview?eventId=3&query=회원%20혜택&topK=5
+```
+
+---
+
+## `GET /api/admin/rag/recommend-prompts`
+
+관리자 생성 보조. 유사 청크를 채팅에 넣을 프롬프트 초안으로 바꿔 돌려준다.
+프론트는 후보 중 하나를 골라 채팅창에 그대로 입력한다. `prompt` = 블록 가이드(`shape()`) + 청크 예시.
+
+### Query
+
+| 이름 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- |
+| `eventId` | O | | 검색에서 제외할 자기 이벤트 |
+| `query` | O | | 초안 소재. 공백이면 빈 목록 |
+| `topK` | X | `3` | 1~10 |
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "eventId": 5,
+      "eventTitle": "지금 긁으면 바로 당첨",
+      "blockKey": "hero",
+      "prompt": "메인 배너에 쓸 강렬한 문구. (예시: 지금 긁으면 바로 당첨)"
+    }
+  ],
+  "message": null
+}
+```
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| `eventId` 누락 | 400 | `COMMON400-0` |
+| `topK` 가 1 미만·10 초과 | 400 | `COMMON400-0` |
+
+```text
+http://localhost:8080/api/admin/rag/recommend-prompts?eventId=3&query=성과급&topK=3
 ```

@@ -62,6 +62,20 @@ class TriggerAndPlaceholderTest {
     }
 
     @Test
+    @DisplayName("새 선택 블록(stats · prize · coupon · schedule)의 열쇠말 — 흔한 이벤트 문장에서는 안 열린다")
+    void 새_블록_열쇠말() {
+        String common = "이벤트 페이지에서 로그인하고 응모를 완료합니다. 당첨자 발표를 10월에 합니다. "
+                + "데이터 3GB 를 드립니다. 이벤트 기간 동안 참여하세요.";
+        for (Block b : List.of(Block.STATS, Block.PRIZE, Block.COUPON, Block.SCHEDULE)) {
+            assertFalse(b.allowedFor(common), b.key() + " 가 흔한 문장에서 열렸습니다");
+        }
+        assertTrue(Block.STATS.allowedFor("혜택을 숫자로 한눈에 보여주세요"));
+        assertTrue(Block.PRIZE.allowedFor("1등 경품은 노트북, 추첨으로 100명"));
+        assertTrue(Block.COUPON.allowedFor("편의점 5,000원 쿠폰을 드립니다"));
+        assertTrue(Block.SCHEDULE.allowedFor("발표일은 11월 5일, 지급일은 11월 10일입니다"));
+    }
+
+    @Test
     @DisplayName("요청문이 직접 말하면 열린다 — Bedrock 실측 요청문 포함")
     void 열쇠말_정탐() {
         // 실측에 쓴 가을 요청문 — 비교표 · FAQ · 참여 대상이 모두 들어 있다
@@ -116,6 +130,34 @@ class TriggerAndPlaceholderTest {
                 + "<section data-block=\"highlight\" class=\"v-highlight-alert\"><p>b</p></section>";
         assertTrue(BlockValidator.validateGenerated(twice).stream()
                 .anyMatch(f -> f.code().equals("extra_highlight")), BlockValidator.validateGenerated(twice).toString());
+    }
+
+    // ── 요청한 선택 블록 · 연도 ──
+
+    @Test
+    @DisplayName("요청문이 직접 요청한 선택 블록은 '반드시 만든다' 로 이름을 댄다")
+    void 요청한_블록은_반드시() {
+        String p = PromptBuilder.generate("경품은 1등 노트북입니다. 혜택을 숫자로 한눈에 보여 주세요.");
+        assertTrue(p.contains("반드시 만든다"), "반드시 만들라는 안내가 없습니다");
+        int line = p.indexOf("반드시 만든다");
+        String must = p.substring(p.lastIndexOf('\n', line), line);
+        assertTrue(must.contains("stats") && must.contains("prize"), must);
+        assertFalse(PromptBuilder.generate("여름 데이터 이벤트입니다.").contains("반드시 만든다"),
+                "요청하지 않았는데 반드시 만들라고 합니다");
+    }
+
+    @Test
+    @DisplayName("입력에 없는 연도를 쓰면 value_added_year 로 걸린다 — 이벤트 기간의 연도는 허용")
+    void 지어낸_연도() {
+        String coupon = CORE.replace("<h1>t</h1>", "<h1>t</h1><p>사용 기간: 2024년 12월 31일까지</p>");
+        HtmlPolicy policy = HtmlPolicy.generation("12월 31일까지 사용 가능합니다", "가족 쿠폰", "2026.12.01 ~ 12.31");
+
+        assertTrue(policy.validate(coupon).stream().anyMatch(f -> f.code().equals("value_added_year_2024")),
+                policy.validate(coupon).toString());
+        assertTrue(policy.validate(coupon.replace("2024년", "2026년")).isEmpty(), "이벤트 기간의 연도는 허용해야 합니다");
+        assertTrue(policy.validate(coupon.replace("2024년 ", "")).isEmpty(), "연도 없는 날짜는 허용해야 합니다");
+        assertTrue(policy.validate(CORE.replace("<h1>t</h1>", "<h1>t</h1><p>2000원 할인 · 2024 GB</p>")).isEmpty(),
+                "날짜가 아닌 숫자는 연도로 보지 않아야 합니다");
     }
 
     // ── 대괄호 ──

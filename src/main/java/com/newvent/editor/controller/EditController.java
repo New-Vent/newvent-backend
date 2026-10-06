@@ -27,8 +27,7 @@ import com.newvent.event.repository.EventRepository;
 /**
  * 채팅 수정 시작.
  *
- * ★ 권한은 SecurityConfig 가 본다 — {@code /api/admin/**} 은 ROLE_ADMIN 이다.
- *   여기서 다시 확인하지 않는다.
+ * ★ SecurityConfig 의 관리자 권한 검사에 더해 이벤트 소유자를 확인한다.
  *
  * ★ 응답에 원본 예외나 스택을 절대 담지 않는다
  */
@@ -48,12 +47,18 @@ public class EditController {
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<EditStartResponse>> start(
             @PathVariable Long eventId,
-            @Valid @RequestBody EditRequest req) {
+            @Valid @RequestBody EditRequest req,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal com.newvent.auth.dto.AuthUser admin) {
 
         // ★ 삭제 필터를 쿼리가 한다. 지워진 행을 읽어 온 뒤 버리는 것보다 안 읽는 게 맞다
         Event event = events.findByIdAndDeletedAtIsNull(eventId)
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
-        EditCommand cmd = EditCommand.of(event, req.requestText());
+        if (admin == null || !admin.admin() || event.getOwnerAdmin() == null
+                || !admin.id().equals(event.getOwnerAdmin().getId())) {
+            throw new org.springframework.security.access.AccessDeniedException("이벤트 소유 관리자만 수정할 수 있습니다.");
+        }
+        EditCommand cmd = new EditCommand(event.getId(), event.getTitle(),
+                req.requestText(), req.privacyConfirmationJobId(), req.privacyConfirmed());
 
         return switch (edit.start(cmd)) {
             case StartResult.Started s -> ResponseEntity

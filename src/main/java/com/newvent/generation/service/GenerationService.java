@@ -5,6 +5,8 @@ import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import jakarta.annotation.PreDestroy;
+
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -16,16 +18,12 @@ import com.newvent.common.exception.code.ErrorCode;
 import com.newvent.generation.exception.GenerationErrorCode;
 import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmCallException;
-import com.newvent.rag.domain.RagChunk;
-import com.newvent.rag.service.RagConstants;
-import com.newvent.rag.service.SimilarityService;
 import com.newvent.registry.Block;
 import com.newvent.registry.PageShell;
 import com.newvent.registry.PromptBuilder;
 import com.newvent.registry.Slot;
 import com.newvent.registry.Slots;
 
-import jakarta.annotation.PreDestroy;
 
 /**
  * 관리자의 생성 요청 하나를 **페이지 첫 버전**까지 끌고 간다.
@@ -50,8 +48,9 @@ public class GenerationService {
     private final EventGuard guard;
     private final GenerationJobStore jobs;
     private final LlmCallRecorder recorder;
-    private final SimilarityService similarity;
+    private final com.newvent.filtering.FilteringPolicy filtering;
 
+    
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "generation");
         t.setDaemon(true);
@@ -60,14 +59,21 @@ public class GenerationService {
 
     public GenerationService(RetryService retry, TemplateService templates,
                              VersionStore versions, EventGuard guard, GenerationJobStore jobs,
-                             LlmCallRecorder recorder, SimilarityService similarity) {
+                             LlmCallRecorder recorder) {
+        this(retry, templates, versions, guard, jobs, recorder, new com.newvent.filtering.FilteringPolicy());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public GenerationService(RetryService retry, TemplateService templates,
+                             VersionStore versions, EventGuard guard, GenerationJobStore jobs,
+                             LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering) {
+        this.filtering = filtering;
         this.retry = retry;
         this.templates = templates;
         this.versions = versions;
         this.guard = guard;
         this.jobs = jobs;
         this.recorder = recorder;
-        this.similarity = similarity;
     }
 
     @PreDestroy
@@ -136,7 +142,17 @@ public class GenerationService {
             }
         }
 
-        // ④ 이미 돌고 있나 — **자리를 잡지 않고** 먼저 본다
+        // ③ 이미 돌고 있나 — **자리를 잡지 않고** 먼저 본다
+        var input = cmd.hasTemplate()
+                ? com.newvent.filtering.FilteringPolicy.Result.accepted("")
+                : filtering.prepare(cmd.requestText(), cmd.privacyConfirmationJobId(), cmd.eventId(),
+                        "generate", null, jobs, cmd.privacyConfirmed(), cmd.title());
+        if (input.error() != null) return new StartResult.Rejected(input.error());
+        if (cmd.hasTemplate() && (cmd.privacyConfirmationJobId() != null || cmd.privacyConfirmed())) {
+            return new StartResult.Rejected(com.newvent.filtering.FilteringErrorCode.PRIVACY_CONFIRMATION_NOT_FOUND);
+        }
+        GenerateCommand safeCommand = new GenerateCommand(cmd.eventId(), cmd.templateCode(),
+                cmd.title(), cmd.period(), cmd.ctaUrl(), input.text());
         Optional<GenerationJob> already = jobs.ofEvent(cmd.eventId());
         if (already.isPresent()) {
             return new StartResult.AlreadyRunning(already.get());
@@ -144,7 +160,7 @@ public class GenerationService {
 
         // ⑤ 하루 상한 — 백지 경로만. 템플릿 경로는 모델을 아예 안 부른다
 
-        if (!cmd.hasTemplate()) {
+        if (!cmd.hasTemplate() && input.question() == null) {
             retry.reserve();
         }
 
@@ -160,7 +176,14 @@ public class GenerationService {
         }
 
         GenerationJob job = slot.get();
-        worker.submit(() -> runSafely(job, cmd));
+        job.privacyRequest("generate", null);
+        job.privacyConfirmation(input.fingerprint(), input.privacyTypes());
+        if (input.question() != null) {
+            job.askBack(input.question());
+            jobs.finish(job);
+        } else {
+            worker.submit(() -> runSafely(job, safeCommand));
+        }
         return new StartResult.Started(job);
     }
 
@@ -181,8 +204,9 @@ public class GenerationService {
             run(job, cmd);
         } catch (RetryService.Aborted e) {
             // ★ 터진 시도의 실패 행은 문(LlmCallGateway)이 이미 남겼다.
-            //   그 앞의 시도들은 fromBlank 가 chunkIds 를 달아 이미 남겼다 — 여기서 또 남기면 유니크 위반이다.
+            //   그 앞의 시도들은 아직 아무도 안 남겼다 — 여기서 남긴다.
             log.warn("생성 실패 — {}차 시도에서 모델 호출 (event={})", e.attempt(), cmd.eventId(), e);
+            recorder.recordAttempts(ctxOf(job, cmd), e.partial());
             job.fail("페이지 생성 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         } catch (LlmCallException e) {
             // 연결 끊김 · 타임아웃 · 모델 서버 down. 프롬프트를 고쳐도 안 고쳐진다
@@ -243,24 +267,15 @@ public class GenerationService {
 
     private String fromBlank(GenerationJob job, GenerateCommand cmd) {
         job.to(GenerationJob.Phase.CALLING);
-        
-        List<RagChunk> ragChunks = searchRagChunks(cmd);
-        String ragChunkIds = chunkIdsOf(ragChunks);
 
-        RetryService.Result res;
-        try { 
-        	res = retry.run(
+        RetryService.Result res = retry.run(
                 ctxOf(job, cmd),
                 PromptBuilder.generate(cmd.requestText()),
-                userPromptWithRag(cmd, ragChunks),
-                HtmlPolicy.generation(cmd.requestText(), cmd.title()));
-        } catch(RetryService.Aborted e) {
-        	recorder.recordAttempts(ctxOf(job, cmd), e.partial(), ragChunkIds);
-        	throw e;
-        }
+                userPrompt(cmd),
+                HtmlPolicy.generation(cmd.requestText(), cmd.title(), cmd.period()));
 
         // ★ 성공이든 실패든 시도 전부를 남긴다. 저장·취소보다 먼저 — 취소돼도 쓴 토큰은 쓴 것이다
-        recorder.recordAttempts(ctxOf(job, cmd), res, ragChunkIds);
+        recorder.recordAttempts(ctxOf(job, cmd), res);
 
         job.attempt(res.attempts());
         if (job.checkCancelled()) return null;
@@ -344,72 +359,6 @@ public class GenerationService {
             s.append("이벤트 제목: ").append(cmd.title().strip()).append("\n\n");
         }
         s.append(RequestFilter.clean(cmd.requestText()));
-        return s.toString();
-    }
-    
-    /**
-     * RAG 참고 예시 검색. 읽기 전용이라 생성 트랜잭션과 무관하게 돈다.
-     *
-     * ★ try-catch 로 감싼 이유 — 검색이 터져도 생성은 계속돼야 한다.
-     *   임베딩 키 없음·DB 순간 장애가 "페이지 생성 실패" 가 되면 안 된다.
-     * ★ 빈 요청문이면 SimilarityService 가 알아서 빈 리스트를 준다. 그래도 한 번 더 막는다.
-     */
-    private List<RagChunk> searchRagChunks(GenerateCommand cmd) {
-        if (cmd.requestText() == null || cmd.requestText().isBlank()) {
-            return List.of();
-        }
-        try {
-            return similarity.search(cmd.eventId(), cmd.requestText().strip(), RagConstants.DEFAULT_TOP_K);
-        } catch (RuntimeException e) {
-            log.warn("RAG 검색 실패 — RAG 없이 생성한다 (event={})", cmd.eventId(), e);
-            return List.of();
-        }
-    }
-
-    /**
-     * 사용자 프롬프트 + RAG 참고 예시 섹션.
-     *
-     * ★ 말투는 SimilarityService.recommendPrompts 와 같은 꼴 — "가이드 (예시: 내용)".
-     *   b2 미리보기로 관리자가 본 것과 같은 형태가 프롬프트에 들어가야 품질 예측이 맞는다.
-     * ★ "그대로 베끼지 말라" 를 박은 이유 — 자기 이벤트는 제외되지만 타 이벤트 문구를
-     *   토씨까지 복사하면 표절 시비가 난다. 참고용임을 못 박는다.
-     * ★ 토큰 비용: 청크 3개 × 최대 800자 ≈ 2400자. 입력 토큰 증가는 감수한다(측정 항목).
-     */
-    private String userPromptWithRag(GenerateCommand cmd, List<RagChunk> chunks) {
-        String base = userPrompt(cmd);
-        if (chunks.isEmpty()) {
-            return base;
-        }
-        StringBuilder s = new StringBuilder(base);
-        s.append("\n\n## 참고 예시 (과거 유사 이벤트에서 가져온 것. 그대로 베끼지 말고 말투·구성의 참고로만 쓴다)\n");
-        for (RagChunk c : chunks) {
-            Block block = Block.find(c.getBlockKey()).orElse(null);
-            String guide = block != null ? block.shape() : "";
-            s.append("- [").append(c.getBlockKey()).append("] ");
-            if (!guide.isBlank()) {
-                s.append(guide).append(' ');
-            }
-            s.append("(예시: ").append(c.getContent()).append(")\n");
-        }
-        return s.toString();
-    }
-
-    /**
-     * LlmCallLog.chunk_ids(TEXT)에 넣을 문자열. "41,42" 꼴.
-     *
-     * ★ 빈 리스트면 null — recordAttempts 가 null·blank 면 markRagUsed 를 건너뛴다.
-     * ★ id 가 null(영속 전 엔티티)이면 "null" 문자열이 들어간다.
-     *   운영에서는 색인된 행만 오므로 항상 값이 있다. 테스트에서만 id 를 박는다.
-     */
-    private static String chunkIdsOf(List<RagChunk> chunks) {
-        if (chunks.isEmpty()) {
-            return null;
-        }
-        StringBuilder s = new StringBuilder();
-        for (RagChunk c : chunks) {
-            if (s.length() > 0) s.append(',');
-            s.append(c.getId());
-        }
         return s.toString();
     }
 

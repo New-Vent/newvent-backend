@@ -41,9 +41,8 @@ import com.newvent.common.config.SecurityConfig;
  *   Secure · SameSite 는 auth.cookie.* 로 고정한다 — CI 의 AUTH_COOKIE_* secrets 가 설정 파일보다 우선해서,
  *   고정하지 않으면 secrets 값에 따라 결과가 달라진다. prod 설정 파일의 값 자체는 AuthPropsTest 가 본다.
  *
- * ★ "Secure 를 끌 수 없다" 는 여기서 검증하지 않는다.
- *   실제 환경변수 AUTH_COOKIE_SECURE=false 는 auth.cookie.secure 를 덮어쓴다(설정 파일보다 우선) — Docker 로 확인했다.
- *   그래서 배포 환경변수에 AUTH_COOKIE_SECURE 를 넣지 않는다 (docs/setup.md 12장).
+ * ★ prod 에서 Secure 를 끄면 ProdAuthGuard 가 기동을 중단한다.
+ *   설정 누락·덮어쓰기의 기동 실패는 ProdAuthGuardTest 에서 실제 설정 파일로 검증한다.
  *
  * ★ 경로 · 쿠키 이름은 dev 와 같아야 한다 — 로컬에서 통과한 게 배포에서도 통과하도록.
  */

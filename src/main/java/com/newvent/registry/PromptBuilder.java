@@ -22,6 +22,12 @@ public final class PromptBuilder {
 
     private PromptBuilder() {}
 
+    /** 생성 프롬프트에 블록마다 싣는 배치 변형 수 (기본 포함) */
+    static final int GENERATE_LAYOUTS_PER_BLOCK = 4;
+
+    /** 생성 프롬프트에 싣는 배경 변형 수 (기본 포함) */
+    static final int GENERATE_SURFACES = 4;
+
     /**
      * 생성과 수정에 **둘 다** 들어가야 하는 금지.
      *
@@ -97,6 +103,14 @@ public final class PromptBuilder {
         if (!skipped.isEmpty()) {
             s.add("- 이번 요청에서는 " + String.join(", ", skipped) + " 영역을 만들지 마라.");
         }
+        // ★ 반대쪽도 이름을 댄다 — 요청문이 직접 요청한 블록은 "만들 수 있다" 가 아니라 "만든다".
+        //   이름 없이 "직접 말할 때만" 이라고만 하면 모델이 혜택 블록에 섞어 넣고 끝낸다(Bedrock 실측).
+        List<String> required = blocks.stream()
+                .filter(b -> !b.core() && b.requestedBy(requestText)).map(Block::key).toList();
+        if (!required.isEmpty()) {
+            s.add("- 이번 요청에서는 " + String.join(", ", required)
+                    + " 영역을 반드시 만든다. 요청문이 직접 요청했다. 다른 영역에 섞어 넣지 마라.");
+        }
         for (Block b : blocks) {
             if (b.core()) continue;
             addBlockLine(s, b);
@@ -110,7 +124,7 @@ public final class PromptBuilder {
         }
         s.add("");
         s.add("");
-        addLooks(s, blocks);
+        addLooks(s, blocks, requestText);
         s.add("");
         addInline(s);
         s.add("");
@@ -279,19 +293,27 @@ public final class PromptBuilder {
      * ★ "다양하게 섞어라" 를 명시한다. 안 그러면 예시에 나온 것만 매번 고른다
      *   (라우터 · 분량에서 이미 겪었다 — 모델은 예시를 정답으로 읽는다).
      */
-    private static void addLooks(StringJoiner s, List<Block> blocks) {
+    private static void addLooks(StringJoiner s, List<Block> blocks, String seed) {
         s.add("모양 고르기:");
         s.add("- 각 <section> 의 class 에 아래 이름을 붙여 모양을 고른다. 묶음마다 하나씩만.");
         s.add("- 요청문의 분위기에 맞게 고르고, 영역마다 다른 모양을 섞어 단조롭지 않게 한다.");
         s.add("- 목록에 없는 class 이름은 쓰지 마라.");
+        s.add("- 영역마다 아래에서 하나를 골라 붙인다. 붙이지 않으면 평범한 기본 모양이 된다.");
+        // ★ 전부 싣지 않는다 — 변형이 100개를 넘어 다 실으면 입력이 두 배가 된다.
+        //   블록마다 기본을 뺀 몇 개만 싣는다(Variant.sample). 같은 요청문이면 같은 목록이라
+        //   재시도가 흔들리지 않고, 요청문이 다르면 다른 목록이라 페이지마다 모양이 갈린다.
         for (Block b : blocks) {
-            List<Variant> vs = Variant.of(b);
+            List<Variant> vs = Variant.sample(b, seed, GENERATE_LAYOUTS_PER_BLOCK);
             if (vs.isEmpty()) continue;
             // ★ 대괄호로 묶지 않는다. 검증기가 [..] 를 자리표시자로 본다(placeholder).
             //   "[hero]" 로 썼더니 모델이 그 표기를 출력에 따라 써서 첫 시도의 2/3 가 떨어졌다(Bedrock 실측).
             s.add("  " + b.key() + " 영역:");
             addVariantLines(s, vs);
         }
+        List<Variant> surfaces = Variant.sampleSurfaces(seed, GENERATE_SURFACES);
+        StringJoiner line = new StringJoiner(" | ");
+        for (Variant v : surfaces) line.add(v.cssClass() + " (" + v.desc() + ")");
+        s.add("  배경 (hero · highlight · coupon · cta 를 뺀 내용 영역에 하나씩): " + line);
         s.add("- 페이지 전체 색감: hero 의 class 에 아래 중 하나를 붙인다 (하나만).");
         for (Palette p : Palette.all()) {
             if (p == Palette.BASE) continue;     // 생성에는 되돌릴 원래 색이 없다

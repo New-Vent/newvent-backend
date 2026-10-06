@@ -366,7 +366,7 @@ LLM_SMOKE=1 LLM_PROVIDER=bedrock ./gradlew test --rerun
 | 설정 | dev | prod |
 | --- | --- | --- |
 | `auth.jwt.secret` | 개발용 기본값 (`JWT_SECRET` 이 있으면 그 값) | `JWT_SECRET` **필수** |
-| `auth.cookie.secure` | `false` (http://localhost 에서도 저장) | `true` (환경변수 `AUTH_COOKIE_SECURE` 가 설정 파일보다 우선하므로 배포 환경변수에 넣지 않습니다) |
+| `auth.cookie.secure` | `false` (http://localhost 에서도 저장) | `true` (환경변수로 `false` 를 지정하면 기동 중단) |
 | `auth.cors.allowed-origins` | `http://localhost:5173,http://localhost:5174` | `CORS_ALLOWED_ORIGINS` **필수** |
 | `auth.jwt.access-ttl-minutes` | `30` (자동 갱신 확인용으로 `AUTH_ACCESS_TTL_MINUTES=1` 가능) | `30` |
 
@@ -376,6 +376,17 @@ LLM_SMOKE=1 LLM_PROVIDER=bedrock ./gradlew test --rerun
 
 - `JWT_SECRET` 이 없음 (빈 값, 또는 치환되지 않은 `${JWT_SECRET}`) → `JWT_SECRET 이 없습니다.`
 - 32바이트 미만 → `JWT_SECRET 이 너무 짧습니다 (N바이트).` — 값은 로그에 남기지 않습니다
+
+`prod` 에서는 `ProdAuthGuard` 가 추가로 검사합니다. 다음 설정은 기동을 중단합니다.
+
+- `auth.cookie.secure=false`
+- 저장소에 정의된 개발·테스트용 JWT 기본키 사용
+- CORS 허용 목록 누락·빈 값·미치환 자리표시·와일드카드
+- Origin 에 경로·끝 슬래시·쿼리·프래그먼트·사용자 정보가 포함되거나 형식이 잘못된 경우
+- localhost 및 루프백 주소 허용
+
+허용 Origin 은 `https://newvent.duckdns.org` 처럼 작성합니다. 여러 주소는 쉼표로 구분합니다.
+Origin 이 실제 프론트 주소와 일치하는지는 배포 설정에서 확인해야 합니다.
 
 ### 배포 (main)
 

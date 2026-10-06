@@ -30,7 +30,9 @@ public final class Vectors {
 		}
 		return out;
 	}
-	
+
+	// 코사인 유사도. 길이가 다르면 거부
+	// ★ na·nb 는 제곱합이다. 외적(a[i]*b[i])을 쌓으면 분모가 dot 과 같아져 항상 1이 나온다
 	public static double cosine(float[] a, float[] b) {
 		if(a.length != b.length) {
 			throw new IllegalArgumentException("벡터 길이가 다릅니다.");

@@ -32,7 +32,15 @@ public enum Palette {
     NIGHT("palette-night", "밤 · 프리미엄 — 검정, 금색"),
     PASTEL("palette-pastel", "파스텔 — 연보라, 민트"),
     MONO("palette-mono", "모노 · 미니멀 — 검정, 회색"),
-    FESTIVE("palette-festive", "축제 · 명절 — 빨강, 금색");
+    FESTIVE("palette-festive", "축제 · 명절 — 빨강, 금색"),
+    CHRISTMAS("palette-christmas", "크리스마스 — 진한 초록, 빨강"),
+    NEWYEAR("palette-newyear", "새해 — 남색, 금색"),
+    VALENTINE("palette-valentine", "발렌타인 — 분홍, 버건디"),
+    KIDS("palette-kids", "어린이 · 가족 — 밝은 원색"),
+    ESPORTS("palette-esports", "게임 · e스포츠 — 검정, 네온 초록"),
+    LAVENDER("palette-lavender", "라벤더 — 연보라, 차분한"),
+    COFFEE("palette-coffee", "카페 · 따뜻한 — 갈색, 크림"),
+    BRAND("palette-brand", "브랜드 — NewVent 마젠타 (특별한 분위기 요청이 없을 때)");
 
     public static final String PREFIX = "palette-";
 

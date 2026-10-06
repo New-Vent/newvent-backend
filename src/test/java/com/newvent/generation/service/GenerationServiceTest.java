@@ -37,6 +37,7 @@ class GenerationServiceTest {
     /** 모델을 부르지 않는 가짜. 무엇을 돌려줄지 테스트가 정한다 */
     static final class FakeRetry extends RetryService {
         private RetryService.Result next;
+        private String lastPrompt;
         private final AtomicInteger calls = new AtomicInteger();
 
         // ★ 기본은 Direct — reserve() 가 no-op 이라 상한 검사가 테스트에 끼어들지 않는다
@@ -55,7 +56,11 @@ class GenerationServiceTest {
         @Override
         public RetryService.Result run(LlmCallContext ctx, String system, String user, HtmlPolicy policy) {
             calls.incrementAndGet();
+<<<<<<< HEAD
             this.lastUser = user;
+=======
+            lastPrompt = user;
+>>>>>>> refs/heads/develop
             return next;
         }
     }
@@ -179,6 +184,28 @@ class GenerationServiceTest {
     }
 
     // ── 경로 ① 템플릿 ────────────────────────────────────────────
+
+    @Test
+    void 개인정보_확인후에만_생성하고_원문을_전달한다() {
+        String request = "데이터 10GB 이벤트, 연락처 a@example.com";
+        GenerationJob question = started(service.start(blank(1L, request)));
+        assertEquals(GenerationJob.Phase.ASK_BACK, question.phase());
+        assertTrue(question.privacyConfirmationRequired());
+        assertEquals(0, retry.calls());
+        assertTrue(versions.latest(1L).isEmpty());
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(GENERATED)));
+        GenerationJob reply = await(started(service.start(new GenerateCommand(
+                1L, null, "여름 이벤트", null, null, request, question.jobId(), true))));
+        assertEquals(GenerationJob.Phase.DONE, reply.phase());
+        assertTrue(retry.lastPrompt.contains("a@example.com"));
+    }
+
+    @Test
+    void 금지표현_목록에_의한_차단은_없다() {
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(GENERATED)));
+        assertEquals(GenerationJob.Phase.DONE, await(started(service.start(blank(1L, "씨발 문구 수정")))).phase());
+        assertEquals(1, retry.calls());
+    }
 
     @Test
     @DisplayName("★ 템플릿 경로는 모델을 아예 안 부른다")
