@@ -13,9 +13,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.newvent.common.response.ApiResponse;
+import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventProgress;
-import com.newvent.event.dto.response.PageResponse;
 import com.newvent.event.dto.response.PublicEventResponse;
 import com.newvent.event.dto.response.PublicEventSummaryResponse;
 import com.newvent.event.service.PublicEventService;
