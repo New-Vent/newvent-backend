@@ -49,4 +49,27 @@ public interface RagChunkRepository extends JpaRepository<RagChunk, Long>{
 	// 마지막 색인 시각. 비어 있으면 null
 	@Query("select max(r.createdAt) from RagChunk r where r.event.id = :eventId")
 	Instant lastIndexedAt(@Param("eventId") Long eventId);
+
+	// 같은 이벤트 안 다른 버전에서 유사 청크 검색 (유사 버전 탐색용)
+	// findSimilar 와 반대로 event_id = 로 묶고 version_id <> 로 기준 버전을 거른다
+	@Query(value = """
+			select * from rag_chunks
+			 where embedding_model = :model
+			   and event_id = :eventId
+			   and (version_id is null or version_id <> :excludeVersionId)
+			   and embedding <=> cast(:query as vector) <= :maxDistance
+			 order by embedding <=> cast(:query as vector)
+			 limit :limit
+			""", nativeQuery = true)
+	List<RagChunk> findSimilarInEvent(@Param("query") String query,
+			@Param("model") String model,
+			@Param("eventId") long eventId,
+			@Param("excludeVersionId") long excludeVersionId,
+			@Param("maxDistance") double maxDistance,
+			@Param("limit") int limit);
+
+	// 기준 버전의 색인 청크. 없으면 빈 목록
+	@Query("select r from RagChunk r where r.event.id = :eventId and r.version.id = :versionId order by r.chunkIndex")
+	List<RagChunk> findChunksOfVersion(@Param("eventId") Long eventId,
+			@Param("versionId") Long versionId);
 }
