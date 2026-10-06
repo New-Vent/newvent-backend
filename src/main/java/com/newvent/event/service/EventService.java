@@ -171,7 +171,7 @@ public class EventService {
         if (!request.endAt().isAfter(request.startAt())) {
             throw new EventException(EventErrorCode.INVALID_PERIOD);
         }
-        EventTemplate template = resolveTemplate(request.templateKey());
+        EventTemplate template = resolveTemplate(request.templateKey(), adminId);
         Admin owner = adminRepository.getReferenceById(adminId);
 
         Event draft = Event.createDraft(
@@ -187,8 +187,12 @@ public class EventService {
 
     /** 보낸 필드만 바꾼다. null 은 기존 값 유지, templateKey 가 빈 문자열이면 템플릿을 해제한다. */
     @Transactional
-    public EventDetailResponse update(Long id, EventUpdateRequest request) {
+    public EventDetailResponse update(Long adminId, Long id, EventUpdateRequest request) {
         Event event = findActiveEvent(id);
+        if (event.getOwnerAdmin() == null || !adminId.equals(event.getOwnerAdmin().getId())) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "이벤트 소유 관리자만 수정할 수 있습니다.");
+        }
         if (event.editLocked(OffsetDateTime.now(clock))) {
             throw new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
         }
@@ -202,7 +206,7 @@ public class EventService {
             throw new EventException(EventErrorCode.INVALID_PERIOD);
         }
         EventTemplate template = request.templateKey() != null
-                ? resolveTemplate(request.templateKey())
+                ? resolveTemplate(request.templateKey(), adminId)
                 : event.getTemplate();
 
         event.updateInfo(
@@ -255,12 +259,13 @@ public class EventService {
         return !Objects.equals(requested, event.templateCode());
     }
 
-    private EventTemplate resolveTemplate(String templateKey) {
+    private EventTemplate resolveTemplate(String templateKey, Long adminId) {
         if (templateKey == null || templateKey.isBlank()) {
             return null;
         }
         return eventTemplateRepository.findByKey(templateKey.trim())
                 .filter(EventTemplate::isActive)
+                .filter(t -> t.visibleTo(adminId))
                 .orElseThrow(() -> new EventException(EventErrorCode.TEMPLATE_NOT_FOUND));
     }
 }

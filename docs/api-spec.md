@@ -2,6 +2,8 @@
 
 관리자 이벤트·템플릿 API의 현재 구현을 적는다. `/api/admin/**` 는 관리자 로그인(ADMIN)이 필요하다.
 
+관리자 등록 템플릿의 조회·등록·미리보기·재사용은 [이벤트 템플릿 라이브러리 API](api-spec/template-library.md)를 참고한다.
+
 > Status: Draft
 
 ## 공통

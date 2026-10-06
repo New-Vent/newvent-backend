@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -474,7 +475,7 @@ class EventServiceTest {
     void 이름만_수정하면_나머지는_유지된다() {
         Event event = draftWorldCupEvent();
 
-        EventDetailResponse updated = eventService.update(2L, new EventUpdateRequest(
+        EventDetailResponse updated = eventService.update(1L, 2L, new EventUpdateRequest(
                 "  월드컵 승부 예측  ", null, null, null, null));
 
         assertThat(updated.name()).isEqualTo("월드컵 승부 예측");
@@ -493,7 +494,7 @@ class EventServiceTest {
         when(eventTemplateRepository.findByKey("sports_cheer")).thenReturn(
                 Optional.of(EventTemplate.seed("sports_cheer", "스포츠 응원", "설명", "<html/>", true)));
 
-        EventDetailResponse updated = eventService.update(2L, new EventUpdateRequest(
+        EventDetailResponse updated = eventService.update(1L, 2L, new EventUpdateRequest(
                 null,
                 OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-10-10T23:59:59+09:00"),
@@ -514,7 +515,7 @@ class EventServiceTest {
         ReflectionTestUtils.setField(event, "startNotifiedAt", OffsetDateTime.parse("2026-07-01T00:00:00+09:00"));
         ReflectionTestUtils.setField(event, "closingSoonNotifiedAt", OffsetDateTime.parse("2026-07-29T00:00:00+09:00"));
 
-        eventService.update(2L, new EventUpdateRequest(
+        eventService.update(1L, 2L, new EventUpdateRequest(
                 null, null, OffsetDateTime.parse("2026-08-15T00:00:00+09:00"), null, null));
 
         assertThat(event.getClosingSoonNotifiedAt()).isNull();
@@ -529,7 +530,7 @@ class EventServiceTest {
         ReflectionTestUtils.setField(event, "startNotifiedAt", OffsetDateTime.parse("2026-07-01T00:00:00+09:00"));
         ReflectionTestUtils.setField(event, "closingSoonNotifiedAt", OffsetDateTime.parse("2026-07-29T00:00:00+09:00"));
 
-        eventService.update(2L, new EventUpdateRequest("이름만 변경", null, null, null, null));
+        eventService.update(1L, 2L, new EventUpdateRequest("이름만 변경", null, null, null, null));
 
         assertThat(event.getStartNotifiedAt()).isNotNull();
         assertThat(event.getClosingSoonNotifiedAt()).isNotNull();
@@ -542,7 +543,7 @@ class EventServiceTest {
         ReflectionTestUtils.setField(event, "template",
                 EventTemplate.seed("sports_cheer", "스포츠 응원", "설명", "<html/>", true));
 
-        EventDetailResponse updated = eventService.update(2L, new EventUpdateRequest(null, null, null, "", null));
+        EventDetailResponse updated = eventService.update(1L, 2L, new EventUpdateRequest(null, null, null, "", null));
 
         assertThat(updated.template()).isNull();
         verifyNoInteractions(eventTemplateRepository);
@@ -555,7 +556,7 @@ class EventServiceTest {
         EventUpdateRequest request = new EventUpdateRequest(
                 null, null, OffsetDateTime.parse("2026-06-30T00:00:00+09:00"), null, null);
 
-        assertThatThrownBy(() -> eventService.update(2L, request))
+        assertThatThrownBy(() -> eventService.update(1L, 2L, request))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.INVALID_PERIOD.getCode());
@@ -572,7 +573,7 @@ class EventServiceTest {
         when(eventRepository.findAdminEventById(6L)).thenReturn(Optional.of(event));
         EventUpdateRequest request = new EventUpdateRequest("이름 변경", null, null, null, null);
 
-        assertThatThrownBy(() -> eventService.update(6L, request))
+        assertThatThrownBy(() -> eventService.update(1L, 6L, request))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_ENDED_NOT_EDITABLE.getCode());
@@ -589,7 +590,7 @@ class EventServiceTest {
         EventUpdateRequest request = new EventUpdateRequest(
                 null, null, OffsetDateTime.parse("2026-09-30T23:59:59+09:00"), null, null);
 
-        assertThatThrownBy(() -> eventService.update(5L, request))
+        assertThatThrownBy(() -> eventService.update(1L, 5L, request))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_ENDED_NOT_EDITABLE.getCode());
@@ -601,7 +602,7 @@ class EventServiceTest {
     void 진행중인_게시_이벤트는_수정할_수_있다() {
         Event event = publishedEventWithTemplate();
 
-        EventDetailResponse updated = eventService.update(4L, new EventUpdateRequest(
+        EventDetailResponse updated = eventService.update(1L, 4L, new EventUpdateRequest(
                 "추석 특가", null, OffsetDateTime.parse("2026-10-05T23:59:59+09:00"), null, null));
 
         assertThat(updated.name()).isEqualTo("추석 특가");
@@ -614,7 +615,7 @@ class EventServiceTest {
     void 기간이_지난_DRAFT는_기간을_다시_잡을_수_있다() {
         draftWorldCupEvent();
 
-        EventDetailResponse updated = eventService.update(2L, new EventUpdateRequest(
+        EventDetailResponse updated = eventService.update(1L, 2L, new EventUpdateRequest(
                 null,
                 OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-10-31T23:59:59+09:00"),
@@ -631,7 +632,7 @@ class EventServiceTest {
         Event event = publishedEventWithTemplate();
         EventUpdateRequest request = new EventUpdateRequest(null, null, null, "sports_cheer", null);
 
-        assertThatThrownBy(() -> eventService.update(4L, request))
+        assertThatThrownBy(() -> eventService.update(1L, 4L, request))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.PUBLISHED_EVENT_TEMPLATE_NOT_EDITABLE.getCode());
@@ -645,7 +646,7 @@ class EventServiceTest {
         Event event = publishedEventWithTemplate();
         EventUpdateRequest request = new EventUpdateRequest(null, null, null, "", null);
 
-        assertThatThrownBy(() -> eventService.update(4L, request))
+        assertThatThrownBy(() -> eventService.update(1L, 4L, request))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.PUBLISHED_EVENT_TEMPLATE_NOT_EDITABLE.getCode());
@@ -659,7 +660,7 @@ class EventServiceTest {
         when(eventTemplateRepository.findByKey("flash_sale")).thenReturn(
                 Optional.of(EventTemplate.seed("flash_sale", "타임 특가", "설명", "<html/>", true)));
 
-        EventDetailResponse updated = eventService.update(4L, new EventUpdateRequest(
+        EventDetailResponse updated = eventService.update(1L, 4L, new EventUpdateRequest(
                 "추석 특가", null, null, " flash_sale ", null));
 
         assertThat(updated.name()).isEqualTo("추석 특가");
@@ -672,7 +673,7 @@ class EventServiceTest {
         when(eventRepository.findAdminEventById(999L)).thenReturn(Optional.empty());
         EventUpdateRequest request = new EventUpdateRequest("이름 변경", null, null, null, null);
 
-        assertThatThrownBy(() -> eventService.update(999L, request))
+        assertThatThrownBy(() -> eventService.update(1L, 999L, request))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
@@ -685,7 +686,7 @@ class EventServiceTest {
         when(eventTemplateRepository.findByKey("없는키")).thenReturn(Optional.empty());
         EventUpdateRequest request = new EventUpdateRequest(null, null, null, "없는키", null);
 
-        assertThatThrownBy(() -> eventService.update(2L, request))
+        assertThatThrownBy(() -> eventService.update(1L, 2L, request))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.TEMPLATE_NOT_FOUND.getCode());
@@ -758,6 +759,29 @@ class EventServiceTest {
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
     }
 
+    @Test
+    void 다른_관리자_템플릿으로_이벤트를_생성할_수_없다() {
+        Admin other = BeanUtils.instantiateClass(Admin.class);
+        ReflectionTestUtils.setField(other, "id", 99L);
+        EventTemplate custom = EventTemplate.custom("custom_other", other, "등록본", null, "<div/>");
+        when(eventTemplateRepository.findByKey("custom_other")).thenReturn(Optional.of(custom));
+        EventCreateRequest request = new EventCreateRequest("새 이벤트",
+                OffsetDateTime.parse("2026-10-10T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-20T00:00:00+09:00"), "custom_other", MembershipGrade.NORMAL);
+        assertThatThrownBy(() -> eventService.create(1L, request)).isInstanceOf(EventException.class);
+        verify(eventRepository, never()).save(any());
+    }
+
+    @Test
+    void 다른_관리자가_이벤트의_템플릿을_변경할_수_없다() {
+        draftWorldCupEvent();
+        assertThatThrownBy(() -> eventService.update(9L, 2L,
+                new EventUpdateRequest(null, null, null, "sports_cheer", null)))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verifyNoInteractions(eventTemplateRepository);
+        verify(eventRepository, never()).flush();
+    }
+
     private Event draftWorldCupEvent() {
         Event event = newEvent(2L, EventStatus.DRAFT,
                 OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
@@ -782,6 +806,9 @@ class EventServiceTest {
     private Event newEvent(Long id, EventStatus status, OffsetDateTime startDate, OffsetDateTime endDate) {
         Event event = BeanUtils.instantiateClass(Event.class);
         ReflectionTestUtils.setField(event, "id", id);
+        Admin owner = BeanUtils.instantiateClass(Admin.class);
+        ReflectionTestUtils.setField(owner, "id", 1L);
+        ReflectionTestUtils.setField(event, "ownerAdmin", owner);
         ReflectionTestUtils.setField(event, "status", status);
         ReflectionTestUtils.setField(event, "startDate", startDate);
         ReflectionTestUtils.setField(event, "endDate", endDate);
