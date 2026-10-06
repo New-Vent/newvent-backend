@@ -21,6 +21,7 @@ import com.newvent.event.domain.EventTemplate;
 import com.newvent.event.domain.EventVersion;
 import com.newvent.event.dto.request.EventCreateRequest;
 import com.newvent.event.dto.request.EventUpdateRequest;
+import com.newvent.event.dto.response.EventCountsResponse;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
 import com.newvent.event.exception.EventErrorCode;
@@ -86,6 +87,25 @@ public class EventService {
     public EventDetailResponse findAdminEvent(Long id) {
         Event event = findActiveEvent(id);
         return EventDetailResponse.from(event, closingSoon(event));
+    }
+
+    @Transactional(readOnly = true)
+    public EventCountsResponse findEventCounts() {
+        long published = 0;
+        long draft = 0;
+        long ended = 0;
+        long total = 0;
+        for (Object[] row : eventRepository.countGroupedByStatus()) {
+            EventStatus status = (EventStatus) row[0];
+            long count = (Long) row[1];
+            total += count;
+            switch (status) {
+                case PUBLISHED -> published = count;
+                case DRAFT -> draft = count;
+                case ENDED -> ended = count;
+            }
+        }
+        return new EventCountsResponse(total, published, draft, ended);
     }
 
     @Transactional(readOnly = true)

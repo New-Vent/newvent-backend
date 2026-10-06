@@ -34,6 +34,7 @@ import com.newvent.event.domain.EventTemplate;
 import com.newvent.event.domain.EventVersion;
 import com.newvent.event.dto.request.EventCreateRequest;
 import com.newvent.event.dto.request.EventUpdateRequest;
+import com.newvent.event.dto.response.EventCountsResponse;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
 import com.newvent.event.exception.EventErrorCode;
@@ -177,6 +178,35 @@ class EventServiceTest {
 
         assertThat(result.totalElements()).isEqualTo(1);
         assertThat(result.content().get(0).id()).isEqualTo(99L);
+    }
+
+    @Test
+    @DisplayName("상태별 건수는 전체/게시중/게시전/종료로 집계된다")
+    void 상태별_건수를_집계한다() {
+        when(eventRepository.countGroupedByStatus()).thenReturn(List.of(
+                new Object[] {EventStatus.PUBLISHED, 3L},
+                new Object[] {EventStatus.DRAFT, 2L},
+                new Object[] {EventStatus.ENDED, 5L}));
+
+        EventCountsResponse counts = eventService.findEventCounts();
+
+        assertThat(counts.total()).isEqualTo(10L);
+        assertThat(counts.published()).isEqualTo(3L);
+        assertThat(counts.draft()).isEqualTo(2L);
+        assertThat(counts.ended()).isEqualTo(5L);
+    }
+
+    @Test
+    @DisplayName("이벤트가 하나도 없으면 전부 0건이다")
+    void 이벤트가_없으면_전부_0건이다() {
+        when(eventRepository.countGroupedByStatus()).thenReturn(List.of());
+
+        EventCountsResponse counts = eventService.findEventCounts();
+
+        assertThat(counts.total()).isZero();
+        assertThat(counts.published()).isZero();
+        assertThat(counts.draft()).isZero();
+        assertThat(counts.ended()).isZero();
     }
 
     @Test

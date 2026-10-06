@@ -35,6 +35,7 @@ import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.request.EventCreateRequest;
 import com.newvent.event.dto.request.EventUpdateRequest;
+import com.newvent.event.dto.response.EventCountsResponse;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
 import com.newvent.event.exception.EventErrorCode;
@@ -96,6 +97,21 @@ class AdminEventControllerTest {
                 .andExpect(jsonPath("$.data.id").value(3))
                 .andExpect(jsonPath("$.data.closingSoon").value(true))
                 .andExpect(jsonPath("$.data.completedHtml").value("<h1>지금 긁으면 바로 당첨</h1>"));
+    }
+
+    @Test
+    @DisplayName("카운트 API 는 상태별 건수를 반환한다")
+    void 이벤트_카운트_조회에_성공한다() throws Exception {
+        given(eventService.findEventCounts())
+                .willReturn(new EventCountsResponse(10, 3, 2, 5));
+
+        mockMvc.perform(get("/api/admin/events/counts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.total").value(10))
+                .andExpect(jsonPath("$.data.published").value(3))
+                .andExpect(jsonPath("$.data.draft").value(2))
+                .andExpect(jsonPath("$.data.ended").value(5));
     }
 
     @Test
