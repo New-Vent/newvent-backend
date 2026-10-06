@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import jakarta.persistence.criteria.Predicate;
 
@@ -49,6 +51,9 @@ public interface LlmCallLogRepository extends JpaRepository<LlmCallLog, Long>, J
 		long getInputTokens();
 		long getOutputTokens();
 	}
+
+	// Aborted 실패 시도 복구용. Gateway가 먼저 저장한 행을 (request_id, attempt_no) UK로 찾는다
+	Optional<LlmCallLog> findByRequestIdAndAttemptNo(UUID requestId, int attemptNo);
 
 	// 관리자 목록용. 값이 있는 필터만 조회 조건에 포함한다.
 	// 페이징·정렬·전체 건수 조회는 Spring Data JPA가 처리한다.
