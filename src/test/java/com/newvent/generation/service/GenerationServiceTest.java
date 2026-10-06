@@ -89,15 +89,25 @@ class GenerationServiceTest {
                 versions, guard, jobs, LlmCallRecorder.none());
     }
 
-    /** 워커 스레드가 끝날 때까지 기다린다. 2초면 충분하다 — 모델을 안 부르므로 */
-    private static GenerationJob await(GenerationJob job) {
+    /**
+     * 워커 스레드가 끝날 때까지 기다린다. 2초면 충분하다 — 모델을 안 부르므로
+     *
+     * ★ done() 만 보면 안 된다. fail() 이 단계를 DONE 으로 바꾸는 순간 done() 이 true 가 되지만,
+     *   슬롯을 비우는 jobs.finish() 는 그 뒤 finally 에서 실행된다. 그 틈에 jobs.ofEvent() 를 검사하면
+     *   간헐적으로 실패한다. 그래서 슬롯이 빌 때까지 같은 데드라인 안에서 기다린다.
+     */
+    private GenerationJob await(GenerationJob job) {
         long deadline = System.currentTimeMillis() + 2000;
-        while (!job.done() && System.currentTimeMillis() < deadline) {
+        while ((!job.done() || jobs.ofEvent(job.eventId()).isPresent())
+                && System.currentTimeMillis() < deadline) {
             Thread.onSpinWait();
         }
         assertTrue(job.done(),
                 "2초 안에 안 끝났습니다. 현재 단계=" + job.phase()
                 + " — 워커 스레드가 막혔거나 예외가 새어 나갔습니다.");
+        assertTrue(jobs.ofEvent(job.eventId()).isEmpty(),
+                "끝났는데 2초 안에 자리를 비우지 않았습니다. 단계=" + job.phase()
+                + " — jobs.finish() 가 호출되지 않았습니다.");
         return job;
     }
 

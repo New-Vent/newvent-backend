@@ -1,0 +1,20 @@
+# EditorConfig — 에디터가 저장할 때 Spotless(build.gradle)가 검사하는 공백 규칙을 먼저 맞춘다.
+#
+# CI 의 spotlessJavaCheck 실패 대부분이 "공백만 있는 줄(들여쓰기 자동 삽입)"과 "파일 끝 개행"이다.
+# IntelliJ 는 기본으로 읽고, VS Code 는 EditorConfig 확장이 필요하다.
+# 이미 어긋난 파일은 ./gradlew spotlessApply 로 한 번에 고친다.
+
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+
+[*.java]
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+# 마크다운은 줄 끝 공백 두 칸이 줄바꿈이라 지우지 않는다
+[*.md]
+trim_trailing_whitespace = false

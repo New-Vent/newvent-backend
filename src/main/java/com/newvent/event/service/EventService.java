@@ -118,7 +118,7 @@ public class EventService {
         return PageResponse.of(content, page, size, result.getTotalElements());
     }
 
-    // 게시 중인 이벤트는 휴지통으로 보낼 수 없다(먼저 게시를 종료해야 함).
+    // 게시 중인 이벤트는 휴지통으로 보낼 수 없다(먼저 게시를 내리거나 종료해야 함)
     // 생성 작업이 진행 중인 이벤트도 거부한다 — 안 그러면 휴지통으로 보낸 뒤에도 백그라운드 생성이 끝나면서 삭제된 이벤트에 새 버전이 저장될 수 있다.
     @Transactional
     public void delete(Long id) {
@@ -216,7 +216,7 @@ public class EventService {
         return EventDetailResponse.from(event, closingSoon(event));
     }
 
-    /** 상태 변경 API 는 종료(PUBLISHED → ENDED)만 한다. 게시는 게시 API 로 한다. */
+    // 상태 변경 API 는 종료(PUBLISHED → ENDED)만 한다. 게시는 게시 API 로 한다
     @Transactional
     public EventDetailResponse changeStatus(Long id, EventStatus target) {
         Event event = findActiveEvent(id);
@@ -227,6 +227,18 @@ public class EventService {
             throw new EventException(EventErrorCode.EVENT_NOT_ENDABLE);
         }
         event.end();
+        eventRepository.flush();
+        return EventDetailResponse.from(event, closingSoon(event));
+    }
+
+    // 게시 내리기(PUBLISHED → DRAFT)
+    @Transactional
+    public EventDetailResponse unpublish(Long id) {
+        Event event = findActiveEvent(id);
+        if (!event.published()) {
+            throw new EventException(EventErrorCode.EVENT_NOT_UNPUBLISHABLE);
+        }
+        event.unpublish();
         eventRepository.flush();
         return EventDetailResponse.from(event, closingSoon(event));
     }

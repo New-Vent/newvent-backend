@@ -467,6 +467,47 @@ class AdminEventControllerTest {
     }
 
     @Test
+    @DisplayName("게시 내리기 API 는 DRAFT 로 돌아온 이벤트 상세를 ApiResponse 로 감싼다")
+    void 게시_내리기에_성공한다() throws Exception {
+        EventDetailResponse unpublished = new EventDetailResponse(
+                3L, "가을 멤버십 더블 혜택", EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-09-30T23:59:59+09:00"),
+                OffsetDateTime.parse("2026-09-20T13:00:00+09:00"),
+                "member_appreciation", null, MembershipGrade.NORMAL,
+                null, false);
+        given(eventService.unpublish(3L)).willReturn(unpublished);
+
+        mockMvc.perform(post("/api/admin/events/3/unpublish"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(3))
+                .andExpect(jsonPath("$.data.status").value("DRAFT"));
+    }
+
+    @Test
+    @DisplayName("게시 중이 아닌 이벤트의 게시 내리기는 409 와 EVENT409-7 을 반환한다")
+    void 게시중이_아닌_이벤트의_게시_내리기는_409를_반환한다() throws Exception {
+        given(eventService.unpublish(2L))
+                .willThrow(new EventException(EventErrorCode.EVENT_NOT_UNPUBLISHABLE));
+
+        mockMvc.perform(post("/api/admin/events/2/unpublish"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-7"));
+    }
+
+    @Test
+    @DisplayName("없는 이벤트의 게시 내리기는 404 와 EVENT404-0 을 반환한다")
+    void 없는_이벤트의_게시_내리기는_404를_반환한다() throws Exception {
+        given(eventService.unpublish(999L))
+                .willThrow(new EventException(EventErrorCode.EVENT_NOT_FOUND));
+
+        mockMvc.perform(post("/api/admin/events/999/unpublish"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("EVENT404-0"));
+    }
+
+    @Test
     @DisplayName("게시 API 는 게시된 이벤트 상세를 반환한다")
     void 이벤트_게시에_성공한다() throws Exception {
         EventDetailResponse published = new EventDetailResponse(
