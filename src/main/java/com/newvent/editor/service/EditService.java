@@ -128,6 +128,12 @@ public class EditService {
             return new StartResult.Rejected(bad.get());
         }
 
+        // ②-b 고른 영역 — 레지스트리에 있고 채팅으로 고칠 수 있는 것만. 모델을 부르기 전에 거른다
+        if (chosenBlocks(cmd) == null) {
+            log.info("수정 거절 — 고를 수 없는 영역 (event={}, blocks={})", cmd.eventId(), cmd.blocks());
+            return new StartResult.Rejected(EditErrorCode.INVALID_BLOCK);
+        }
+
         // ③ 고칠 게 있는가 — 여기서 봐야 404 가 관리자에게 도달한다
         VersionStore.Snapshot snapshot = versions.latest(cmd.eventId()).orElse(null);
         if (snapshot == null) {
@@ -138,7 +144,7 @@ public class EditService {
                 "edit", snapshot.versionId(), jobs, cmd.privacyConfirmed(), cmd.title());
         if (input.error() != null) return new StartResult.Rejected(input.error());
         EditCommand safeCommand = new EditCommand(cmd.eventId(),
-                cmd.title(), input.text(), cmd.privacyConfirmationJobId(), cmd.privacyConfirmed());
+                cmd.title(), input.text(), cmd.blocks(), cmd.privacyConfirmationJobId(), cmd.privacyConfirmed());
 
         // ④ 이미 돌고 있나 — **자리를 잡지 않고** 먼저 본다
         Optional<GenerationJob> already = jobs.ofEvent(cmd.eventId());
@@ -267,6 +273,48 @@ public class EditService {
     // ── 라우터 + 관문 ─────────────────────────────────────────────
 
     /**
+     * 고른 영역을 Block 으로 — <b>Block 선언 순서</b>로 세운다. 하나라도 못 고르는 영역이면 null.
+     *
+     * ★ 선언 순서인 이유 — 연산이 그 순서로 실행되고, 저장 직전 정렬(PageShell.settle)과도 같은 순서다.
+     *   고른 순서를 따르면 "cta 를 먼저 고르고 hero 를 고른" 요청이 매번 다른 순서로 돈다.
+     * ★ 못 고르는 영역 — 레지스트리에 없는 key, 서버 소유(유의사항)
+     */
+    static List<Block> chosenBlocks(EditCommand cmd) {
+        Set<Block> out = EnumSet.noneOf(Block.class);
+        for (String key : cmd.blocks()) {
+            Optional<Block> b = Block.find(key);
+            if (b.isEmpty() || !b.get().canEdit()) return null;
+            out.add(b.get());
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * 라우터 결과를 고른 영역으로 좁힌다.
+     *
+     *   고른 영역을 라우터가 짚었으면    그 연산을 쓴다 — 지워줘 · 색 바꿔줘 · 따옴표 문구는 요청문에서 읽어야 한다
+     *   고른 영역을 라우터가 못 짚었으면  EDIT 으로 채운다 — "이거 바꿔줘" 처럼 영역을 말하지 않은 요청
+     *   고른 영역 밖을 짚었으면           버린다 (로그만)
+     *   같은 고른 영역에 연산이 여러 개면  첫 연산만 — 질문 여러 개를 ADD 여러 개로 쪼개도 거절되지 않게
+     */
+    static List<RawRoute> restrict(List<RawRoute> routed, List<Block> chosen, Long eventId) {
+        List<RawRoute> out = new ArrayList<>(chosen.size());
+        for (Block b : chosen) {
+            RawRoute hit = routed.stream().filter(r -> b.key().equals(r.target())).findFirst().orElse(null);
+            out.add(hit != null ? hit : new RawRoute(Op.EDIT.name(), b.key(), null));
+        }
+        List<String> dropped = routed.stream()
+                .map(RawRoute::target)
+                .filter(t -> chosen.stream().noneMatch(b -> b.key().equals(t)))
+                .toList();
+        if (!dropped.isEmpty()) {
+            log.info("수정 — 고른 영역 밖이라 버린다 (event={}, 고른={}, 버린={})",
+                    eventId, chosen.stream().map(Block::key).toList(), dropped);
+        }
+        return out;
+    }
+
+    /**
      * 요청문을 실행 계획으로 바꾼다. <b>모델을 부르는 건 라우터 1회뿐이다.</b>
      *
      */
@@ -277,6 +325,11 @@ public class EditService {
         LlmCallContext ctx = LlmCallContext.of(cmd.eventId(), job.jobId());
 
         Optional<List<RawRoute>> routed = router.route(ctx, RequestFilter.clean(cmd.requestText()));
+        // ★ 관리자가 영역을 골랐으면 "어디를" 은 정해졌다. 라우터 결과는 "무엇을"(op · content)만 쓴다.
+        //   라우터가 아무것도 못 읽었어도 되묻지 않는다 — 고른 영역을 EDIT 으로 고친다
+        if (cmd.hasBlocks()) {
+            routed = Optional.of(restrict(routed.orElse(List.of()), chosenBlocks(cmd), cmd.eventId()));
+        }
         if (routed.isEmpty()) {
             // ★ 모델에게 다시 시키지 않는다. 관리자에게 다시 묻는다
             job.askBack("요청을 이해하지 못했습니다. 어느 부분을 어떻게 바꿀지 알려 주세요. "
