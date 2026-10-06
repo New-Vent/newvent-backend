@@ -55,7 +55,7 @@ public class GenerationService {
     // ★ b3: RAG 검색기. 백지 경로(fromBlank)에서만 쓴다
     private final SimilarityService similarity;
 
-    
+
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "generation");
         t.setDaemon(true);

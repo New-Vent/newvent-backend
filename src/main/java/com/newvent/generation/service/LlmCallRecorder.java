@@ -34,7 +34,7 @@ public class LlmCallRecorder {
 
     /** 재시도 묶음 전체 — 검증 통과·실패 행을 한 번에 */
     public void recordAttempts(LlmCallContext ctx, RetryService.Result result) {
-        recordAttempts(ctx, result, null); 
+        recordAttempts(ctx, result, null);
     }
 
     /**
