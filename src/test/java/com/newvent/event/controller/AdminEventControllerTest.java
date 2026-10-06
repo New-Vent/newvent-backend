@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -23,9 +24,12 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import com.newvent.auth.dto.AuthUser;
 import com.newvent.auth.jwt.JwtProvider;
@@ -48,6 +52,11 @@ import com.newvent.user.domain.MembershipGrade;
 @Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtProvider.class})
 @WithMockUser(roles = "ADMIN")
 class AdminEventControllerTest {
+
+    private RequestPostProcessor adminPrincipal() {
+        return authentication(new UsernamePasswordAuthenticationToken(
+                AuthUser.admin(1L), null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+    }
 
     @Autowired
     MockMvc mockMvc;
@@ -183,9 +192,9 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
                 null, null, MembershipGrade.EXCELLENT,
                 null, false);
-        given(eventService.update(eq(2L), any(EventUpdateRequest.class))).willReturn(updated);
+        given(eventService.update(eq(1L), eq(2L), any(EventUpdateRequest.class))).willReturn(updated);
 
-        mockMvc.perform(patch("/api/admin/events/2")
+        mockMvc.perform(patch("/api/admin/events/2").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "이름만 변경" }
@@ -200,10 +209,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("종료된 이벤트 수정은 409 와 EVENT409-1 을 반환한다")
     void 종료된_이벤트_수정은_409를_반환한다() throws Exception {
-        given(eventService.update(eq(6L), any(EventUpdateRequest.class)))
+        given(eventService.update(eq(1L), eq(6L), any(EventUpdateRequest.class)))
                 .willThrow(new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE));
 
-        mockMvc.perform(patch("/api/admin/events/6")
+        mockMvc.perform(patch("/api/admin/events/6").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "이름 변경" }
@@ -215,10 +224,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("게시 중인 이벤트의 템플릿 변경은 409 와 EVENT409-4 를 반환한다")
     void 게시중_템플릿_변경은_409를_반환한다() throws Exception {
-        given(eventService.update(eq(4L), any(EventUpdateRequest.class)))
+        given(eventService.update(eq(1L), eq(4L), any(EventUpdateRequest.class)))
                 .willThrow(new EventException(EventErrorCode.PUBLISHED_EVENT_TEMPLATE_NOT_EDITABLE));
 
-        mockMvc.perform(patch("/api/admin/events/4")
+        mockMvc.perform(patch("/api/admin/events/4").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "templateKey": "sports_cheer" }
@@ -230,10 +239,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("수정 후 기간이 역전되면 400 과 EVENT400-0 을 반환한다")
     void 수정_기간이_역전되면_400을_반환한다() throws Exception {
-        given(eventService.update(eq(2L), any(EventUpdateRequest.class)))
+        given(eventService.update(eq(1L), eq(2L), any(EventUpdateRequest.class)))
                 .willThrow(new EventException(EventErrorCode.INVALID_PERIOD));
 
-        mockMvc.perform(patch("/api/admin/events/2")
+        mockMvc.perform(patch("/api/admin/events/2").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "endAt": "2026-06-30T00:00:00+09:00" }
@@ -269,7 +278,7 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("수정 요청에 이벤트명이 없으면 검증을 통과한다")
     void 이벤트_수정_이름이_없으면_검증을_통과한다() throws Exception {
-        mockMvc.perform(patch("/api/admin/events/1")
+        mockMvc.perform(patch("/api/admin/events/1").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "endAt": "2026-10-20T23:59:59+09:00" }

@@ -78,9 +78,10 @@ public class AdminEventController {
     /** null 필드는 변경하지 않는다. */
     @PatchMapping("/{id}")
     public ApiResponse<EventDetailResponse> update(
+            @AuthenticationPrincipal AuthUser principal,
             @PathVariable Long id,
             @Valid @RequestBody EventUpdateRequest request) {
-        return ApiResponse.success(eventService.update(id, request));
+        return ApiResponse.success(eventService.update(principal.id(), id, request));
     }
 
     /** 소프트 삭제(deletedAt). 게시 중인 이벤트는 거부한다. */

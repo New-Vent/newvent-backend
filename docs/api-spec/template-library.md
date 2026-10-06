@@ -71,7 +71,8 @@ POST /api/admin/template-library
 소유자가 다르면 403, 이벤트/버전이 없으면 404.
 
 기간·참여 링크 슬롯은 비운다. 버튼 문구는 유지한다.
-필수 블록, 블록 단일성, 블록 내용 형태, 기간·CTA 슬롯을 검사한다.
+필수 블록, 블록 단일성, 블록 내용 형태, 기간 슬롯을 검사한다.
+참여 링크 슬롯은 템플릿에 있을 때 보존하지만, 백지 생성 버전에는 없을 수 있다.
 서버 승인 유의사항을 다시 삽입한다. 기존 슬롯/ID/테마를 유지하며
 스크립트는 현재 기본 제공 템플릿의 원본과 완전히 일치하는 것만 남긴다.
 임의 스크립트/인라인 이벤트 핸들러는 복사하지 않는다.
@@ -147,7 +148,7 @@ POST /api/admin/template-library/{code}/events
 
 ## DB 변경·검증
 
-V14__add_template_owner.sql이 event_templates.owner_admin_id와 인덱스를 추가한다.
+V15__add_template_owner.sql이 event_templates.owner_admin_id와 인덱스를 추가한다.
 기본 제공 템플릿은 owner가 null이다. 기존 데이터의 소유자 없는 비내장 템플릿은
 자동으로 다른 관리자에게 공개하지 않는다. 해당 데이터가 있다면 소유자를 지정해야 한다.
 

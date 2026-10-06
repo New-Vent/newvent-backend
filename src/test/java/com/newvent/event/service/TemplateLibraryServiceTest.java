@@ -101,6 +101,30 @@ class TemplateLibraryServiceTest {
     }
 
     @Test
+    void generatedPageWithoutCtaLinkCanBeSavedAsTemplate() {
+        source();
+        String blank = com.newvent.registry.PageShell.plant(
+                "<section data-block=\"hero\"><h1>새 이벤트</h1><p data-slot=\"period\"></p></section>"
+                + "<section data-block=\"benefits\"><ul><li>혜택 하나</li><li>혜택 둘</li></ul></section>"
+                + "<section data-block=\"cta\"><a href=\"#\">참여하기</a></section>", null);
+        when(versions.htmlOf(2L, 7L)).thenReturn(Optional.of(blank));
+
+        assertDoesNotThrow(() -> service.register(1L,
+                new TemplateRegisterRequest(2L, 7L, "백지 생성 템플릿", null)));
+        verify(templates).save(argThat(t -> t.getHtmlContent().contains("data-slot=\"period\"")
+                && !t.getHtmlContent().contains("data-slot=\"cta-link\"")));
+    }
+
+    @Test
+    void pageWithoutPeriodSlotCannotBeSavedAsTemplate() {
+        source();
+        when(versions.htmlOf(2L, 7L)).thenReturn(Optional.of(html.replace("data-slot=\"period\"", "")));
+        assertThrows(EventException.class, () -> service.register(1L,
+                new TemplateRegisterRequest(2L, 7L, "기간 누락", null)));
+        verify(templates, never()).save(any());
+    }
+
+    @Test
     void privateTemplatesAreNotReadableOrSelectableByOthers() {
         when(templates.findByKey(code)).thenReturn(Optional.of(custom(true)));
         assertThrows(EventException.class, () -> service.preview(9L, code));

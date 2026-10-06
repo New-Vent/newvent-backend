@@ -167,8 +167,12 @@ public class EventService {
 
     /** 보낸 필드만 바꾼다. null 은 기존 값 유지, templateKey 가 빈 문자열이면 템플릿을 해제한다. */
     @Transactional
-    public EventDetailResponse update(Long id, EventUpdateRequest request) {
+    public EventDetailResponse update(Long adminId, Long id, EventUpdateRequest request) {
         Event event = findActiveEvent(id);
+        if (event.getOwnerAdmin() == null || !adminId.equals(event.getOwnerAdmin().getId())) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "이벤트 소유 관리자만 수정할 수 있습니다.");
+        }
         if (event.editLocked(OffsetDateTime.now(clock))) {
             throw new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
         }
@@ -182,7 +186,7 @@ public class EventService {
             throw new EventException(EventErrorCode.INVALID_PERIOD);
         }
         EventTemplate template = request.templateKey() != null
-                ? resolveTemplate(request.templateKey(), event.getOwnerAdmin().getId())
+                ? resolveTemplate(request.templateKey(), adminId)
                 : event.getTemplate();
 
         event.updateInfo(

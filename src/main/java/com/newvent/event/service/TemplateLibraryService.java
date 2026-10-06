@@ -134,9 +134,7 @@ public class TemplateLibraryService {
                         .anyMatch(BlockValidator.Failure::isBlocking)) invalid();
             }
         }
-        for (Slot slot : Slot.values()) {
-            if (body.select(slot.selector()).isEmpty()) invalid();
-        }
+        if (body.select(Slot.PERIOD.selector()).isEmpty()) invalid();
         for (Element e : body.select("[data-slot]")) {
             if (Slot.find(e.attr("data-slot")).isEmpty()) invalid();
         }
