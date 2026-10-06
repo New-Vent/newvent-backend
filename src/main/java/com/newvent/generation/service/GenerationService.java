@@ -218,7 +218,9 @@ public class GenerationService {
             //   그 앞의 시도들은 fromBlank 가 chunkIds 를 달아 이미 남겼다 — 여기서 또 남기면 유니크 위반이다.
             //   실패한 시도 자체는 Gateway가 별도 저장했으므로, 여기서는 RAG 정보만 갱신한다.
             log.warn("생성 실패 — {}차 시도에서 모델 호출 (event={})", e.attempt(), cmd.eventId(), e);
-            recorder.updateRagInfo(ctxOf(job, cmd), ragChunkIds);
+            // ★ ctxOf() 는 attemptNo 가 항상 1이라, 2차 이후 실패는 실제 시도 행을 못 찾는다.
+            //   e.attempt() 로 실패한 시도 번호를 넘겨 그 행의 RAG 정보를 갱신한다.
+            recorder.updateRagInfo(ctxOf(job, cmd).attempt(e.attempt()), ragChunkIds);
             job.fail("페이지 생성 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         } catch (LlmCallException e) {
             // 연결 끊김 · 타임아웃 · 모델 서버 down. 프롬프트를 고쳐도 안 고쳐진다

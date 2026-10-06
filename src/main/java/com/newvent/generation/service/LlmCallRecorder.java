@@ -57,6 +57,8 @@ public class LlmCallRecorder {
      */
     public void updateRagInfo(LlmCallContext ctx, String chunkIds) {
         if (!ctx.recordable()) return;
+        // ★ Tx.attempts() 와 동일하게 null·blank 면 갱신을 건너뛴다. 빈 값으로 덮어쓰지 않는다.
+        if (chunkIds == null || chunkIds.isBlank()) return;
         try {
             tx.updateRagInfo(ctx.requestId(), ctx.attemptNo(), chunkIds);
         } catch (RuntimeException e) {
