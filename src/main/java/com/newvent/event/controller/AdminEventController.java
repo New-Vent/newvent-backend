@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
 import com.newvent.common.response.PageResponse;
+import com.newvent.event.domain.EventProgress;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.request.EventCreateRequest;
 import com.newvent.event.dto.request.EventPublishRequest;
@@ -48,12 +49,13 @@ public class AdminEventController {
     public ApiResponse<PageResponse<EventSummaryResponse>> list(
             @RequestParam(required = false) String name,
             @RequestParam(required = false) EventStatus status,
+            @RequestParam(required = false) EventProgress progress,
             @RequestParam(required = false) OffsetDateTime periodFrom,
             @RequestParam(required = false) OffsetDateTime periodTo,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "10") @Min(1) @Max(50) int size) {
         return ApiResponse.success(
-                eventService.findAdminEvents(name, status, periodFrom, periodTo, page, size));
+                eventService.findAdminEvents(name, status, progress, periodFrom, periodTo, page, size));
     }
 
     @GetMapping("/{id}")

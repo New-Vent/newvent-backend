@@ -68,19 +68,37 @@
 
 | 이름 | 필수 | 기본 | 설명 |
 | --- | --- | --- | --- |
-| `name` | X | | 이벤트명 부분 일치 (대소문자 무시) |
+| `name` | X | | 이벤트명 부분 일치 (대소문자 무시). 숫자만 보내면 이벤트 ID 가 같은 것도 함께 찾는다 |
 | `status` | X | | `DRAFT` / `PUBLISHED` / `ENDED` |
+| `progress` | X | | `UPCOMING` / `ONGOING` / `ENDED`. 저장된 상태가 아니라 지금 시각과 기간으로 판정 (공개 목록과 같은 기준) |
 | `periodFrom` | X | | 이벤트 기간과 겹치는 구간 시작 |
 | `periodTo` | X | | 이벤트 기간과 겹치는 구간 끝. `periodFrom` 보다 앞서면 400 |
 | `page` | X | `0` | 0부터. 목록을 넘으면 빈 `content` |
 | `size` | X | `10` | 1~50 |
+
+`progress` 판정 (`now` = 요청 시각, 종료 시각 당일 포함):
+
+| 값 | 조건 |
+| --- | --- |
+| `UPCOMING` | `startAt` > now |
+| `ONGOING` | (`startAt` 없음 또는 ≤ now) 그리고 (`endAt` 없음 또는 ≥ now) |
+| `ENDED` | `endAt` < now |
+
+`status` 와 같이 쓸 수 있다. 예: 지금 사용자에게 보이는 이벤트는 `status=PUBLISHED&progress=ONGOING`.
+
+### 응답 필드 (목록 전용)
+
+| 필드 | 설명 |
+| --- | --- |
+| `publishedVersionNo` | 게시 중인 버전 번호. 게시한 적 없으면 `null` |
+| `latestVersionNo` | 가장 최근 버전 번호. 페이지가 아직 없으면 `null`. `publishedVersionNo` 보다 크면 게시 후 새 버전이 있다는 뜻 |
 
 ### 오류
 
 | 상황 | HTTP | code |
 | --- | --- | --- |
 | `periodFrom` > `periodTo` | 400 | `EVENT400-1` |
-| 잘못된 쿼리 (status, page, size) | 400 | `COMMON400-0` |
+| 잘못된 쿼리 (status, progress, page, size) | 400 | `COMMON400-0` |
 
 ### 200 예시
 
@@ -99,7 +117,9 @@
         "template": "signup",
         "thumbnailUrl": null,
         "grade": "NORMAL",
-        "closingSoon": false
+        "closingSoon": false,
+        "publishedVersionNo": 1,
+        "latestVersionNo": 3
       }
     ],
     "page": 0,
@@ -116,13 +136,15 @@
 ```text
 http://localhost:8080/api/admin/events
 http://localhost:8080/api/admin/events?status=PUBLISHED&name=쿠폰
+http://localhost:8080/api/admin/events?status=PUBLISHED&progress=ONGOING
+http://localhost:8080/api/admin/events?name=3
 ```
 
 ---
 
 ## `GET /api/admin/events/{id}`
 
-관리자 이벤트 상세. 목록 필드 + `completedHtml`.
+관리자 이벤트 상세. 목록 필드(버전 번호 제외) + `completedHtml`.
 
 ### 200 예시
 
@@ -288,7 +310,7 @@ Content-Type: application/json
 | Method | Path | 설명 | 오류 |
 | --- | --- | --- | --- |
 | `DELETE` | `/api/admin/events/{id}` | 휴지통으로 보낸다 (`deletedAt` 기록). 응답 `data` 없음 | 404 `EVENT404-0` · 게시 중 409 `EVENT409-2` · 생성 작업 중 409 `EVENT409-3` |
-| `GET` | `/api/admin/events/trash` | 휴지통 목록. `page`·`size` 는 목록 API 와 같음. 삭제일 내림차순 | — |
+| `GET` | `/api/admin/events/trash` | 휴지통 목록. `page`·`size`·응답 필드(버전 번호 포함)는 목록 API 와 같음. 삭제일 내림차순 | — |
 | `POST` | `/api/admin/events/{id}/restore` | 휴지통에서 복구. 복구된 `EventDetailResponse` | 휴지통에 없으면 404 `EVENT404-0` |
 | `DELETE` | `/api/admin/events/{id}/permanent` | 휴지통에서 영구 삭제. 되돌릴 수 없음 | 휴지통에 없으면 404 `EVENT404-0` |
 

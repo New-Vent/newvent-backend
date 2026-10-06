@@ -36,6 +36,7 @@ import com.newvent.auth.jwt.JwtProvider;
 import com.newvent.common.config.SecurityConfig;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
 import com.newvent.common.response.PageResponse;
+import com.newvent.event.domain.EventProgress;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.request.EventCreateRequest;
 import com.newvent.event.dto.request.EventUpdateRequest;
@@ -76,8 +77,8 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T10:20:00+09:00"),
-                "signup", null, MembershipGrade.NORMAL, false);
-        given(eventService.findAdminEvents(null, null, null, null, 0, 10))
+                "signup", null, MembershipGrade.NORMAL, false, 2, 3);
+        given(eventService.findAdminEvents(null, null, null, null, null, 0, 10))
                 .willReturn(PageResponse.of(List.of(row), 0, 10, 1));
 
         mockMvc.perform(get("/api/admin/events"))
@@ -85,7 +86,34 @@ class AdminEventControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.content[0].name").value("신규 가입 데이터 쿠폰 3GB"))
                 .andExpect(jsonPath("$.data.content[0].status").value("PUBLISHED"))
+                .andExpect(jsonPath("$.data.content[0].publishedVersionNo").value(2))
+                .andExpect(jsonPath("$.data.content[0].latestVersionNo").value(3))
                 .andExpect(jsonPath("$.data.totalElements").value(1));
+    }
+
+    @Test
+    @DisplayName("목록 API 는 검색어·상태·진행상태를 서비스에 넘긴다")
+    void 이벤트_목록_필터를_전달한다() throws Exception {
+        given(eventService.findAdminEvents(
+                        "42", EventStatus.PUBLISHED, EventProgress.ONGOING, null, null, 0, 10))
+                .willReturn(PageResponse.of(List.of(), 0, 10, 0));
+
+        mockMvc.perform(get("/api/admin/events")
+                        .param("name", "42")
+                        .param("status", "PUBLISHED")
+                        .param("progress", "ONGOING"))
+                .andExpect(status().isOk());
+
+        verify(eventService).findAdminEvents(
+                "42", EventStatus.PUBLISHED, EventProgress.ONGOING, null, null, 0, 10);
+    }
+
+    @Test
+    @DisplayName("없는 진행상태 값은 400 과 COMMON400-0 을 반환한다")
+    void 잘못된_진행상태는_400을_반환한다() throws Exception {
+        mockMvc.perform(get("/api/admin/events").param("progress", "LIVE"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400-0"));
     }
 
     @Test
@@ -171,7 +199,7 @@ class AdminEventControllerTest {
     @DisplayName("조회 시작일이 종료일보다 늦으면 400 과 EVENT400-1 을 반환한다")
     void 조회기간이_역전되면_400을_반환한다() throws Exception {
         given(eventService.findAdminEvents(
-                        any(), any(), any(OffsetDateTime.class), any(OffsetDateTime.class),
+                        any(), any(), any(), any(OffsetDateTime.class), any(OffsetDateTime.class),
                         anyInt(), anyInt()))
                 .willThrow(new EventException(EventErrorCode.INVALID_SEARCH_PERIOD));
 
@@ -374,7 +402,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-01-11T00:00:00+09:00"),
-                null, null, MembershipGrade.NORMAL, false);
+                null, null, MembershipGrade.NORMAL, false, null, null);
         given(eventService.findDeletedEvents(0, 10))
                 .willReturn(PageResponse.of(List.of(row), 0, 10, 1));
 
