@@ -82,6 +82,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/public/users/signup").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/public/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/public/events/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/e/*").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/users/**").hasRole("USER")
                         .requestMatchers("/api/**").hasAnyRole("USER", "ADMIN")

@@ -55,6 +55,18 @@ public final class PageShell {
 
     private PageShell() {}
 
+    /** 게시된 HTML 조각을 독립적인 문서로 감싼다. 조각의 스크립트와 마크업은 그대로 유지한다. */
+    public static String standalone(String fragment, String title) {
+        String safeTitle = new Element("title").text(title).outerHtml();
+        return "<!DOCTYPE html>\n<html lang=\"ko\">\n<head>\n"
+                + "<meta charset=\"UTF-8\">\n"
+                + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+                + safeTitle + "\n"
+                + "<link rel=\"stylesheet\" href=\"/assets/event.css\">\n"
+                + "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&amp;display=swap\">\n"
+                + "</head>\n<body>\n" + fragment + "\n</body>\n</html>";
+    }
+
     /**
      * 승인 문구를 읽을 수 있는지 확인한다. **시작할 때 부른다.**
      *
