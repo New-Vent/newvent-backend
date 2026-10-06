@@ -9,7 +9,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.newvent.event.dto.response.PageResponse;
+import com.newvent.common.response.PageResponse;
 import com.newvent.notification.domain.AdminNotification;
 import com.newvent.notification.dto.response.AdminNotificationResponse;
 import com.newvent.notification.exception.AdminNotificationErrorCode;

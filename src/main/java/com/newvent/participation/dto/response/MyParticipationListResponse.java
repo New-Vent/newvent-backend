@@ -1,6 +1,6 @@
 package com.newvent.participation.dto.response;
 
-import com.newvent.event.dto.response.PageResponse;
+import com.newvent.common.response.PageResponse;
 
 public record MyParticipationListResponse(
         ParticipationSummaryResponse summary,

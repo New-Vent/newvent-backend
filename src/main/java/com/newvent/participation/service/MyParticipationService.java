@@ -7,7 +7,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.newvent.event.dto.response.PageResponse;
+import com.newvent.common.response.PageResponse;
 import com.newvent.participation.domain.EventParticipation;
 import com.newvent.participation.dto.request.ParticipationListFilter;
 import com.newvent.participation.dto.response.MyParticipationListResponse;

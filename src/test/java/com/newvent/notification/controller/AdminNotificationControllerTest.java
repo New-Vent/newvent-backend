@@ -27,7 +27,7 @@ import com.newvent.auth.dto.AuthUser;
 import com.newvent.auth.jwt.JwtProvider;
 import com.newvent.common.config.SecurityConfig;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
-import com.newvent.event.dto.response.PageResponse;
+import com.newvent.common.response.PageResponse;
 import com.newvent.notification.dto.response.AdminNotificationResponse;
 import com.newvent.notification.exception.AdminNotificationErrorCode;
 import com.newvent.notification.exception.AdminNotificationException;

@@ -19,7 +19,7 @@ import com.newvent.auth.dto.AuthUser;
 import com.newvent.auth.jwt.JwtProvider;
 import com.newvent.common.config.SecurityConfig;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
-import com.newvent.event.dto.response.PageResponse;
+import com.newvent.common.response.PageResponse;
 import com.newvent.participation.dto.request.ParticipationListFilter;
 import com.newvent.participation.dto.response.MyParticipationListResponse;
 import com.newvent.participation.dto.response.MyParticipationResponse;

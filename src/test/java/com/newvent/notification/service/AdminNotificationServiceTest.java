@@ -19,8 +19,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.newvent.admin.domain.Admin;
+import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
-import com.newvent.event.dto.response.PageResponse;
 import com.newvent.notification.domain.AdminNotification;
 import com.newvent.notification.domain.AdminNotificationType;
 import com.newvent.notification.exception.AdminNotificationErrorCode;

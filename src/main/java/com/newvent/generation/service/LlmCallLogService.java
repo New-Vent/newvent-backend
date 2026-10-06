@@ -17,9 +17,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventVersion;
-import com.newvent.event.dto.response.PageResponse;
 import com.newvent.generation.domain.FailureType;
 import com.newvent.generation.domain.LlmCallLog;
 import com.newvent.generation.dto.LlmCallLogDetailResponse;
