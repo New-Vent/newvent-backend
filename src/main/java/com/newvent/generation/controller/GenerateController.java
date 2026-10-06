@@ -43,12 +43,20 @@ public class GenerateController {
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<GenerateStartResponse>> start(
             @PathVariable Long eventId,
-            @Valid @RequestBody GenerateRequest req) {
+            @Valid @RequestBody GenerateRequest req,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal com.newvent.auth.dto.AuthUser admin) {
 
         // ★ 삭제 필터를 쿼리가 한다. 지워진 행을 읽어 온 뒤 버리는 것보다 안 읽는 게 맞다.
         Event event = events.findByIdAndDeletedAtIsNull(eventId)
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
-        GenerateCommand cmd = GenerateCommand.of(event, req.templateCode(), req.requestText());
+        if (admin == null || !admin.admin() || event.getOwnerAdmin() == null
+                || !admin.id().equals(event.getOwnerAdmin().getId())) {
+            throw new org.springframework.security.access.AccessDeniedException("이벤트 소유 관리자만 생성할 수 있습니다.");
+        }
+        GenerateCommand initial = GenerateCommand.of(event, req.templateCode(), req.requestText());
+        GenerateCommand cmd = new GenerateCommand(initial.eventId(), initial.templateCode(), initial.templateFromEvent(),
+                initial.title(), initial.period(), initial.ctaUrl(), initial.requestText(),
+                req.privacyConfirmationJobId(), req.privacyConfirmed());
 
         return switch (generation.start(cmd)) {
             case StartResult.Started s -> ResponseEntity

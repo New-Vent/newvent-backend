@@ -241,13 +241,56 @@ class VariantPaletteTest {
     @DisplayName("생성 프롬프트에 모든 변형과 팔레트가 나가고, 선택 블록은 따로 안내한다")
     void 생성_프롬프트() {
         String p = PromptBuilder.generate();
-        for (Variant v : Variant.values()) assertTrue(p.contains(v.cssClass()), v.cssClass());
+        // 변형은 블록마다 기본을 뺀 몇 개만 싣는다 (아래 표본 테스트). 기본은 class 를 안 붙이면 나온다고 안내한다
+        assertTrue(p.contains("붙이지 않으면 평범한 기본 모양"));
         for (Palette pl : Palette.values()) {
             if (pl != Palette.BASE) assertTrue(p.contains(pl.cssClass()), pl.cssClass());
         }
         assertTrue(p.contains("요청문이 그 내용을 직접 말할 때만"));
         int core = p.indexOf("만들 영역:"), optional = p.indexOf("더할 수 있는 영역:");
         assertTrue(p.indexOf("data-block=\"faq\"") > optional && optional > core, "faq 는 선택 영역에 있어야 합니다");
+    }
+
+    @Test
+    @DisplayName("생성 프롬프트의 변형 표본 — 블록마다 최대 4개, 같은 요청문이면 같고, 요청문을 바꾸면 전부 한 번은 나온다")
+    void 변형_표본() {
+        for (Block b : Block.llmBlocks()) {
+            List<Variant> layouts = Variant.of(b).stream().filter(v -> v.group() == Variant.Group.LAYOUT).toList();
+            if (layouts.isEmpty()) continue;
+
+            List<Variant> one = Variant.sample(b, "가을 이벤트", 4);
+            assertTrue(one.size() <= 4, b.key());
+            // 기본을 실었더니 모델이 매번 그걸 골랐다 (Bedrock 실측) — 기본은 빼고 싣는다
+            assertFalse(one.contains(layouts.get(0)), b.key() + " 기본 변형이 실렸습니다");
+            assertEquals(one, Variant.sample(b, "가을 이벤트", 4), "같은 요청문인데 목록이 바뀌었습니다 — 재시도가 흔들립니다");
+
+            Set<Variant> seen = new HashSet<>();
+            for (int i = 0; i < 300; i++) seen.addAll(Variant.sample(b, "요청 " + i, 4));
+            assertEquals(new HashSet<>(layouts.subList(1, layouts.size())), seen,
+                    b.key() + " 의 변형 중 한 번도 안 실리는 것이 있습니다");
+        }
+        assertTrue(Variant.sampleSurfaces("x", 4).size() <= 4);
+        assertFalse(Variant.sampleSurfaces("x", 4).contains(Variant.SURFACE_CARD));
+    }
+
+    @Test
+    @DisplayName("새 블록(stats · prize · coupon · schedule)도 변형과 배경을 갖고, prize 는 항목이 폼 값이다")
+    void 새_블록_레지스트리() {
+        for (Block b : List.of(Block.STATS, Block.PRIZE, Block.COUPON, Block.SCHEDULE)) {
+            assertTrue(Variant.of(b).stream().anyMatch(v -> v.group() == Variant.Group.LAYOUT), b.key());
+            assertFalse(b.core(), b.key() + " 는 선택 블록이어야 합니다");
+        }
+        for (Block b : List.of(Block.STATS, Block.PRIZE, Block.SCHEDULE)) {
+            assertTrue(Variant.of(b).contains(Variant.SURFACE_GLASS), b.key() + " 에 배경 변형이 없습니다");
+        }
+        // 쿠폰은 그라데이션 바탕 + 흰 글씨가 디자인 — 배경 변형이 붙으면 빈 상자가 된다 (Bedrock 실측)
+        assertTrue(Variant.of(Block.COUPON).stream().noneMatch(v -> v.group() == Variant.Group.SURFACE));
+        String cleaned = BlockValidator.sanitizeGenerated(
+                "<section data-block=\"coupon\" class=\"v-coupon-ticket v-surface-card\"><p>쿠폰</p></section>");
+        assertFalse(cleaned.contains("v-surface-card"), "쿠폰에 붙은 배경 변형을 지워야 합니다: " + cleaned);
+        assertTrue(Block.PRIZE.itemsAreFormValues(), "경품은 관리자가 정하는 값이라 항목 추가를 막아야 합니다");
+        assertFalse(Block.STATS.itemsAreFormValues());
+        assertDoesNotThrow(Block::assertConsistent);
     }
 
     @Test

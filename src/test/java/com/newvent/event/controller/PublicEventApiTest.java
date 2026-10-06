@@ -103,7 +103,8 @@ class PublicEventApiTest {
     @DisplayName("목록 조회 성공 시 200과 PageResponse 형태를 반환")
     void 목록조회_성공() throws Exception {
         PublicEventSummaryResponse summary = new PublicEventSummaryResponse(
-                1L, "가을 이벤트", null, null, EventStatus.PUBLISHED, "signup", true);
+                1L, "가을 이벤트", null, null, EventStatus.PUBLISHED, "signup", true,
+                "<div class=\"ev-container event-page\"><section data-block=\"hero\"></section></div>");
         PageResponse<PublicEventSummaryResponse> page = PageResponse.of(List.of(summary), 0, 10, 1);
         when(publicEventService.getPublicEvents(any(), any(), any(), anyInt(), anyInt())).thenReturn(page);
 
@@ -111,6 +112,7 @@ class PublicEventApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[0].title").value("가을 이벤트"))
                 .andExpect(jsonPath("$.data.content[0].category").value("signup"))
+                .andExpect(jsonPath("$.data.content[0].thumbnailHtml").exists())
                 .andExpect(jsonPath("$.data.totalElements").value(1));
     }
 

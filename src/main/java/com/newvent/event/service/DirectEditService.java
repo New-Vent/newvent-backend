@@ -1,5 +1,7 @@
 package com.newvent.event.service;
 
+import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.util.Objects;
 
 import org.springframework.security.access.AccessDeniedException;
@@ -25,10 +27,12 @@ public class DirectEditService {
 
     private final EventRepository eventRepository;
     private final VersionStore versionStore;
+    private final Clock clock;
 
-    public DirectEditService(EventRepository eventRepository, VersionStore versionStore) {
+    public DirectEditService(EventRepository eventRepository, VersionStore versionStore, Clock clock) {
         this.eventRepository = Objects.requireNonNull(eventRepository, "eventRepository");
         this.versionStore = Objects.requireNonNull(versionStore, "versionStore");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     /**
@@ -49,6 +53,11 @@ public class DirectEditService {
         if (adminId == null || event.getOwnerAdmin() == null
                 || !adminId.equals(event.getOwnerAdmin().getId())) {
             throw new AccessDeniedException("이벤트 소유 관리자만 직접 편집할 수 있습니다.");
+        }
+
+        // 메타데이터 수정과 같은 종료 정책. 기준 HTML 조회·편집·저장 전에 차단한다.
+        if (event.editLocked(OffsetDateTime.now(clock))) {
+            throw new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
         }
 
         // 2. 기준 버전 HTML 조회 (해당 이벤트의 버전인지 함께 검증)

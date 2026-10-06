@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
 import com.newvent.auth.config.AuthProps;
+import com.newvent.auth.config.ProdAuthGuard;
 import com.newvent.auth.filter.CsrfOriginFilter;
 import com.newvent.auth.filter.JwtAuthenticationFilter;
 import com.newvent.auth.jwt.JwtProvider;
@@ -49,6 +51,7 @@ import com.newvent.auth.web.AccountType;
  */
 @Configuration
 @EnableConfigurationProperties(AuthProps.class)
+@Import(ProdAuthGuard.class)
 public class SecurityConfig {
 
     @Bean

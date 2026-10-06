@@ -1,5 +1,7 @@
 package com.newvent.participation.repository;
 
+import java.util.Optional;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -13,6 +15,10 @@ public interface EventParticipationRepository extends JpaRepository<EventPartici
 
     // 이벤트당 사용자 1회 참여 제한을 위한 중복 참여 확인
     boolean existsByEventIdAndUserId(Long eventId, Long userId);
+
+    // 참여 ID와 사용자 ID를 함께 확인하여 본인의 참여 기록만 조회
+    @EntityGraph(attributePaths = "event")
+    Optional<EventParticipation> findByIdAndUserId(Long participationId, Long userId);
 
     // 본인의 전체 참여 기록을 최신순으로 페이징 조회
     @EntityGraph(attributePaths = "event")
