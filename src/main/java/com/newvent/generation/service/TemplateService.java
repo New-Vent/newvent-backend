@@ -6,7 +6,6 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Service;
 
-import com.newvent.registry.BlockValidator;
 import com.newvent.registry.PageShell;
 import com.newvent.registry.Slots;
 
@@ -101,6 +100,7 @@ public class TemplateService {
      *
      *   관리자 템플릿은 "그때의" 정화 규칙을 통과한 HTML 이다.
      *   (data-slot 보존, button·id 보존).
+     *   저장 버전에서 복사한 기본 제공 스크립트는 원본 일치 검사를 거쳐 유지한다.
      *   템플릿은 수명이 길고 여러 이벤트에 퍼지므로 한 번 잘못 들어가면 다 퍼진다.
      *
      * ★ 기본 5종은 안 건다
@@ -109,6 +109,6 @@ public class TemplateService {
      */
     private String sanitizeIfNeeded(TemplateLoader.Source t) {
         if (t.builtin()) return t.html();
-        return BlockValidator.sanitizeEdited(t.html());   // 수정용 — 버튼·슬롯·id 를 보존한다
+        return SavedTemplateHtml.clean(t.html());
     }
 }

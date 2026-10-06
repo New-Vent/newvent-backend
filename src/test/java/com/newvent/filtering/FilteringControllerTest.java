@@ -34,7 +34,7 @@ class FilteringControllerTest {
         assertThrows(AccessDeniedException.class, () ->
                 new EditController(edit, events).start(1L, new EditRequest("제목 수정"), AuthUser.admin(1L)));
         assertThrows(AccessDeniedException.class, () ->
-                new GenerateController(generate, events).start(1L, new GenerateRequest(null, "생성"), AuthUser.admin(1L)));
+                new GenerateController(generate, events, mock(com.newvent.event.service.TemplateLibraryService.class)).start(1L, new GenerateRequest(null, "생성"), AuthUser.admin(1L)));
         verifyNoInteractions(edit, generate);
     }
 
@@ -53,7 +53,7 @@ class FilteringControllerTest {
         assertThrows(EditException.class, () ->
                 new EditController(edit, events).start(1L, new EditRequest("제목 수정", previous), AuthUser.admin(1L)));
         assertThrows(GenerationException.class, () ->
-                new GenerateController(generate, events).start(1L, new GenerateRequest(null, "생성", previous), AuthUser.admin(1L)));
+                new GenerateController(generate, events, mock(com.newvent.event.service.TemplateLibraryService.class)).start(1L, new GenerateRequest(null, "생성", previous), AuthUser.admin(1L)));
         verify(edit).start(argThat(c -> previous.equals(c.privacyConfirmationJobId())));
         verify(generate).start(argThat(c -> previous.equals(c.privacyConfirmationJobId())));
     }

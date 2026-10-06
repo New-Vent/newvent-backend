@@ -23,7 +23,9 @@ public enum EventErrorCode implements ErrorCode {
     EVENT_ENDED_PUBLISH_FORBIDDEN(HttpStatus.CONFLICT, "EVENT409-5", "종료된 이벤트는 게시할 수 없습니다."),
     // REQ-EVT-07. 종료(ENDED)는 되돌릴 수 없다. 게시 내리기(PUBLISHED → DRAFT)는 종료 전까지만 가능하다
     EVENT_NOT_ENDABLE(HttpStatus.CONFLICT, "EVENT409-6", "게시 중인 이벤트만 종료할 수 있습니다."),
-    EVENT_NOT_UNPUBLISHABLE(HttpStatus.CONFLICT, "EVENT409-7", "게시 중인 이벤트만 게시를 내릴 수 있습니다.");
+    EVENT_NOT_UNPUBLISHABLE(HttpStatus.CONFLICT, "EVENT409-7", "게시 중인 이벤트만 게시를 내릴 수 있습니다."),
+    BUILTIN_TEMPLATE_IMMUTABLE(HttpStatus.FORBIDDEN, "EVENT403-0", "기본 제공 템플릿은 변경할 수 없습니다."),
+    INVALID_TEMPLATE_STRUCTURE(HttpStatus.BAD_REQUEST, "EVENT400-3", "템플릿의 필수 블록이나 슬롯 구조를 확인해주세요.");
 
     private final HttpStatus httpStatus;
     private final String code;
