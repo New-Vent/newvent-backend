@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
+import com.newvent.common.response.PageResponse;
 import com.newvent.event.dto.request.*;
 import com.newvent.event.dto.response.*;
 import com.newvent.event.service.TemplateLibraryService;
