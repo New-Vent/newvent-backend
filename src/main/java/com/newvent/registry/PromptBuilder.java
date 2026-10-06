@@ -205,6 +205,15 @@ public final class PromptBuilder {
      *                      팔레트는 페이지 루트에 걸리므로 템플릿이어도 안내한다.
      */
     public static String edit(Block b, boolean templateBlock) {
+        return edit(b, templateBlock, true);
+    }
+
+    /**
+     * @param allowPalette hero 에 페이지 전체 색감(팔레트)을 안내할까.
+     *                     ★ 영역을 골라 고칠 때는 false — 팔레트는 저장 직전 페이지 루트로 옮겨져(PageShell.hoistPalette)
+     *                       고르지 않은 영역의 색까지 바뀐다. 선택 영역 수정이 선택 밖을 건드리면 안 된다
+     */
+    public static String edit(Block b, boolean templateBlock, boolean allowPalette) {
         if (b.source() == Block.Source.SERVER) {
             throw new IllegalArgumentException(
                     b.key() + " 는 서버 소유입니다. 모델에게 수정시키면 안 됩니다.");
@@ -212,7 +221,7 @@ public final class PromptBuilder {
         // ★ 모양·색 요청의 길. 고를 게 없으면 관련 문장을 통째로 뺀다 —
         //   "모양 고르기" 를 언급만 하고 목록이 없으면 모델이 목록 밖 이름을 지어낸다.
         List<Variant> variants = templateBlock ? List.of() : Variant.of(b);
-        boolean palette = b == Block.HERO;
+        boolean palette = b == Block.HERO && allowPalette;
         boolean looks = !variants.isEmpty() || palette;
 
         StringJoiner s = new StringJoiner("\n");

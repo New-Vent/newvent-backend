@@ -36,6 +36,7 @@ import com.newvent.registry.Block;
 import com.newvent.registry.BlockMerge;
 import com.newvent.registry.BlockValidator;
 import com.newvent.registry.PageShell;
+import com.newvent.registry.Palette;
 import com.newvent.registry.PromptBuilder;
 
 /**
@@ -427,7 +428,8 @@ public class EditService {
         RetryService.Result res;
         try {
             res = retry.run(ctx,
-                    PromptBuilder.edit(block, isTemplateBlock(before)),
+                    // ★ 영역을 골랐으면 hero 에도 페이지 전체 색감(팔레트)을 안내하지 않는다 — 선택 밖이 바뀐다
+                    PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks()),
                     userPrompt(cmd, step, before),
                     HtmlPolicy.edit(block, before, cmd.requestText()));
         } catch (RetryService.Aborted e) {
@@ -448,11 +450,32 @@ public class EditService {
                     + "요청을 조금 더 구체적으로 적어 다시 시도해 주세요.");
             return null;
         }
+        // ★ 영역을 골랐는데 모델이 팔레트를 붙였으면 떼어 낸다 — 프롬프트에서 뺐어도 출력은 보장되지 않는다.
+        //   남겨 두면 저장 직전 루트로 옮겨져(PageShell.hoistPalette) 고르지 않은 영역의 색까지 바뀐다
+        String html = cmd.hasBlocks() ? withoutPalette(res.html()) : res.html();
+
         // ★ 없던 영역이면 병합이 아니라 삽입이다.
         //   BlockMerge.merge 는 있는 섹션을 갈아끼울 뿐 새로 만들지 못한다
         return before.isBlank()
-                ? insertBlock(doc, block, res.html().strip())
-                : BlockMerge.merge(doc, block, res.html());
+                ? insertBlock(doc, block, html.strip())
+                : BlockMerge.merge(doc, block, html);
+    }
+
+    /** 섹션들의 palette-* class 를 걷어 낸다 — 선택 영역 수정용. 다른 class 는 그대로 */
+    static String withoutPalette(String html) {
+        org.jsoup.nodes.Document d = Jsoup.parseBodyFragment(html);
+        d.outputSettings().prettyPrint(false);
+        boolean changed = false;
+        for (Element el : d.body().select("[class]")) {
+            for (String c : List.copyOf(el.classNames())) {
+                if (Palette.looksLike(c)) {
+                    el.removeClass(c);
+                    changed = true;
+                }
+            }
+            if (el.classNames().isEmpty()) el.removeAttr("class");
+        }
+        return changed ? d.body().html() : html;
     }
 
     /**

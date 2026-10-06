@@ -723,6 +723,46 @@ class EditServiceTest {
         assertTrue(new EditCommand(EVENT, "t", "x").blocks().isEmpty());
     }
 
+    // ── 선택 영역 수정은 페이지 전체 팔레트를 바꾸지 않는다 (리뷰 반영) ─────────
+
+    private static final String WRAPPED = "<div class=\"ev-container event-page\">" + BASE + "</div>";
+
+    private static final String HERO_WITH_PALETTE =
+            "<section data-block=\"hero\" class=\"palette-summer\"><h1>여름 데이터 대방출</h1>"
+            + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>";
+
+    private static org.jsoup.nodes.Element root(String html) {
+        return org.jsoup.Jsoup.parseBodyFragment(html).selectFirst(".ev-container");
+    }
+
+    @Test
+    @DisplayName("hero 를 골라 고칠 때 — 프롬프트에 팔레트가 없고, 모델이 붙여도 떼어 내 페이지 루트 색이 그대로다")
+    void 선택_영역_수정은_팔레트를_바꾸지_않는다() {
+        setUpWith(WRAPPED);
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(HERO_WITH_PALETTE));
+
+        GenerationJob job = runOn("파란색으로 바꿔줘", "hero");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertFalse(retry.prompts().isEmpty());
+        assertFalse(savedHtml().contains("palette-summer"), "선택 영역 수정이 페이지 전체 팔레트를 바꿨습니다: " + savedHtml());
+        assertFalse(root(savedHtml()).classNames().stream().anyMatch(c -> c.startsWith("palette-")));
+    }
+
+    @Test
+    @DisplayName("영역을 고르지 않으면 지금처럼 hero 의 팔레트가 페이지 루트로 옮겨진다")
+    void 영역을_안_고르면_팔레트_적용() {
+        setUpWith(WRAPPED);
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(HERO_WITH_PALETTE));
+
+        GenerationJob job = run("전체 색감을 여름 느낌으로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertTrue(root(savedHtml()).hasClass("palette-summer"), "팔레트가 루트로 옮겨져야 합니다: " + savedHtml());
+    }
+
     /** 기준 문서를 바꿔 다시 세운다 */
     private void setUpWith(String html) {
         versions = new VersionStore.InMemory();

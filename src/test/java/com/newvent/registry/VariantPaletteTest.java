@@ -334,6 +334,19 @@ class VariantPaletteTest {
     }
 
     @Test
+    @DisplayName("영역을 골라 고칠 때는 hero 에도 페이지 전체 팔레트를 안내하지 않는다 — 선택 밖 영역의 색이 바뀐다")
+    void 선택_영역_수정은_팔레트_안내_없음() {
+        String chosen = PromptBuilder.edit(Block.HERO, false, false);
+        assertFalse(chosen.contains("palette-"), "선택 영역 수정에 팔레트가 안내됐습니다");
+        assertFalse(chosen.contains("페이지 전체 색감"));
+        assertTrue(chosen.contains("v-hero-left"), "hero 자체 모양 변형은 그대로 안내해야 합니다");
+
+        assertTrue(PromptBuilder.edit(Block.HERO, false, true).contains("palette-summer"), "영역을 안 고르면 지금처럼 안내");
+        // 템플릿 hero + 선택 영역이면 고를 것이 없다 — 모양 고르기 절 자체가 없어야 한다
+        assertFalse(PromptBuilder.edit(Block.HERO, true, false).contains("모양 고르기"));
+    }
+
+    @Test
     @DisplayName("라우터는 페이지 색감 요청을 hero STYLE 로 보내는 예시를 갖는다")
     void 라우터_예시() {
         assertTrue(PromptBuilder.router().contains("\"op\":\"STYLE\",\"target\":\"hero\""));
