@@ -18,6 +18,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 
 import com.newvent.event.domain.Event;
+import com.newvent.event.domain.EventProgress;
 import com.newvent.event.domain.EventStatus;
 
 /**
@@ -36,9 +37,14 @@ class EventRepositoryAdminSearchTest {
     private static final OffsetDateTime OCT_31 = OffsetDateTime.parse("2026-10-31T23:59:59+09:00");
     private static final OffsetDateTime NOV_1 = OffsetDateTime.parse("2026-11-01T00:00:00+09:00");
     private static final OffsetDateTime NOV_30 = OffsetDateTime.parse("2026-11-30T23:59:59+09:00");
+    private static final OffsetDateTime OCT_15 = OffsetDateTime.parse("2026-10-15T12:00:00+09:00");
+    private static final OffsetDateTime NOV_15 = OffsetDateTime.parse("2026-11-15T12:00:00+09:00");
 
     @Autowired
     private EventRepository events;
+
+    @Autowired
+    private EventVersionRepository versions;
 
     @Autowired
     private TestEntityManager tem;
@@ -72,8 +78,13 @@ class EventRepositoryAdminSearchTest {
 
     /** 이번 테스트가 심은 것만 — DB 에 다른 이벤트(시드)가 있어도 흔들리지 않게 */
     private List<Long> search(String name, EventStatus status, OffsetDateTime from, OffsetDateTime to) {
+        return search(name, status, null, OCT_15, from, to);
+    }
+
+    private List<Long> search(String name, EventStatus status, EventProgress progress, OffsetDateTime now,
+                              OffsetDateTime from, OffsetDateTime to) {
         String pattern = "%검색확인" + (name == null ? "" : "%" + name) + "%";
-        return events.findAdminEvents(pattern, status, from, to, PageRequest.of(0, 50))
+        return events.findAdminEvents(pattern, null, status, progress, now, from, to, PageRequest.of(0, 50))
                 .getContent().stream().map(Event::getId).sorted().toList();
     }
 
@@ -105,5 +116,59 @@ class EventRepositoryAdminSearchTest {
     void 전부() {
         assertEquals(List.of(november), search("겨울", EventStatus.PUBLISHED, OCT_1, NOV_30));
         assertEquals(List.of(), search("겨울", EventStatus.DRAFT, OCT_1, NOV_30));
+    }
+
+    @Test
+    @DisplayName("진행상태는 now 와 기간으로 판정한다 — 날짜가 빈 이벤트는 진행 중으로 본다")
+    void 진행상태() {
+        assertEquals(List.of(october, noDates), search(null, null, EventProgress.ONGOING, OCT_15, null, null));
+        assertEquals(List.of(november), search(null, null, EventProgress.UPCOMING, OCT_15, null, null));
+        assertEquals(List.of(), search(null, null, EventProgress.ENDED, OCT_15, null, null));
+        assertEquals(List.of(october), search(null, null, EventProgress.ENDED, NOV_15, null, null));
+        assertEquals(List.of(november), search(null, EventStatus.PUBLISHED, EventProgress.ONGOING, NOV_15, null, null));
+    }
+
+    @Test
+    @DisplayName("ID 가 오면 이름이 안 맞아도 그 ID 는 나온다 — 삭제된 것은 빠진다")
+    void ID_검색() {
+        assertEquals(List.of(october), idSearch(october));
+        assertEquals(List.of(), idSearch(deleted));
+    }
+
+    private List<Long> idSearch(Long id) {
+        return events.findAdminEvents("%이름에없는검색어%", id, null, null, OCT_15, null, null, PageRequest.of(0, 50))
+                .getContent().stream().map(Event::getId).toList();
+    }
+
+    @Test
+    @DisplayName("목록은 게시 버전을 함께 가져오고, 최신 버전 번호는 이벤트별로 모은다")
+    void 버전_번호() {
+        EntityManager em = tem.getEntityManager();
+        insertVersion(em, november, 1);
+        Long published = insertVersion(em, november, 2);
+        insertVersion(em, november, 3);
+        em.createNativeQuery("UPDATE events SET published_version_id = ?1 WHERE id = ?2")
+                .setParameter(1, published)
+                .setParameter(2, november)
+                .executeUpdate();
+        tem.clear();
+
+        Event found = events.findAdminEvents("%검색확인 겨울%", null, null, null, OCT_15, null, null,
+                PageRequest.of(0, 50)).getContent().get(0);
+        List<Object[]> latest = versions.findLatestVersionNos(List.of(october, november));
+
+        assertEquals(2, found.getPublishedVersion().getVersionNo());
+        assertEquals(1, latest.size());
+        assertEquals(november, latest.get(0)[0]);
+        assertEquals(3, latest.get(0)[1]);
+    }
+
+    private static Long insertVersion(EntityManager em, Long eventId, int versionNo) {
+        return ((Number) em.createNativeQuery(
+                        "INSERT INTO event_versions (event_id, version_no, html_content) VALUES (?1, ?2, '<p></p>') "
+                        + "RETURNING id")
+                .setParameter(1, eventId)
+                .setParameter(2, versionNo)
+                .getSingleResult()).longValue();
     }
 }
