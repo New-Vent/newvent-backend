@@ -274,6 +274,34 @@ class VariantPaletteTest {
     }
 
     @Test
+    @DisplayName("색 지정 배경 — 수정 프롬프트에만 실리고, 생성 표본에는 안 실리며, 다른 배경과 하나만 남는다")
+    void 색_지정_배경() {
+        List<Variant> colors = List.of(Variant.values()).stream().filter(Variant::namedColor).toList();
+        assertFalse(colors.isEmpty());
+        for (Variant v : colors) {
+            assertEquals(Variant.Group.SURFACE, v.group(), v + " 는 배경 묶음이어야 다른 배경을 대신한다");
+        }
+
+        // 수정 — 배경을 쓰는 블록에는 색 배경과 "색 이름으로 고르라" 는 안내가 실린다
+        String intro = PromptBuilder.edit(Block.INTRO, false);
+        assertTrue(intro.contains("v-surface-blue") && intro.contains("파란색"), intro);
+        assertTrue(intro.contains("그 색 이름이 적힌 것을 고른다"));
+        // 배경이 없는 블록에는 안내도 없다 — 목록 없이 말만 하면 모델이 이름을 지어낸다
+        assertFalse(PromptBuilder.edit(Block.CTA, false).contains("그 색 이름이"));
+
+        // 생성 — 팔레트와 따로 노는 색은 섞지 않는다
+        for (int i = 0; i < 300; i++) {
+            assertTrue(Variant.sampleSurfaces("요청 " + i, 4).stream().noneMatch(Variant::namedColor));
+        }
+
+        // 정화 — 원래 배경을 남긴 채 파란색을 붙이면 앞의 것 하나만 남는다
+        Element sec = root("<section data-block=\"intro\" class=\"v-surface-blue v-surface-tint\"><p>x</p></section>",
+                "section");
+        Variant.sanitize(sec, Block.INTRO);
+        assertEquals(Set.of("v-surface-blue"), sec.classNames());
+    }
+
+    @Test
     @DisplayName("새 블록(stats · prize · coupon · schedule)도 변형과 배경을 갖고, prize 는 항목이 폼 값이다")
     void 새_블록_레지스트리() {
         for (Block b : List.of(Block.STATS, Block.PRIZE, Block.COUPON, Block.SCHEDULE)) {

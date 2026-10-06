@@ -270,6 +270,11 @@ public final class PromptBuilder {
             s.add("모양 고르기: (모양·색·분위기를 바꿔 달라는 요청일 때만. 문구는 그대로 둔다)");
             s.add("- <section> 의 class 에 아래 이름을 붙이거나 다른 이름으로 바꾼다. 목록에 없는 이름은 쓰지 마라.");
             addVariantLines(s, variants);
+            // ★ 색을 콕 집어 말하면 그 색 이름의 배경을 고르라고 못 박는다.
+            //   안 그러면 "파란색으로" 에 어두운 배경 · 그림자 같은 엉뚱한 걸 고르고 성공으로 끝난다
+            if (variants.stream().anyMatch(Variant::namedColor)) {
+                s.add("- 특정 색(파란색 · 초록색 …)으로 바꿔 달라면 배경에서 그 색 이름이 적힌 것을 고른다.");
+            }
             if (palette) {
                 s.add("- 페이지 전체 색감: 아래 중 하나 (하나만). 페이지 전체에 적용된다.");
                 for (Palette p : Palette.all()) {
