@@ -56,11 +56,8 @@ class GenerationServiceTest {
         @Override
         public RetryService.Result run(LlmCallContext ctx, String system, String user, HtmlPolicy policy) {
             calls.incrementAndGet();
-<<<<<<< HEAD
             this.lastUser = user;
-=======
             lastPrompt = user;
->>>>>>> refs/heads/develop
             return next;
         }
     }
@@ -95,6 +92,15 @@ class GenerationServiceTest {
     /** 성공 결과 하나 — 검증을 통과한 상태의 HTML 을 흉내 낸다 */
     private static RetryService.Result ok(String html) {
         return new RetryService.Result(true, html, List.of());
+    }
+
+    /**
+     * ★ trace 1개가 딸린 성공 결과 — recordAttempts 가 빈 traces 면 early-return 하므로
+     *   로그 기록 경로를 타는 테스트는 이걸 쓴다. 실패 없음 = validOk 통과 행 1개.
+     */
+    private static RetryService.Result okWithTrace(String html) {
+        RetryService.Trace t = new RetryService.Trace(1, html, List.of(), 10, 20, 100L, false);
+        return new RetryService.Result(true, html, List.of(t));
     }
 
     private static RetryService.Result fail() {
@@ -568,7 +574,9 @@ class GenerationServiceTest {
                 "청크 내용이 프롬프트에 없다:\n" + retry.lastUser);
         assertTrue(retry.lastUser.contains("[benefits]"),
                 "블록 키 표기가 없다:\n" + retry.lastUser);
-        assertEquals(GENERATED.strip(), savedHtml(11L).strip());
+        // ★ 저장 HTML 은 PageShell 래퍼+기간 슬롯+notices 가 붙으므로(develop 동작) 정확 일치가 아니라 포함으로 본다
+        assertTrue(savedHtml(11L).contains("데이터 10GB"),
+                "저장된 HTML 에 생성 내용이 없다:\n" + savedHtml(11L));
     }
 
     @Test
@@ -595,7 +603,9 @@ class GenerationServiceTest {
         await(job);
 
         assertEquals(GenerationJob.Phase.DONE, job.phase());
-        assertEquals(GENERATED.strip(), savedHtml(13L).strip());
+        // ★ 저장 HTML 은 PageShell 래퍼가 붙으므로(develop 동작) 포함으로 본다
+        assertTrue(savedHtml(13L).contains("여름 데이터 대방출"),
+                "저장된 HTML 에 생성 내용이 없다:\n" + savedHtml(13L));
     }
 
     @Test
@@ -607,7 +617,7 @@ class GenerationServiceTest {
         org.springframework.test.util.ReflectionTestUtils.setField(c1, "id", 41L);
         org.springframework.test.util.ReflectionTestUtils.setField(c2, "id", 42L);
         similarity.willReturn(List.of(c1, c2));
-        retry.willReturn(ok(GENERATED));
+        retry.willReturn(okWithTrace(GENERATED));
 
         FakeTx tx = new FakeTx();
         GenerationService s = new GenerationService(
