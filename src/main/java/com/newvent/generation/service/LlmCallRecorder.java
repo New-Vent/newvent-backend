@@ -1,6 +1,7 @@
 package com.newvent.generation.service;
 
 import java.util.List;
+import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.newvent.event.domain.Event;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.generation.domain.FailureType;
+import com.newvent.generation.domain.LlmCallLog;
 import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmClient;
 import com.newvent.registry.BlockValidator.Failure;
@@ -33,9 +35,32 @@ public class LlmCallRecorder {
 
     /** 재시도 묶음 전체 — 검증 통과·실패 행을 한 번에 */
     public void recordAttempts(LlmCallContext ctx, RetryService.Result result) {
+        recordAttempts(ctx, result, null);
+    }
+
+    /**
+     * 재시도 묶음 전체 + RAG 사용 표시. chunkIds 가 null·blank 면 표시 없이 저장만 한다.
+     */
+    public void recordAttempts(LlmCallContext ctx, RetryService.Result result, String chunkIds) {
         if (!ctx.recordable() || result.traces().isEmpty()) return;
         try {
-            tx.attempts(ctx, result);
+            tx.attempts(ctx, result, chunkIds);
+        } catch (RuntimeException e) {
+            warn(ctx, e);
+        }
+    }
+
+    /**
+     * 이미 저장된 실패 로그의 RAG 정보 갱신.
+     * Aborted 예외 발생 시 Gateway가 실패 로그를 먼저 저장한 뒤,
+     * chunkIds를 전달해 RAG 사용 여부와 청크 ID를 갱신한다.
+     */
+    public void updateRagInfo(LlmCallContext ctx, String chunkIds) {
+        if (!ctx.recordable()) return;
+        // ★ Tx.attempts() 와 동일하게 null·blank 면 갱신을 건너뛴다. 빈 값으로 덮어쓰지 않는다.
+        if (chunkIds == null || chunkIds.isBlank()) return;
+        try {
+            tx.updateRagInfo(ctx.requestId(), ctx.attemptNo(), chunkIds);
         } catch (RuntimeException e) {
             warn(ctx, e);
         }
@@ -72,6 +97,8 @@ public class LlmCallRecorder {
     public static LlmCallRecorder none() {
         return new LlmCallRecorder(null) {
             @Override public void recordAttempts(LlmCallContext c, RetryService.Result r) { }
+            @Override public void recordAttempts(LlmCallContext c, RetryService.Result r, String chunkIds) { }
+            @Override public void updateRagInfo(LlmCallContext c, String chunkIds) { }
             @Override public void recordCallFailure(LlmCallContext c, FailureType t) { }
             @Override public void recordSingle(LlmCallContext c, LlmClient.Response r, List<Failure> f) { }
         };
@@ -102,8 +129,15 @@ public class LlmCallRecorder {
 
         @Transactional(propagation = Propagation.REQUIRES_NEW)
         public void attempts(LlmCallContext ctx, RetryService.Result result) {
-            // version 은 항상 null — VersionStore 가 EventVersion 을 안 돌려준다 (아직 메모리다)
-            logs.record(result, event(ctx), null, ctx.requestId(), llm.modelName(), llm.providerName());
+            attempts(ctx, result, null);   // ★★★ 기존 본문 → 위임 1줄로 교체
+        }
+
+        @Transactional(propagation = Propagation.REQUIRES_NEW)
+        public void attempts(LlmCallContext ctx, RetryService.Result result, String chunkIds) {
+            List<LlmCallLog> rows = logs.record(result, event(ctx), null, ctx.requestId(), llm.modelName(), llm.providerName());
+            if (chunkIds != null && !chunkIds.isBlank()) {
+                rows.forEach(r -> r.markRagUsed(chunkIds));
+            }
         }
 
         @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -120,6 +154,11 @@ public class LlmCallRecorder {
             RetryService.Result one = new RetryService.Result(
                     failures.isEmpty(), res.content(), List.of(t));
             logs.record(one, event(ctx), null, ctx.requestId(), llm.modelName(), llm.providerName());
+        }
+
+        @Transactional(propagation = Propagation.REQUIRES_NEW)
+        public void updateRagInfo(UUID requestId, int attemptNo, String chunkIds) {
+            logs.updateRagInfo(requestId, attemptNo, chunkIds);
         }
 
         private Event event(LlmCallContext ctx) {

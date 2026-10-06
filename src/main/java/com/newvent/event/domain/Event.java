@@ -100,6 +100,12 @@ public class Event extends BaseTimeEntity {
         this.publishedVersion = version;
     }
 
+    // 게시 내리기(PUBLISHED → DRAFT), 다시 게시해도 이미 보낸 알림은 재발송하지 않는다
+    public void unpublish() {
+        this.status = EventStatus.DRAFT;
+        this.publishedVersion = null;
+    }
+
     public String templateCode() {
         return template == null ? null : template.getCode();
     }

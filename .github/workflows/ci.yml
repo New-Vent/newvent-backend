@@ -109,6 +109,22 @@ jobs:
 
           exit $fail
 
+      # 병렬 PR 이 같은 번호로 마이그레이션을 만들면 합쳐진 상태에서 Flyway 가 뜨지 못해
+      # 컨텍스트를 쓰는 테스트 수십 개가 한꺼번에 깨진다. 그때 원인이 로그 맨 위에 묻히므로 먼저 알려준다.
+      # (pull_request 는 base 와 합쳐진 상태를 체크아웃하므로 develop 과의 충돌도 여기서 잡힌다)
+      - name: Flyway 마이그레이션 버전 중복 확인
+        run: |
+          dir=src/main/resources/db/migration
+          dups=$(ls "$dir" | sed -nE 's/^V([0-9]+)__.*/\1/p' | sort -n | uniq -d)
+          if [ -n "$dups" ]; then
+            for v in $dups; do
+              echo "::error title=Flyway::마이그레이션 버전 V$v 이(가) 둘 이상입니다: $(ls "$dir" | grep -E "^V${v}__" | tr '\n' ' ')"
+            done
+            echo "develop 의 최신 마이그레이션 번호를 확인하고 이 PR 의 번호를 올려주세요."
+            exit 1
+          fi
+          echo "중복 없음 (최신: $(ls "$dir" | sed -nE 's/^V([0-9]+)__.*/\1/p' | sort -n | tail -1))"
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
