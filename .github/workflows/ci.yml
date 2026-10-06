@@ -23,9 +23,12 @@ permissions:
   contents: read
 
 # 같은 브랜치에 연속 푸시하면 이전 실행 취소
+#
+#   main 만 예외다 — 배포 도중에 취소되면 컨테이너가 반쯤 교체된 상태로 남는다.
+#   develop·PR 은 테스트만 도니 취소해도 손해가 없다.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
@@ -160,3 +163,114 @@ jobs:
             build/test-results/test
             build/reports/spotless
           retention-days: 7
+
+  # ════════════════════════════════════════════════════════════════
+  # 배포 — main 푸시에서 build 가 통과한 뒤에만 돈다.
+  #
+  # ★ 왜 별도 워크플로가 아니라 여기인가
+  #   기본 브랜치가 develop 이라, 별도 파일에서 workflow_run 으로 CI 를 기다리게 하면
+  #   "기본 브랜치의 워크플로만 트리거된다" 는 제약 때문에 꼬인다.
+  #   needs: build 가 "테스트를 통과해야만 배포한다" 를 가장 단순하게 보장한다.
+  #
+  # ★ 박스에서 빌드하지 않는다 — 여기서 만든 이미지를 ECR 로 보내고 박스는 받기만 한다.
+  #   권한도 그렇게 갈라 뒀다: 이 역할은 push 만, 인스턴스 역할은 pull 만.
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    permissions:
+      id-token: write           # ★ OIDC 에 필수. 워크플로 기본값(contents:read)을 잡 단위로 올린다
+      contents: read
+
+    env:
+      AWS_REGION: ap-northeast-2
+      INSTANCE: i-04fc2a92b84384a2a
+      ECR_REPO: newvent-backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: ECR 로그인
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 태그는 커밋 SHA 다 — 무엇이 떠 있는지 한눈에 알 수 있고 되돌리기도 그 SHA 로 한다.
+      - name: 이미지 빌드·푸시
+        run: |
+          IMAGE="${{ steps.ecr.outputs.registry }}/$ECR_REPO:${{ github.sha }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          echo "배포할 이미지: $IMAGE"
+
+      - name: EC2 에 배포
+        run: |
+          # ★ 파라미터 JSON 을 파이썬으로 만든다. 쉘 따옴표로 JSON 을 조립하면 반드시 깨진다.
+          #   SSM 이 나르는 건 지시 다섯 줄뿐이고, 이미지는 박스가 ECR 에서 직접 받는다.
+          python3 - > params.json <<'PY'
+          import json, os, sys
+          sha, image = os.environ["GITHUB_SHA"], os.environ["IMAGE"]
+          cmd = "\n".join([
+              "set -e",
+              "cd /opt/newvent",
+              # SSM Run Command 는 root 로 돈다. 레포는 ssm-user 소유라 git 이 거부한다.
+              "git config --global --add safe.directory /opt/newvent",
+              "git fetch --quiet origin",
+              # .env 는 .gitignore 라 checkout 이 건드리지 않는다.
+              f"git checkout --quiet --detach {sha}",
+              f"SHA={sha} IMAGE={image} bash deploy/remote-install.sh",
+          ])
+          json.dump({"commands": [cmd]}, sys.stdout)
+          PY
+
+          ID=$(aws ssm send-command \
+                 --instance-ids "$INSTANCE" \
+                 --document-name AWS-RunShellScript \
+                 --comment "backend ${{ github.sha }}" \
+                 --parameters file://params.json \
+                 --query Command.CommandId --output text)
+          echo "CommandId=$ID"
+
+          status=Pending
+          for _ in $(seq 1 90); do
+            status=$(aws ssm get-command-invocation --command-id "$ID" --instance-id "$INSTANCE" \
+                       --query Status --output text 2>/dev/null || echo Pending)
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 5
+          done
+
+          echo "─── 서버 출력 ───"
+          aws ssm get-command-invocation --command-id "$ID" --instance-id "$INSTANCE" \
+            --query StandardOutputContent --output text || true
+
+          if [ "$status" != Success ]; then
+            echo "::error::배포 실패 ($status)"
+            aws ssm get-command-invocation --command-id "$ID" --instance-id "$INSTANCE" \
+              --query StandardErrorContent --output text || true
+            exit 1
+          fi
+
+      # 밖에서 실제로 도는지 본다. 여기서 깨지면 배포가 실패로 남아야 한다.
+      #
+      # ★ /actuator/health 를 쓰지 않는다 — nginx 가 /api/ /auth/ /e/ 만 프록시해서
+      #   /actuator/health 는 SPA 폴백에 걸려 백엔드가 죽어도 200(text/html)이 나온다.
+      #   상태코드만 보면 거짓 통과한다. 그래서 JSON 본문까지 확인한다.
+      - name: 배포 확인
+        run: |
+          body=$(curl -s -w '\n%{http_code}' https://newvent.duckdns.org/api/public/events)
+          code=$(printf '%s' "$body" | tail -1)
+          json=$(printf '%s' "$body" | sed '$d')
+          echo "HTTP $code"
+          echo "$json" | head -c 200; echo
+          [ "$code" = 200 ] || { echo "::error::상태코드 $code"; exit 1; }
+          echo "$json" | grep -q '"success":true' \
+            || { echo "::error::JSON 이 아니거나 success:true 가 아닙니다 — 백엔드가 안 떴을 수 있습니다"; exit 1; }
