@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
-import com.newvent.event.dto.response.PageResponse;
+import com.newvent.common.response.PageResponse;
 import com.newvent.notification.dto.response.AdminNotificationResponse;
 import com.newvent.notification.service.AdminNotificationService;
 

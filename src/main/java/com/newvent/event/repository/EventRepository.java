@@ -149,10 +149,8 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     // 이미 알림 보낸 건 각 notifiedAt 컬럼으로 걸러 중복 발송을 막는다.
 
-    // endDate > now를 같이 본다 — EventExpirationJob(자동 종료)과 별도 스케줄러라
-    // 서버 재시작 등으로 타이밍이 어긋나면 종료일이 이미 지났는데도 아직 ENDED로
-    // 안 바뀐 PUBLISHED 이벤트가 섞여 들어올 수 있다. 그런 이벤트까지 "시작" 알림을
-    // 보내지 않도록 막는다.
+    // endDate > now를 같이 본다 — EventExpirationJob(자동 종료)과 별도 스케줄러라 서버 재시작 등으로 타이밍이 어긋나면 종료일이 이미 지났는데도 아직 ENDED로
+    // 안 바뀐 PUBLISHED 이벤트가 섞여 들어올 수 있다. 그런 이벤트까지 "시작" 알림을 보내지 않도록 막는다.
     @Query("SELECT e FROM Event e JOIN FETCH e.ownerAdmin "
             + "WHERE e.status = :published AND e.deletedAt IS NULL "
             + "AND e.startDate IS NOT NULL AND e.startDate <= :now AND e.startNotifiedAt IS NULL "
@@ -171,4 +169,8 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     @Query("SELECT e FROM Event e JOIN FETCH e.ownerAdmin "
             + "WHERE e.status = :ended AND e.deletedAt IS NULL AND e.endNotifiedAt IS NULL")
     List<Event> findEndedEventsNeedingNotification(@Param("ended") EventStatus ended);
+
+    // 관리자 목록 화면 상단 카운트 — 상태별로 묶어서 한 번에 센다(삭제된 건 제외).
+    @Query("SELECT e.status, COUNT(e) FROM Event e WHERE e.deletedAt IS NULL GROUP BY e.status")
+    List<Object[]> countGroupedByStatus();
 }

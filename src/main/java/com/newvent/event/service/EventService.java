@@ -14,15 +14,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.admin.domain.Admin;
 import com.newvent.admin.repository.AdminRepository;
+import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventTemplate;
 import com.newvent.event.domain.EventVersion;
 import com.newvent.event.dto.request.EventCreateRequest;
 import com.newvent.event.dto.request.EventUpdateRequest;
+import com.newvent.event.dto.response.EventCountsResponse;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
-import com.newvent.event.dto.response.PageResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
@@ -89,6 +90,25 @@ public class EventService {
     }
 
     @Transactional(readOnly = true)
+    public EventCountsResponse findEventCounts() {
+        long published = 0;
+        long draft = 0;
+        long ended = 0;
+        long total = 0;
+        for (Object[] row : eventRepository.countGroupedByStatus()) {
+            EventStatus status = (EventStatus) row[0];
+            long count = (Long) row[1];
+            total += count;
+            switch (status) {
+                case PUBLISHED -> published = count;
+                case DRAFT -> draft = count;
+                case ENDED -> ended = count;
+            }
+        }
+        return new EventCountsResponse(total, published, draft, ended);
+    }
+
+    @Transactional(readOnly = true)
     public PageResponse<EventSummaryResponse> findDeletedEvents(int page, int size) {
         Page<Event> result = eventRepository.findDeletedEvents(PageRequest.of(page, size));
 
@@ -151,7 +171,7 @@ public class EventService {
         if (!request.endAt().isAfter(request.startAt())) {
             throw new EventException(EventErrorCode.INVALID_PERIOD);
         }
-        EventTemplate template = resolveTemplate(request.templateKey());
+        EventTemplate template = resolveTemplate(request.templateKey(), adminId);
         Admin owner = adminRepository.getReferenceById(adminId);
 
         Event draft = Event.createDraft(
@@ -167,8 +187,12 @@ public class EventService {
 
     /** 보낸 필드만 바꾼다. null 은 기존 값 유지, templateKey 가 빈 문자열이면 템플릿을 해제한다. */
     @Transactional
-    public EventDetailResponse update(Long id, EventUpdateRequest request) {
+    public EventDetailResponse update(Long adminId, Long id, EventUpdateRequest request) {
         Event event = findActiveEvent(id);
+        if (event.getOwnerAdmin() == null || !adminId.equals(event.getOwnerAdmin().getId())) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "이벤트 소유 관리자만 수정할 수 있습니다.");
+        }
         if (event.editLocked(OffsetDateTime.now(clock))) {
             throw new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
         }
@@ -182,7 +206,7 @@ public class EventService {
             throw new EventException(EventErrorCode.INVALID_PERIOD);
         }
         EventTemplate template = request.templateKey() != null
-                ? resolveTemplate(request.templateKey())
+                ? resolveTemplate(request.templateKey(), adminId)
                 : event.getTemplate();
 
         event.updateInfo(
@@ -235,12 +259,13 @@ public class EventService {
         return !Objects.equals(requested, event.templateCode());
     }
 
-    private EventTemplate resolveTemplate(String templateKey) {
+    private EventTemplate resolveTemplate(String templateKey, Long adminId) {
         if (templateKey == null || templateKey.isBlank()) {
             return null;
         }
         return eventTemplateRepository.findByKey(templateKey.trim())
                 .filter(EventTemplate::isActive)
+                .filter(t -> t.visibleTo(adminId))
                 .orElseThrow(() -> new EventException(EventErrorCode.TEMPLATE_NOT_FOUND));
     }
 }

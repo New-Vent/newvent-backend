@@ -22,14 +22,15 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
+import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.request.EventCreateRequest;
 import com.newvent.event.dto.request.EventPublishRequest;
 import com.newvent.event.dto.request.EventStatusChangeRequest;
 import com.newvent.event.dto.request.EventUpdateRequest;
+import com.newvent.event.dto.response.EventCountsResponse;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
-import com.newvent.event.dto.response.PageResponse;
 import com.newvent.event.service.EventService;
 
 @Validated
@@ -60,6 +61,12 @@ public class AdminEventController {
         return ApiResponse.success(eventService.findAdminEvent(id));
     }
 
+    // 목록 화면 상단 카운트(전체/미게시/진행중/종료). 삭제된 건 제외.
+    @GetMapping("/counts")
+    public ApiResponse<EventCountsResponse> counts() {
+        return ApiResponse.success(eventService.findEventCounts());
+    }
+
     @GetMapping("/trash")
     public ApiResponse<PageResponse<EventSummaryResponse>> trash(
             @RequestParam(defaultValue = "0") @Min(0) int page,
@@ -75,15 +82,16 @@ public class AdminEventController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(created));
     }
 
-    /** null 필드는 변경하지 않는다. */
+    // null 필드는 변경하지 않는다.
     @PatchMapping("/{id}")
     public ApiResponse<EventDetailResponse> update(
+            @AuthenticationPrincipal AuthUser principal,
             @PathVariable Long id,
             @Valid @RequestBody EventUpdateRequest request) {
-        return ApiResponse.success(eventService.update(id, request));
+        return ApiResponse.success(eventService.update(principal.id(), id, request));
     }
 
-    /** 소프트 삭제(deletedAt). 게시 중인 이벤트는 거부한다. */
+    // 소프트 삭제(deletedAt). 게시 중인 이벤트는 거부한다.
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
         eventService.delete(id);
@@ -103,7 +111,7 @@ public class AdminEventController {
         return ResponseEntity.ok(ApiResponse.successNoData());
     }
 
-    /** 종료(PUBLISHED → ENDED)만 받는다. 게시는 POST /{id}/publish. */
+    // 종료(PUBLISHED → ENDED)만 받는다. 게시는 POST /{id}/publish
     @PatchMapping("/{id}/status")
     public ApiResponse<EventDetailResponse> changeStatus(
             @PathVariable Long id,
