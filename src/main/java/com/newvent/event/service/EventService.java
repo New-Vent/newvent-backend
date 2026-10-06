@@ -5,7 +5,10 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -16,6 +19,7 @@ import com.newvent.admin.domain.Admin;
 import com.newvent.admin.repository.AdminRepository;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
+import com.newvent.event.domain.EventProgress;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventTemplate;
 import com.newvent.event.domain.EventVersion;
@@ -35,6 +39,9 @@ import com.newvent.generation.service.GenerationJobStore;
 public class EventService {
 
     public static final Duration CLOSING_SOON_WINDOW = Duration.ofDays(3);
+
+    // Long 범위를 넘지 않게 18자리까지만 ID 로 본다.
+    private static final Pattern ID_KEYWORD = Pattern.compile("\\d{1,18}");
 
     private final EventRepository eventRepository;
     private final EventTemplateRepository eventTemplateRepository;
@@ -58,10 +65,12 @@ public class EventService {
         this.clock = clock;
     }
 
+    /** 검색어(name)가 숫자뿐이면 이름이 맞는 것과 ID 가 같은 것을 함께 찾는다. */
     @Transactional(readOnly = true)
     public PageResponse<EventSummaryResponse> findAdminEvents(
             String name,
             EventStatus status,
+            EventProgress progress,
             OffsetDateTime periodFrom,
             OffsetDateTime periodTo,
             int page,
@@ -70,17 +79,14 @@ public class EventService {
             throw new EventException(EventErrorCode.INVALID_SEARCH_PERIOD);
         }
 
-        String namePattern = name == null || name.isBlank()
-                ? null
-                : "%" + name.trim().toLowerCase(Locale.ROOT) + "%";
+        String keyword = name == null || name.isBlank() ? null : name.trim();
+        String namePattern = keyword == null ? null : "%" + keyword.toLowerCase(Locale.ROOT) + "%";
+        Long idMatch = keyword != null && ID_KEYWORD.matcher(keyword).matches() ? Long.valueOf(keyword) : null;
 
         Page<Event> result = eventRepository.findAdminEvents(
-                namePattern, status, periodFrom, periodTo, PageRequest.of(page, size));
-
-        List<EventSummaryResponse> content = result.getContent().stream()
-                .map(event -> EventSummaryResponse.from(event, closingSoon(event)))
-                .toList();
-        return PageResponse.of(content, page, size, result.getTotalElements());
+                namePattern, idMatch, status, progress, OffsetDateTime.now(clock),
+                periodFrom, periodTo, PageRequest.of(page, size));
+        return toSummaryPage(result, page, size);
     }
 
     @Transactional(readOnly = true)
@@ -111,14 +117,28 @@ public class EventService {
     @Transactional(readOnly = true)
     public PageResponse<EventSummaryResponse> findDeletedEvents(int page, int size) {
         Page<Event> result = eventRepository.findDeletedEvents(PageRequest.of(page, size));
+        return toSummaryPage(result, page, size);
+    }
 
+    private PageResponse<EventSummaryResponse> toSummaryPage(Page<Event> result, int page, int size) {
+        Map<Long, Integer> latestVersionNos = latestVersionNos(result.getContent());
         List<EventSummaryResponse> content = result.getContent().stream()
-                .map(event -> EventSummaryResponse.from(event, closingSoon(event)))
+                .map(event -> EventSummaryResponse.from(
+                        event, closingSoon(event), latestVersionNos.get(event.getId())))
                 .toList();
         return PageResponse.of(content, page, size, result.getTotalElements());
     }
 
-    // 게시 중인 이벤트는 휴지통으로 보낼 수 없다(먼저 게시를 내리거나 종료해야 함)
+    private Map<Long, Integer> latestVersionNos(List<Event> events) {
+        if (events.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> ids = events.stream().map(Event::getId).toList();
+        return eventVersionRepository.findLatestVersionNos(ids).stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Integer) row[1]));
+    }
+
+    // 게시 중인 이벤트는 휴지통으로 보낼 수 없다(먼저 게시를 내리거나 종료해야 함).
     // 생성 작업이 진행 중인 이벤트도 거부한다 — 안 그러면 휴지통으로 보낸 뒤에도 백그라운드 생성이 끝나면서 삭제된 이벤트에 새 버전이 저장될 수 있다.
     @Transactional
     public void delete(Long id) {

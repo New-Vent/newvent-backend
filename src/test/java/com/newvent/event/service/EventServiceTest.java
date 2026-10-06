@@ -30,6 +30,7 @@ import com.newvent.admin.domain.Admin;
 import com.newvent.admin.repository.AdminRepository;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
+import com.newvent.event.domain.EventProgress;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventTemplate;
 import com.newvent.event.domain.EventVersion;
@@ -62,6 +63,7 @@ class EventServiceTest {
     private final AdminRepository adminRepository = mock(AdminRepository.class);
     private final GenerationJobStore generationJobStore = mock(GenerationJobStore.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-09-16T01:00:00+09:00"), SEOUL);
+    private final OffsetDateTime now = OffsetDateTime.now(clock);
     private final EventService eventService =
             new EventService(eventRepository, eventTemplateRepository, eventVersionRepository,
                     adminRepository, generationJobStore, clock);
@@ -73,10 +75,12 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-09-18T23:59:59+09:00"));
         Page<Event> page = new PageImpl<>(List.of(event), PageRequest.of(0, 10), 1);
-        when(eventRepository.findAdminEvents(isNull(), isNull(), isNull(), isNull(), eq(PageRequest.of(0, 10))))
+        when(eventRepository.findAdminEvents(isNull(), isNull(), isNull(), isNull(), eq(now),
+                        isNull(), isNull(), eq(PageRequest.of(0, 10))))
                 .thenReturn(page);
 
-        PageResponse<EventSummaryResponse> result = eventService.findAdminEvents(null, null, null, null, 0, 10);
+        PageResponse<EventSummaryResponse> result =
+                eventService.findAdminEvents(null, null, null, null, null, 0, 10);
 
         assertThat(result.totalElements()).isEqualTo(1);
         assertThat(result.content().get(0).id()).isEqualTo(3L);
@@ -86,27 +90,84 @@ class EventServiceTest {
     @Test
     @DisplayName("이름은 소문자 LIKE 패턴으로 변환해서 리포지토리에 전달한다")
     void 이름검색은_LIKE_패턴으로_변환한다() {
-        when(eventRepository.findAdminEvents(any(), any(), any(), any(), any()))
+        when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        eventService.findAdminEvents("월드컵", null, null, null, 0, 10);
+        eventService.findAdminEvents("월드컵", null, null, null, null, 0, 10);
 
         verify(eventRepository).findAdminEvents(
-                eq("%월드컵%"), isNull(), isNull(), isNull(), eq(PageRequest.of(0, 10)));
+                eq("%월드컵%"), isNull(), isNull(), isNull(), eq(now),
+                isNull(), isNull(), eq(PageRequest.of(0, 10)));
     }
 
     @Test
-    @DisplayName("상태·기간은 그대로 리포지토리에 전달한다")
+    @DisplayName("검색어가 숫자뿐이면 이름 패턴과 함께 ID 로도 찾는다")
+    void 숫자_검색어는_ID로도_찾는다() {
+        when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        eventService.findAdminEvents(" 42 ", null, null, null, null, 0, 10);
+        eventService.findAdminEvents("42번", null, null, null, null, 0, 10);
+        eventService.findAdminEvents("1234567890123456789", null, null, null, null, 0, 10);
+
+        verify(eventRepository).findAdminEvents(
+                eq("%42%"), eq(42L), isNull(), isNull(), eq(now), isNull(), isNull(), any());
+        verify(eventRepository).findAdminEvents(
+                eq("%42번%"), isNull(), isNull(), isNull(), eq(now), isNull(), isNull(), any());
+        verify(eventRepository).findAdminEvents(
+                eq("%1234567890123456789%"), isNull(), isNull(), isNull(), eq(now), isNull(), isNull(), any());
+    }
+
+    @Test
+    @DisplayName("상태·진행상태·기간은 그대로 리포지토리에 전달한다")
     void 상태와_기간은_그대로_전달한다() {
-        when(eventRepository.findAdminEvents(any(), any(), any(), any(), any()))
+        when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
         OffsetDateTime from = OffsetDateTime.parse("2026-09-01T00:00:00+09:00");
         OffsetDateTime to = OffsetDateTime.parse("2026-09-30T23:59:59+09:00");
 
-        eventService.findAdminEvents(null, EventStatus.PUBLISHED, from, to, 1, 20);
+        eventService.findAdminEvents(null, EventStatus.PUBLISHED, EventProgress.ONGOING, from, to, 1, 20);
 
         verify(eventRepository).findAdminEvents(
-                isNull(), eq(EventStatus.PUBLISHED), eq(from), eq(to), eq(PageRequest.of(1, 20)));
+                isNull(), isNull(), eq(EventStatus.PUBLISHED), eq(EventProgress.ONGOING), eq(now),
+                eq(from), eq(to), eq(PageRequest.of(1, 20)));
+    }
+
+    @Test
+    @DisplayName("목록은 게시 버전 번호와 최신 버전 번호를 함께 내려준다")
+    void 목록에_버전_번호를_담는다() {
+        Event published = newEvent(1L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        EventVersion v2 = EventVersion.htmlOnly("<h1>v2</h1>");
+        ReflectionTestUtils.setField(v2, "versionNo", 2);
+        ReflectionTestUtils.setField(published, "publishedVersion", v2);
+        Event noVersion = newEvent(2L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(published, noVersion)));
+        when(eventVersionRepository.findLatestVersionNos(List.of(1L, 2L)))
+                .thenReturn(List.<Object[]>of(new Object[] {1L, 5}));
+
+        List<EventSummaryResponse> content =
+                eventService.findAdminEvents(null, null, null, null, null, 0, 10).content();
+
+        assertThat(content.get(0).publishedVersionNo()).isEqualTo(2);
+        assertThat(content.get(0).latestVersionNo()).isEqualTo(5);
+        assertThat(content.get(1).publishedVersionNo()).isNull();
+        assertThat(content.get(1).latestVersionNo()).isNull();
+    }
+
+    @Test
+    @DisplayName("결과가 비어 있으면 버전 번호를 조회하지 않는다")
+    void 빈_목록은_버전을_조회하지_않는다() {
+        when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        eventService.findAdminEvents(null, null, null, null, null, 0, 10);
+
+        verifyNoInteractions(eventVersionRepository);
     }
 
     @Test
@@ -115,7 +176,7 @@ class EventServiceTest {
         OffsetDateTime from = OffsetDateTime.parse("2026-09-30T00:00:00+09:00");
         OffsetDateTime to = OffsetDateTime.parse("2026-09-01T00:00:00+09:00");
 
-        assertThatThrownBy(() -> eventService.findAdminEvents(null, null, from, to, 0, 10))
+        assertThatThrownBy(() -> eventService.findAdminEvents(null, null, null, from, to, 0, 10))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.INVALID_SEARCH_PERIOD.getCode());
