@@ -16,6 +16,8 @@ import com.newvent.generation.exception.LlmDailyLimitExceededException;
 import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmCallGateway;
 import com.newvent.infra.llm.LlmClient;
+import com.newvent.rag.domain.RagChunk;
+import com.newvent.rag.service.SimilarityService;
 import com.newvent.registry.Block;
 import com.newvent.registry.BlockValidator;
 import com.newvent.registry.Slot;
@@ -47,18 +49,58 @@ class GenerationServiceTest {
         void willReturn(RetryService.Result r) { this.next = r; }
         int calls() { return calls.get(); }
 
+        // ★★★ [b3-MOD] 마지막 user 프롬프트를 캡처한다 — RAG 섹션 삽입 검사용
+        String lastUser;
+
         // ★ ctx 를 받는 쪽을 덮어야 한다. GenerationService 는 이 쪽만 부른다
         @Override
         public RetryService.Result run(LlmCallContext ctx, String system, String user, HtmlPolicy policy) {
             calls.incrementAndGet();
+            this.lastUser = user;
             lastPrompt = user;
             return next;
+        }
+    }
+
+    /**
+     * RAG 검색 가짜. DB·스프링 없이 search() 2종만 바꿔치기한다.
+     *
+     * ★ SimilarityService 생성자가 (EmbeddingClient, RagChunkRepository)라 super(null, null) 로 넘기고
+     *   오버라이드한 메서드만 쓰므로 NPE 가 나지 않는다.
+     */
+    static final class FakeSimilarity extends SimilarityService {
+        private List<RagChunk> next = List.of();
+        private boolean explode = false;
+
+        FakeSimilarity() { super(null, null); }
+
+        void willReturn(List<RagChunk> chunks) { this.next = chunks; }
+        void willExplode() { this.explode = true; }
+
+        @Override
+        public List<RagChunk> search(Long eventId, String query, int topK) {
+            if (explode) throw new RuntimeException("RAG down");
+            return next;
+        }
+
+        @Override
+        public List<RagChunk> search(Long eventId, String query) {
+            return search(eventId, query, 3);
         }
     }
 
     /** 성공 결과 하나 — 검증을 통과한 상태의 HTML 을 흉내 낸다 */
     private static RetryService.Result ok(String html) {
         return new RetryService.Result(true, html, List.of());
+    }
+
+    /**
+     * ★ trace 1개가 딸린 성공 결과 — recordAttempts 가 빈 traces 면 early-return 하므로
+     *   로그 기록 경로를 타는 테스트는 이걸 쓴다. 실패 없음 = validOk 통과 행 1개.
+     */
+    private static RetryService.Result okWithTrace(String html) {
+        RetryService.Trace t = new RetryService.Trace(1, html, List.of(), 10, 20, 100L, false);
+        return new RetryService.Result(true, html, List.of(t));
     }
 
     private static RetryService.Result fail() {
@@ -76,6 +118,7 @@ class GenerationServiceTest {
     private VersionStore versions;
     private GenerationService service;
     private EventGuard guard;
+    private FakeSimilarity similarity;
 
     @BeforeEach
     void setUp() {
@@ -83,10 +126,11 @@ class GenerationServiceTest {
         jobs = new GenerationJobStore();
         versions = new VersionStore.InMemory();
         guard = new EventGuard.Open();
+        similarity = new FakeSimilarity();
         service = new GenerationService(
                 retry,
                 new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
-                versions, guard, jobs, LlmCallRecorder.none());
+                versions, guard, jobs, LlmCallRecorder.none(), similarity);
     }
 
     /**
@@ -442,7 +486,7 @@ class GenerationServiceTest {
         GenerationService s = new GenerationService(
                 new FakeRetry(full()),
                 new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
-                versions, guard, jobs, LlmCallRecorder.none());
+                versions, guard, jobs, LlmCallRecorder.none(), new FakeSimilarity());
 
         assertThrows(LlmDailyLimitExceededException.class,
                 () -> s.start(blank(1L, "여름 데이터 이벤트")));
@@ -465,7 +509,7 @@ class GenerationServiceTest {
         GenerationService s = new GenerationService(
                 new FakeRetry(full()),
                 new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
-                versions, guard, store, LlmCallRecorder.none());
+                versions, guard, store, LlmCallRecorder.none(), new FakeSimilarity());
 
         var r = s.start(blank(1L, "여름 데이터 이벤트"));
 
@@ -481,7 +525,7 @@ class GenerationServiceTest {
                 new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
                 versions,
                 id -> Optional.of(GenerationErrorCode.EMPTY_REQUEST),   // 아무 코드나 — 막히는지만 본다
-                jobs, LlmCallRecorder.none());
+                jobs, LlmCallRecorder.none(), new FakeSimilarity());
 
         var r = blocked.start(blank(1L, "여름 데이터 이벤트"));
 
@@ -501,7 +545,7 @@ class GenerationServiceTest {
         GenerationService s2 = new GenerationService(
                 retry,
                 new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
-                versions, guard, store, LlmCallRecorder.none());
+                versions, guard, store, LlmCallRecorder.none(), new FakeSimilarity());
 
         var r = s2.start(blank(1L, "여름 데이터 이벤트"));
 
@@ -509,5 +553,108 @@ class GenerationServiceTest {
         assertEquals(held.jobId(),
                 ((GenerationService.StartResult.AlreadyRunning) r).job().jobId(),
                 "돌고 있는 작업을 안 돌려줬습니다. 화면이 진행 상태를 이어 보여줄 수 없습니다.");
+    }
+
+    // ★★★ [b3-ADD] 아래 4개 테스트가 신규. RAG 연동 성공·없음·실패·로그 4면을 본다.
+    //   스프링·DB 없이 돈다. RagChunk 는 영속 전이라 id 가 null 이다 — chunkIds 문자열 단정은
+    //   로그 캡처 테스트에서만 ReflectionTestUtils 로 id 를 박고 한다.
+
+    private RagChunk chunk(String blockKey, String content) {
+        // ★ Event.createDraft(null, null, ...) — 필드 대입만 하므로 null 로도 된다. DB 접근 없음.
+        //   version 은 nullable FK 라 null 로 둔다.
+        com.newvent.event.domain.Event e =
+                com.newvent.event.domain.Event.createDraft(null, null, "t", null, null, null);
+        return RagChunk.create(e, null, blockKey, 0, content, "mock",
+                new float[] { 1f, 0f }, java.time.Instant.now());
+    }
+
+    @Test
+    @DisplayName("RAG 청크가 있으면 사용자 프롬프트에 참고 예시 섹션이 들어간다")
+    void rag_chunks_in_prompt() {
+        similarity.willReturn(List.of(chunk("benefits", "신규 가입 시 데이터 3GB 제공")));
+        retry.willReturn(ok(GENERATED));
+
+        GenerationJob job = started(service.start(blank(11L, "여름 혜택 이벤트 만들어줘")));
+        await(job);
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertTrue(retry.lastUser.contains("## 참고 예시"),
+                "RAG 섹션 헤더가 없다:\n" + retry.lastUser);
+        assertTrue(retry.lastUser.contains("신규 가입 시 데이터 3GB 제공"),
+                "청크 내용이 프롬프트에 없다:\n" + retry.lastUser);
+        assertTrue(retry.lastUser.contains("[benefits]"),
+                "블록 키 표기가 없다:\n" + retry.lastUser);
+        // ★ 저장 HTML 은 PageShell 래퍼+기간 슬롯+notices 가 붙으므로(develop 동작) 정확 일치가 아니라 포함으로 본다
+        assertTrue(savedHtml(11L).contains("데이터 10GB"),
+                "저장된 HTML 에 생성 내용이 없다:\n" + savedHtml(11L));
+    }
+
+    @Test
+    @DisplayName("RAG 결과가 비면 참고 예시 섹션 없이 기존 프롬프트 그대로 간다")
+    void no_rag_no_section() {
+        similarity.willReturn(List.of());
+        retry.willReturn(ok(GENERATED));
+
+        GenerationJob job = started(service.start(blank(12L, "여름 혜택 이벤트 만들어줘")));
+        await(job);
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertFalse(retry.lastUser.contains("## 참고 예시"),
+                "빈 결과인데 RAG 섹션이 들어갔다:\n" + retry.lastUser);
+    }
+
+    @Test
+    @DisplayName("RAG 검색이 터져도 생성은 계속되고 DONE 이 된다")
+    void rag_failure_still_generates() {
+        similarity.willExplode();
+        retry.willReturn(ok(GENERATED));
+
+        GenerationJob job = started(service.start(blank(13L, "여름 혜택 이벤트 만들어줘")));
+        await(job);
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        // ★ 저장 HTML 은 PageShell 래퍼가 붙으므로(develop 동작) 포함으로 본다
+        assertTrue(savedHtml(13L).contains("여름 데이터 대방출"),
+                "저장된 HTML 에 생성 내용이 없다:\n" + savedHtml(13L));
+    }
+
+    @Test
+    @DisplayName("기록자에 청크 ID 문자열이 전달된다")
+    void chunk_ids_forwarded_to_recorder() {
+        RagChunk c1 = chunk("hero", "여름 데이터 대방출");
+        RagChunk c2 = chunk("benefits", "데이터 3GB 제공");
+        // ★ 영속 전이라 id 가 null — "41,42" 단정을 위해 리플렉션으로 박는다.
+        org.springframework.test.util.ReflectionTestUtils.setField(c1, "id", 41L);
+        org.springframework.test.util.ReflectionTestUtils.setField(c2, "id", 42L);
+        similarity.willReturn(List.of(c1, c2));
+        retry.willReturn(okWithTrace(GENERATED));
+
+        FakeTx tx = new FakeTx();
+        GenerationService s = new GenerationService(
+                retry,
+                new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
+                versions, guard, jobs, new LlmCallRecorder(tx), similarity);
+
+        GenerationJob job = started(s.start(blank(14L, "여름 혜택 이벤트 만들어줘")));
+        await(job);
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertEquals("41,42", tx.lastChunkIds);
+    }
+
+    /** 기록자 Tx 가짜 — attempts 3인자에 넘어온 chunkIds 만 캡처한다. DB 접근 없음. */
+    static final class FakeTx extends LlmCallRecorder.Tx {
+        String lastChunkIds;
+        FakeTx() { super(null, null, null); }
+
+        @Override
+        public void attempts(LlmCallContext ctx, RetryService.Result result) {
+            attempts(ctx, result, null);
+        }
+
+        @Override
+        public void attempts(LlmCallContext ctx, RetryService.Result result, String chunkIds) {
+            this.lastChunkIds = chunkIds;
+        }
     }
 }
