@@ -1,6 +1,7 @@
 package com.newvent.generation.service;
 
 import java.util.List;
+import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +50,20 @@ public class LlmCallRecorder {
         }
     }
 
+    /**
+     * 이미 저장된 실패 로그의 RAG 정보 갱신.
+     * Aborted 예외 발생 시 Gateway가 실패 로그를 먼저 저장한 뒤,
+     * chunkIds를 전달해 RAG 사용 여부와 청크 ID를 갱신한다.
+     */
+    public void updateRagInfo(LlmCallContext ctx, String chunkIds) {
+        if (!ctx.recordable()) return;
+        try {
+            tx.updateRagInfo(ctx.requestId(), ctx.attemptNo(), chunkIds);
+        } catch (RuntimeException e) {
+            warn(ctx, e);
+        }
+    }
+
     /** 호출 자체가 터진 시도 한 건 — Trace 가 없다 */
     public void recordCallFailure(LlmCallContext ctx, FailureType type) {
         if (!ctx.recordable()) return;
@@ -81,6 +96,7 @@ public class LlmCallRecorder {
         return new LlmCallRecorder(null) {
             @Override public void recordAttempts(LlmCallContext c, RetryService.Result r) { }
             @Override public void recordAttempts(LlmCallContext c, RetryService.Result r, String chunkIds) { }
+            @Override public void updateRagInfo(LlmCallContext c, String chunkIds) { }
             @Override public void recordCallFailure(LlmCallContext c, FailureType t) { }
             @Override public void recordSingle(LlmCallContext c, LlmClient.Response r, List<Failure> f) { }
         };
@@ -136,6 +152,11 @@ public class LlmCallRecorder {
             RetryService.Result one = new RetryService.Result(
                     failures.isEmpty(), res.content(), List.of(t));
             logs.record(one, event(ctx), null, ctx.requestId(), llm.modelName(), llm.providerName());
+        }
+
+        @Transactional(propagation = Propagation.REQUIRES_NEW)
+        public void updateRagInfo(UUID requestId, int attemptNo, String chunkIds) {
+            logs.updateRagInfo(requestId, attemptNo, chunkIds);
         }
 
         private Event event(LlmCallContext ctx) {

@@ -754,7 +754,7 @@ GET http://localhost:8080/api/admin/events/3/generate/01HXK8J7V9F2W1N4M5Q8R7T3Y6
 
 ---
 
-## `POST /api/admin/events/{eventId}/generate/{jobId}/cancel`
+## `DELETE /api/admin/events/{eventId}/generate/{jobId}`
 
 진행 중인 생성 작업 취소 요청. 단계 사이에서 중단됨.
 
@@ -765,15 +765,9 @@ GET http://localhost:8080/api/admin/events/3/generate/01HXK8J7V9F2W1N4M5Q8R7T3Y6
 | `eventId` | O | 이벤트 ID |
 | `jobId` | O | 생성 작업 ID |
 
-### 200 예시
+### 202 Accepted
 
-```json
-{
-  "success": true,
-  "data": { "cancelRequested": true },
-  "message": null
-}
-```
+응답 본문 없음 (공통 성공 응답 스펙에 따름).
 
 ### 오류
 

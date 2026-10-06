@@ -55,6 +55,9 @@ public class GenerationService {
     // ★ b3: RAG 검색기. 백지 경로(fromBlank)에서만 쓴다
     private final SimilarityService similarity;
 
+    // b3: 현재 생성에서 사용된 RAG 청크 ID들 (Aborted 시 로그 갱신용)
+    private String ragChunkIds;
+
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "generation");
@@ -213,7 +216,9 @@ public class GenerationService {
         } catch (RetryService.Aborted e) {
             // ★ 터진 시도의 실패 행은 문(LlmCallGateway)이 이미 남겼다.
             //   그 앞의 시도들은 fromBlank 가 chunkIds 를 달아 이미 남겼다 — 여기서 또 남기면 유니크 위반이다.
+            //   실패한 시도 자체는 Gateway가 별도 저장했으므로, 여기서는 RAG 정보만 갱신한다.
             log.warn("생성 실패 — {}차 시도에서 모델 호출 (event={})", e.attempt(), cmd.eventId(), e);
+            recorder.updateRagInfo(ctxOf(job, cmd), ragChunkIds);
             job.fail("페이지 생성 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         } catch (LlmCallException e) {
             // 연결 끊김 · 타임아웃 · 모델 서버 down. 프롬프트를 고쳐도 안 고쳐진다
@@ -278,7 +283,7 @@ public class GenerationService {
         // ★ b3: RAG 참고 예시 검색. searchRagChunks 안에서 예외를 다 잡으므로 여기서 터지지 않는다.
         //   빈 리스트면 ragChunkIds=null → 로그에 rag_used=false 로 남는다.
         List<RagChunk> ragChunks = searchRagChunks(cmd);
-        String ragChunkIds = chunkIdsOf(ragChunks);
+        ragChunkIds = chunkIdsOf(ragChunks);
 
         RetryService.Result res;
         try {

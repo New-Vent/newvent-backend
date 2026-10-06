@@ -3,6 +3,8 @@ package com.newvent.generation.repository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -59,4 +61,7 @@ public interface LlmCallLogRepository extends JpaRepository<LlmCallLog, Long>{
 			@Param("from") Instant from,
 			@Param("to") Instant to,
 			Pageable pageable);
+
+	// Aborted 실패 시도 복구용. Gateway가 먼저 저장한 행을 (request_id, attempt_no) UK로 찾는다
+	Optional<LlmCallLog> findByRequestIdAndAttemptNo(UUID requestId, int attemptNo);
 }
