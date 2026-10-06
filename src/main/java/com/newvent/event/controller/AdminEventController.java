@@ -61,10 +61,10 @@ public class AdminEventController {
         return ApiResponse.success(eventService.findAdminEvent(id));
     }
 
-    // 목록 화면 상단 카운트(전체/게시중/게시전/종료). 삭제된 건 제외.
+    // 목록 화면 상단 카운트(전체/미게시/진행중/종료). 삭제된 건 제외.
     @GetMapping("/counts")
     public ApiResponse<EventCountsResponse> counts() {
-        return ApiResponse.success(eventService.getEventCounts());
+        return ApiResponse.success(eventService.findEventCounts());
     }
 
     @GetMapping("/trash")

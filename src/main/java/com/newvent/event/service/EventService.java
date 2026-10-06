@@ -90,12 +90,12 @@ public class EventService {
     }
 
     @Transactional(readOnly = true)
-    public EventCountsResponse getEventCounts() {
+    public EventCountsResponse findEventCounts() {
         long published = 0;
         long draft = 0;
         long ended = 0;
         long total = 0;
-        for (Object[] row : eventRepository.countByStatus()) {
+        for (Object[] row : eventRepository.countGroupedByStatus()) {
             EventStatus status = (EventStatus) row[0];
             long count = (Long) row[1];
             total += count;

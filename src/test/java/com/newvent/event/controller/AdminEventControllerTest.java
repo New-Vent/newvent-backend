@@ -102,7 +102,7 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("카운트 API 는 상태별 건수를 반환한다")
     void 이벤트_카운트_조회에_성공한다() throws Exception {
-        given(eventService.getEventCounts())
+        given(eventService.findEventCounts())
                 .willReturn(new EventCountsResponse(10, 3, 2, 5));
 
         mockMvc.perform(get("/api/admin/events/counts"))

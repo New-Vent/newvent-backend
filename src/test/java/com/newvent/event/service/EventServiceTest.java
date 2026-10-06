@@ -183,12 +183,12 @@ class EventServiceTest {
     @Test
     @DisplayName("상태별 건수는 전체/게시중/게시전/종료로 집계된다")
     void 상태별_건수를_집계한다() {
-        when(eventRepository.countByStatus()).thenReturn(List.of(
+        when(eventRepository.countGroupedByStatus()).thenReturn(List.of(
                 new Object[] {EventStatus.PUBLISHED, 3L},
                 new Object[] {EventStatus.DRAFT, 2L},
                 new Object[] {EventStatus.ENDED, 5L}));
 
-        EventCountsResponse counts = eventService.getEventCounts();
+        EventCountsResponse counts = eventService.findEventCounts();
 
         assertThat(counts.total()).isEqualTo(10L);
         assertThat(counts.published()).isEqualTo(3L);
@@ -199,9 +199,9 @@ class EventServiceTest {
     @Test
     @DisplayName("이벤트가 하나도 없으면 전부 0건이다")
     void 이벤트가_없으면_전부_0건이다() {
-        when(eventRepository.countByStatus()).thenReturn(List.of());
+        when(eventRepository.countGroupedByStatus()).thenReturn(List.of());
 
-        EventCountsResponse counts = eventService.getEventCounts();
+        EventCountsResponse counts = eventService.findEventCounts();
 
         assertThat(counts.total()).isZero();
         assertThat(counts.published()).isZero();
