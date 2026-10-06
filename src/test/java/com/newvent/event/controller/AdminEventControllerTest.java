@@ -506,6 +506,17 @@ class AdminEventControllerTest {
     }
 
     @Test
+    @DisplayName("종료 시각이 지난 이벤트의 게시 내리기는 409 와 EVENT409-1 을 반환한다")
+    void 종료_시각이_지난_이벤트의_게시_내리기는_409를_반환한다() throws Exception {
+        given(eventService.unpublish(4L))
+                .willThrow(new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE));
+
+        mockMvc.perform(post("/api/admin/events/4/unpublish"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-1"));
+    }
+
+    @Test
     @DisplayName("없는 이벤트의 게시 내리기는 404 와 EVENT404-0 을 반환한다")
     void 없는_이벤트의_게시_내리기는_404를_반환한다() throws Exception {
         given(eventService.unpublish(999L))

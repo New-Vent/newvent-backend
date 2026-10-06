@@ -884,6 +884,55 @@ class EventServiceTest {
     }
 
     @Test
+    @DisplayName("종료 시각이 지났지만 아직 ENDED 로 바뀌기 전인 이벤트는 게시를 내릴 수 없다 — EVENT409-1")
+    void 종료_시각이_지난_게시중_이벤트는_게시를_내릴_수_없다() {
+        // clock 은 2026-09-16T01:00+09:00. 종료일이 그 전이면 자동 종료 스케줄러만 아직 안 돈 상태
+        Event event = newEvent(1L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-09-15T23:59:59+09:00"));
+        EventVersion version = newVersion(10L, true);
+        ReflectionTestUtils.setField(event, "publishedVersion", version);
+        when(eventRepository.findAdminEventById(1L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.unpublish(1L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_ENDED_NOT_EDITABLE.getCode());
+        assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+        assertThat(event.getPublishedVersion()).isSameAs(version);
+        verify(eventRepository, never()).flush();
+    }
+
+    @Test
+    @DisplayName("종료 시각과 현재 시각이 같으면 이미 종료로 보고 게시를 내릴 수 없다")
+    void 종료_시각과_같은_순간에는_게시를_내릴_수_없다() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-09-16T01:00:00+09:00"));
+        when(eventRepository.findAdminEventById(1L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.unpublish(1L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_ENDED_NOT_EDITABLE.getCode());
+        assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+    }
+
+    @Test
+    @DisplayName("종료 1초 전까지는 게시를 내릴 수 있다")
+    void 종료_직전에는_게시를_내릴_수_있다() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-09-16T01:00:01+09:00"));
+        when(eventRepository.findAdminEventById(1L)).thenReturn(Optional.of(event));
+
+        EventDetailResponse unpublished = eventService.unpublish(1L);
+
+        assertThat(unpublished.status()).isEqualTo(EventStatus.DRAFT);
+        assertThat(event.getStatus()).isEqualTo(EventStatus.DRAFT);
+    }
+
+    @Test
     @DisplayName("없거나 삭제된 이벤트의 게시 내리기는 EVENT404-0 이다")
     void 없는_이벤트의_게시_내리기는_404를_던진다() {
         when(eventRepository.findAdminEventById(999L)).thenReturn(Optional.empty());

@@ -235,12 +235,16 @@ public class EventService {
         return EventDetailResponse.from(event, closingSoon(event));
     }
 
-    // 게시 내리기(PUBLISHED → DRAFT)
+    // 게시 내리기(PUBLISHED → DRAFT) - 종료 전까지만 가능
+    // 종료 시각이 지났는데 자동 종료가 아직 안 돈 이벤트도 막기 - 내리면 DRAFT 가 되어 수정 잠금이 풀리고, 종료된 이벤트를 수정·재게시할 수 있게 되기 때문
     @Transactional
     public EventDetailResponse unpublish(Long id) {
         Event event = findActiveEvent(id);
         if (!event.published()) {
             throw new EventException(EventErrorCode.EVENT_NOT_UNPUBLISHABLE);
+        }
+        if (event.editLocked(OffsetDateTime.now(clock))) {
+            throw new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
         }
         event.unpublish();
         eventRepository.flush();
