@@ -1,5 +1,6 @@
 package com.newvent.event.controller;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -77,7 +78,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T10:20:00+09:00"),
-                "signup", null, MembershipGrade.NORMAL, false, 2, 3);
+                "signup", "<section data-block=\"hero\"><h1>쿠폰</h1></section>", MembershipGrade.NORMAL, false, 2, 3);
         given(eventService.findAdminEvents(null, null, null, null, null, 0, 10))
                 .willReturn(PageResponse.of(List.of(row), 0, 10, 1));
 
@@ -88,6 +89,8 @@ class AdminEventControllerTest {
                 .andExpect(jsonPath("$.data.content[0].status").value("PUBLISHED"))
                 .andExpect(jsonPath("$.data.content[0].publishedVersionNo").value(2))
                 .andExpect(jsonPath("$.data.content[0].latestVersionNo").value(3))
+                .andExpect(jsonPath("$.data.content[0].thumbnailHtml").value(containsString("data-block=\"hero\"")))
+                .andExpect(jsonPath("$.data.content[0].thumbnailUrl").doesNotExist())
                 .andExpect(jsonPath("$.data.totalElements").value(1));
     }
 
@@ -124,7 +127,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-09-18T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-15T09:10:00+09:00"),
-                "instant", null, MembershipGrade.NORMAL,
+                "instant", MembershipGrade.NORMAL,
                 "<h1>지금 긁으면 바로 당첨</h1>", true);
         given(eventService.findAdminEvent(3L)).willReturn(detail);
 
@@ -171,7 +174,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
-                "sports_cheer", null, MembershipGrade.BEST,
+                "sports_cheer", MembershipGrade.BEST,
                 null, false);
         given(eventService.create(eq(1L), any(EventCreateRequest.class))).willReturn(created);
 
@@ -234,7 +237,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-07-31T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
-                null, null, MembershipGrade.EXCELLENT,
+                null, MembershipGrade.EXCELLENT,
                 null, false);
         given(eventService.update(eq(1L), eq(2L), any(EventUpdateRequest.class))).willReturn(updated);
 
@@ -402,7 +405,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-01-11T00:00:00+09:00"),
-                null, null, MembershipGrade.NORMAL, false, null, null);
+                null, "<section data-block=\"hero\"><h1>쿠폰</h1></section>", MembershipGrade.NORMAL, false, null, null);
         given(eventService.findDeletedEvents(0, 10))
                 .willReturn(PageResponse.of(List.of(row), 0, 10, 1));
 
@@ -410,7 +413,8 @@ class AdminEventControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.content[0].id").value(99))
-                .andExpect(jsonPath("$.data.content[0].name").value("삭제된 이벤트"));
+                .andExpect(jsonPath("$.data.content[0].name").value("삭제된 이벤트"))
+                .andExpect(jsonPath("$.data.content[0].thumbnailHtml").value(containsString("data-block=\"hero\"")));
     }
 
     @Test
@@ -421,7 +425,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-01-11T00:00:00+09:00"),
-                null, null, MembershipGrade.NORMAL, null, false);
+                null, MembershipGrade.NORMAL, null, false);
         given(eventService.restore(99L)).willReturn(restored);
 
         mockMvc.perform(post("/api/admin/events/99/restore"))
@@ -448,7 +452,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-09-30T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-30T13:00:00+09:00"),
-                "member_appreciation", null, MembershipGrade.NORMAL,
+                "member_appreciation", MembershipGrade.NORMAL,
                 "<h1>가을 멤버십 더블 혜택</h1>", false);
         given(eventService.changeStatus(3L, EventStatus.ENDED)).willReturn(ended);
 
@@ -511,7 +515,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-09-30T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-20T13:00:00+09:00"),
-                "member_appreciation", null, MembershipGrade.NORMAL,
+                "member_appreciation", MembershipGrade.NORMAL,
                 null, false);
         given(eventService.unpublish(3L)).willReturn(unpublished);
 
@@ -563,7 +567,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
-                null, null, MembershipGrade.NORMAL,
+                null, MembershipGrade.NORMAL,
                 "<h1>게시된 버전</h1>", false);
         given(eventService.publish(1L, 10L)).willReturn(published);
 

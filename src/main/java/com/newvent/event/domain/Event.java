@@ -113,10 +113,6 @@ public class Event extends BaseTimeEntity {
         return template == null ? null : template.getCode();
     }
 
-    public String thumbnailPath() {
-        return template == null ? null : template.getThumbnailPath();
-    }
-
     public String completedHtml() {
         return publishedVersion == null ? null : publishedVersion.getHtmlContent();
     }
