@@ -14,7 +14,6 @@ public record EventDetailResponse(
         OffsetDateTime endAt,
         OffsetDateTime updatedAt,
         String template,
-        String thumbnailUrl,
         MembershipGrade grade,
         String completedHtml,
         boolean closingSoon
@@ -28,7 +27,6 @@ public record EventDetailResponse(
                 event.getEndDate(),
                 event.getUpdatedAt(),
                 event.templateCode(),
-                event.thumbnailPath(),
                 event.getGrade(),
                 event.completedHtml(),
                 closingSoon);

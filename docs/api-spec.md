@@ -92,6 +92,7 @@
 | --- | --- |
 | `publishedVersionNo` | 게시 중인 버전 번호. 게시한 적 없으면 `null` |
 | `latestVersionNo` | 가장 최근 버전 번호. 페이지가 아직 없으면 `null`. `publishedVersionNo` 보다 크면 게시 후 새 버전이 있다는 뜻 |
+| `thumbnailHtml` | 썸네일용 HTML 조각. 버전 HTML 에서 hero 블록만 잘라 기간 슬롯을 채운 것이다. 게시 버전이 있으면 그 버전, 없으면(`DRAFT` 등) 최신 버전을 쓴다. 버전이 없거나 hero 블록이 없으면 `null`. 공개 목록의 `thumbnailHtml` 과 같은 규칙이며, 프론트는 격리된 iframe 으로 그린다 |
 
 ### 오류
 
@@ -115,11 +116,11 @@
         "endAt": "2026-10-15T23:59:59+09:00",
         "updatedAt": "2026-09-16T10:20:00+09:00",
         "template": "signup",
-        "thumbnailUrl": null,
         "grade": "NORMAL",
         "closingSoon": false,
         "publishedVersionNo": 1,
-        "latestVersionNo": 3
+        "latestVersionNo": 3,
+        "thumbnailHtml": "<div class=\"ev-container event-page theme-sale\"><section data-block=\"hero\">...</section></div>"
       }
     ],
     "page": 0,
@@ -159,7 +160,6 @@ http://localhost:8080/api/admin/events?name=3
     "endAt": "2026-09-18T23:59:59+09:00",
     "updatedAt": "2026-09-15T09:10:00+09:00",
     "template": "instant",
-    "thumbnailUrl": null,
     "grade": "NORMAL",
     "completedHtml": "<section data-block=\"hero\"><h1>지금 긁으면 바로 당첨</h1></section>",
     "closingSoon": true
@@ -209,7 +209,6 @@ http://localhost:8080/api/admin/events/3
     "endAt": "2026-10-15T23:59:59+09:00",
     "updatedAt": "2026-09-16T01:00:00+09:00",
     "template": "sports_cheer",
-    "thumbnailUrl": null,
     "grade": "BEST",
     "completedHtml": null,
     "closingSoon": false
@@ -310,7 +309,7 @@ Content-Type: application/json
 | Method | Path | 설명 | 오류 |
 | --- | --- | --- | --- |
 | `DELETE` | `/api/admin/events/{id}` | 휴지통으로 보낸다 (`deletedAt` 기록). 응답 `data` 없음 | 404 `EVENT404-0` · 게시 중 409 `EVENT409-2` · 생성 작업 중 409 `EVENT409-3` |
-| `GET` | `/api/admin/events/trash` | 휴지통 목록. `page`·`size`·응답 필드(버전 번호 포함)는 목록 API 와 같음. 삭제일 내림차순 | — |
+| `GET` | `/api/admin/events/trash` | 휴지통 목록. `page`·`size`·응답 필드(버전 번호·`thumbnailHtml` 포함)는 목록 API 와 같음. 삭제일 내림차순 | — |
 | `POST` | `/api/admin/events/{id}/restore` | 휴지통에서 복구. 복구된 `EventDetailResponse` | 휴지통에 없으면 404 `EVENT404-0` |
 | `DELETE` | `/api/admin/events/{id}/permanent` | 휴지통에서 영구 삭제. 되돌릴 수 없음 | 휴지통에 없으면 404 `EVENT404-0` |
 

@@ -19,7 +19,6 @@ import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.exception.EventNotFoundException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.generation.service.PeriodText;
-import com.newvent.registry.PageShell;
 import com.newvent.registry.Slots;
 
 @Service
@@ -69,10 +68,10 @@ public class PublicEventService {
                 null);
     }
 
-     // 목록 썸네일용 HTML. 슬롯은 publishedHtmlOf 와 같은 규칙으로 채운 뒤 자른다(기간이 hero 안에 있다)
+     // 목록 썸네일용 HTML, 슬롯은 publishedHtmlOf 와 같은 규칙으로 채운 뒤 자른다(기간이 hero 안에 있다)
     public String thumbnailHtmlOf(Event event) {
-        String html = publishedHtmlOf(event);
-        return html == null ? null : PageShell.heroOnly(html);
+        EventVersion published = event.getPublishedVersion();
+        return published == null ? null : ThumbnailHtml.of(event, published.getHtmlContent());
     }
 
     // 마감임박은 이미 시작한(진행중) 이벤트에만 표시한다 — 시작 전 이벤트가 종료일만 가까워서
