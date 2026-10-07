@@ -23,6 +23,7 @@ import com.newvent.event.domain.Event;
 import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.exception.EventNotFoundException;
 import com.newvent.event.service.PublicEventService;
+import com.newvent.registry.PageShell;
 
 @WebMvcTest(PublicEventPageController.class)
 @Import({SecurityConfig.class, JwtProvider.class})
@@ -41,8 +42,11 @@ class PublicEventPageControllerTest {
         String filled = "<div class=\"ev-container event-page\">"
                 + "<section data-block=\"hero\"><p data-slot=\"period\">10월 6일 ~ 10월 8일</p></section>"
                 + "<script>window.newVentReinit = function () {};</script></div>";
+        // 문서 조립은 서비스가 한다(PageShell.standalone) — 여기서는 그 결과를 HTML 로 그대로 내보내는지만 본다.
+        //   문서 내용(스크립트 · runtime · 묶기)은 BehaviorTest 가 검증한다.
+        String page = PageShell.standalone(filled, event.getTitle(), null);
         when(publicEventService.getPublicEvent(1L)).thenReturn(event);
-        when(publicEventService.publishedHtmlOf(event)).thenReturn(filled);
+        when(publicEventService.publishedPageOf(event)).thenReturn(page);
 
         mockMvc.perform(get("/e/1"))
                 .andExpect(status().isOk())
@@ -51,8 +55,9 @@ class PublicEventPageControllerTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("<title>테스트 &lt;이벤트&gt;</title>")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("/assets/event.css")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("data-slot=\"period\">10월 6일 ~ 10월 8일")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("<script>window.newVentReinit = function () {};</script>")));
-        verify(publicEventService).publishedHtmlOf(event);
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("<script>window.newVentReinit = function () {};</script>")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("<script src=\"/assets/event-runtime.js\" defer></script>")));
+        verify(publicEventService).publishedPageOf(event);
     }
 
     @Test

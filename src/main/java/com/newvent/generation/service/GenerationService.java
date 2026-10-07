@@ -21,6 +21,7 @@ import com.newvent.infra.llm.LlmCallException;
 import com.newvent.rag.domain.RagChunk;
 import com.newvent.rag.service.RagConstants;
 import com.newvent.rag.service.SimilarityService;
+import com.newvent.registry.BehaviorPlanter;
 import com.newvent.registry.Block;
 import com.newvent.registry.PageShell;
 import com.newvent.registry.PromptBuilder;
@@ -321,7 +322,9 @@ public class GenerationService {
         // ★ 저장 직전에 껍데기를 보장한다 — 래퍼 · 유의사항.
         //   백지는 템플릿이 없으므로 테마를 고를 근거가 없다 → null.
         //   event.css 의 :root 기본값이 쓰인다. 무스타일이 아니다.
-        return PageShell.plant(plantPeriodSlot(res.html()), null);    }
+        // ★ 기본 동작(참여 · 타이머 · 혜택 이동)을 심는다. 생성 정화가 모델이 쓴 data-behavior 를 지운 뒤라 서버 것만 남는다
+        return PageShell.plant(BehaviorPlanter.plantGenerated(plantPeriodSlot(res.html())), null);
+    }
 
     /**
      * 이벤트 값과 어긋나는지 본다.

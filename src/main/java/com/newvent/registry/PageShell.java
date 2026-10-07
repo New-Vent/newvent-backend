@@ -3,6 +3,7 @@ package com.newvent.registry;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -55,16 +56,59 @@ public final class PageShell {
 
     private PageShell() {}
 
-    /** 게시된 HTML 조각을 독립적인 문서로 감싼다. 조각의 스크립트와 마크업은 그대로 유지한다. */
-    public static String standalone(String fragment, String title) {
-        String safeTitle = new Element("title").text(title).outerHtml();
+    /** 이벤트 페이지의 동작을 실행하는 파일 — 프론트 nginx 의 /assets/ 가 event.css 와 같이 서빙한다 */
+    static final String RUNTIME_SRC = "/assets/event-runtime.js";
+
+    /**
+     * 게시된 HTML 조각을 독립적인 문서로 감싼다 — /e/{id} · 공개 상세 API · 관리자 미리보기 공통.
+     *
+     *   &lt;body class="theme-…"&gt;
+     *     조각
+     *     &lt;script src="/assets/event-runtime.js" defer&gt;
+     *
+     * ★ behavior 가 있는 조각(새 방식)
+     *   조각 안의 &lt;script&gt; 를 지운다 — 실행 코드는 runtime.js 하나뿐이다.
+     *   종료 시각을 타이머에 묶는다 — BehaviorPlanter.bind. **저장본에는 굳히지 않는다** (Slots.fill 과 같은 이유)
+     *
+     * ★ behavior 가 없는 조각(이전에 만든 페이지)은 스크립트와 마크업을 그대로 둔다
+     *   옛 &lt;script&gt; 가 지금처럼 동작한다. runtime.js 는 같이 실리지만 [data-behavior] 가 없어 아무것도 하지 않는다.
+     *
+     * ★ 테마는 body 에도 붙인다
+     *   저장본에서는 래퍼(.ev-container)가 theme-* 를 들고 있다. event.css 의 테마 규칙은 조상 어디에 있어도 걸리지만,
+     *   body 배경처럼 body 자체를 보는 규칙이 있다.
+     *
+     * @param title  &lt;title&gt; — 이벤트 제목. 없으면 "이벤트"
+     * @param endsAt 이벤트 종료 시각 — countdown 의 data-until. 없으면 null
+     */
+    public static String standalone(String fragment, String title, OffsetDateTime endsAt) {
+        Document doc = Jsoup.parseBodyFragment(fragment == null ? "" : fragment);
+        doc.outputSettings().prettyPrint(false);
+        if (!doc.select("[" + Behavior.ATTR + "]").isEmpty()) {
+            doc.select("script, noscript").remove();
+            BehaviorPlanter.bind(doc, endsAt);
+        }
+
+        Element body = doc.body();
+        Element root = doc.selectFirst(ROOT_SELECTOR);
+        if (root == null) {
+            // ★ 래퍼가 없는 조각(더미 · 초안)은 감싼다 — event.css 가 전부 래퍼 기준이라 없으면 무스타일이다.
+            //   예전에는 프론트(serverDocument)가 감쌌다. 이제 완전한 문서로 내보내므로 여기서 한다
+            root = new Element("div").addClass("ev-container").addClass("event-page");
+            for (Node n : new ArrayList<>(body.childNodes())) root.appendChild(n);
+            body.appendChild(root);
+        } else {
+            root.classNames().stream().filter(c -> c.startsWith(Theme.PREFIX)).findFirst().ifPresent(body::addClass);
+        }
+        body.appendElement("script").attr("src", RUNTIME_SRC).attr("defer", "");
+
+        String safeTitle = new Element("title").text(title == null || title.isBlank() ? "이벤트" : title).outerHtml();
         return "<!DOCTYPE html>\n<html lang=\"ko\">\n<head>\n"
                 + "<meta charset=\"UTF-8\">\n"
                 + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
                 + safeTitle + "\n"
                 + "<link rel=\"stylesheet\" href=\"/assets/event.css\">\n"
                 + "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&amp;display=swap\">\n"
-                + "</head>\n<body>\n" + fragment + "\n</body>\n</html>";
+                + "</head>\n" + body.outerHtml() + "\n</html>";
     }
 
     /**
