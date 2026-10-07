@@ -26,10 +26,6 @@ import com.newvent.rag.service.VersionCompareService;
 
 /**
  * RAG 관리자 API. /api/admin/** 이라 ADMIN 권한이 자동으로 걸림 (SecurityConfig)
- */
-
-/**
- * RAG 관리자 API. /api/admin/** 이라 ADMIN 권한이 자동으로 걸림 (SecurityConfig)
  *
  * - GET /api/admin/rag/similar-versions (VersionCompareService)
  */
