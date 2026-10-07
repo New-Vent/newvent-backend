@@ -87,6 +87,108 @@ class EventServiceTest {
         assertThat(result.content().get(0).closingSoon()).isTrue();
     }
 
+    // ── 목록 썸네일 (hero 만 잘라내기) ───────────────────────────
+
+    private static final String PAGE_HTML = "<div class=\"ev-container event-page theme-sale\">"
+            + "<section data-block=\"hero\"><h1>제목</h1><p data-slot=\"period\">기간</p></section>"
+            + "<section data-block=\"cta\"><button>참여</button></section></div>";
+
+    private Event eventWithPublishedHtml(Long id, EventStatus status, String html) {
+        Event event = newEvent(id, status,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        EventVersion version = newVersion(id * 10, true);
+        ReflectionTestUtils.setField(version, "htmlContent", html);
+        ReflectionTestUtils.setField(event, "publishedVersion", version);
+        return event;
+    }
+
+    private Event draftEvent(Long id) {
+        return newEvent(id, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+    }
+
+    private void stubAdminPage(Event... events) {
+        when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(events), PageRequest.of(0, 10), events.length));
+    }
+
+    @Test
+    @DisplayName("게시 이벤트의 썸네일은 게시 버전의 hero 만 담고 기간 슬롯이 채워지며 최신 버전은 조회하지 않는다")
+    void 게시_이벤트_썸네일은_게시_버전의_hero다() {
+        stubAdminPage(eventWithPublishedHtml(3L, EventStatus.PUBLISHED, PAGE_HTML));
+
+        String thumb = eventService.findAdminEvents(null, null, null, null, null, 0, 10)
+                .content().get(0).thumbnailHtml();
+
+        assertThat(thumb).contains("theme-sale").contains("제목").contains("2026.10.01 ~ 10.31");
+        assertThat(thumb).doesNotContain("참여").doesNotContain("기간</p>");
+        verify(eventVersionRepository, never()).findLatestVersionHtmls(any());
+    }
+
+    @Test
+    @DisplayName("게시 버전이 없는 DRAFT 는 최신 버전의 hero 로 썸네일을 만든다")
+    void DRAFT_썸네일은_최신_버전의_hero다() {
+        stubAdminPage(draftEvent(2L));
+        when(eventVersionRepository.findLatestVersionHtmls(List.of(2L)))
+                .thenReturn(List.<Object[]>of(new Object[] {2L, PAGE_HTML}));
+
+        String thumb = eventService.findAdminEvents(null, null, null, null, null, 0, 10)
+                .content().get(0).thumbnailHtml();
+
+        assertThat(thumb).contains("theme-sale").contains("제목").contains("2026.10.01 ~ 10.31");
+        assertThat(thumb).doesNotContain("참여");
+    }
+
+    @Test
+    @DisplayName("한 페이지에서 게시 버전이 없는 이벤트만 모아 최신 버전을 한 번에 조회한다")
+    void 최신_버전_HTML은_한_번에_일괄_조회한다() {
+        Event published = eventWithPublishedHtml(1L, EventStatus.PUBLISHED, PAGE_HTML);
+        Event draftA = draftEvent(2L);
+        Event ended = eventWithPublishedHtml(3L, EventStatus.ENDED, PAGE_HTML);
+        Event draftB = draftEvent(4L);
+        stubAdminPage(published, draftA, ended, draftB);
+        when(eventVersionRepository.findLatestVersionHtmls(List.of(2L, 4L)))
+                .thenReturn(List.<Object[]>of(new Object[] {2L, PAGE_HTML}, new Object[] {4L, PAGE_HTML}));
+
+        List<EventSummaryResponse> content =
+                eventService.findAdminEvents(null, null, null, null, null, 0, 10).content();
+
+        assertThat(content).hasSize(4).allSatisfy(row -> assertThat(row.thumbnailHtml()).contains("제목"));
+        verify(eventVersionRepository).findLatestVersionHtmls(List.of(2L, 4L));
+    }
+
+    @Test
+    @DisplayName("버전이 아직 없거나 hero 블록이 없으면 썸네일은 null")
+    void 버전이_없거나_hero가_없으면_썸네일은_null이다() {
+        Event noVersion = draftEvent(2L);
+        Event noHero = eventWithPublishedHtml(
+                3L, EventStatus.PUBLISHED, "<section data-block=\"cta\"><button>참여</button></section>");
+        stubAdminPage(noVersion, noHero);
+        when(eventVersionRepository.findLatestVersionHtmls(List.of(2L))).thenReturn(List.of());
+
+        List<EventSummaryResponse> content =
+                eventService.findAdminEvents(null, null, null, null, null, 0, 10).content();
+
+        assertThat(content.get(0).thumbnailHtml()).isNull();
+        assertThat(content.get(1).thumbnailHtml()).isNull();
+    }
+
+    @Test
+    @DisplayName("휴지통 목록에도 같은 규칙으로 썸네일이 담긴다")
+    void 휴지통_목록에도_썸네일이_담긴다() {
+        Event trashed = draftEvent(9L);
+        when(eventRepository.findDeletedEvents(PageRequest.of(0, 10)))
+                .thenReturn(new PageImpl<>(List.of(trashed), PageRequest.of(0, 10), 1));
+        when(eventVersionRepository.findLatestVersionHtmls(List.of(9L)))
+                .thenReturn(List.<Object[]>of(new Object[] {9L, PAGE_HTML}));
+
+        String thumb = eventService.findDeletedEvents(0, 10).content().get(0).thumbnailHtml();
+
+        assertThat(thumb).contains("제목").contains("2026.10.01 ~ 10.31");
+    }
+
     @Test
     @DisplayName("이름은 소문자 LIKE 패턴으로 변환해서 리포지토리에 전달한다")
     void 이름검색은_LIKE_패턴으로_변환한다() {
@@ -210,6 +312,17 @@ class EventServiceTest {
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
+    }
+
+    @Test
+    @DisplayName("게시 중인데 날짜가 비어 있어도 상세 조회가 실패하지 않는다")
+    void 날짜가_빈_게시중_이벤트도_조회된다() {
+        Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
+        when(eventRepository.findAdminEventById(7L)).thenReturn(Optional.of(event));
+
+        EventDetailResponse detail = eventService.findAdminEvent(7L);
+
+        assertThat(detail.closingSoon()).isFalse();
     }
 
     @Test

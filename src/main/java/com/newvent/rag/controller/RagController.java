@@ -19,8 +19,10 @@ import com.newvent.rag.dto.request.ReindexRequest;
 import com.newvent.rag.dto.response.IndexStatusResponse;
 import com.newvent.rag.dto.response.PromptCandidate;
 import com.newvent.rag.dto.response.SearchPreviewResponse;
+import com.newvent.rag.dto.response.VersionSimilarityResponse;
 import com.newvent.rag.service.EmbeddingService;
 import com.newvent.rag.service.SimilarityService;
+import com.newvent.rag.service.VersionCompareService;
 
 /**
  * RAG 관리자 API. /api/admin/** 이라 ADMIN 권한이 자동으로 걸림 (SecurityConfig)
@@ -34,10 +36,13 @@ public class RagController {
 
 	private final EmbeddingService embedding;
 	private final SimilarityService similarity;
+	private final VersionCompareService comparing;
 
-	public RagController(EmbeddingService embedding, SimilarityService similarity) {
+	public RagController(EmbeddingService embedding, SimilarityService similarity,
+			VersionCompareService comparing) {
 		this.embedding = embedding;
 		this.similarity = similarity;
+		this.comparing = comparing;
 	}
 
     /** 수동 재색인. versionId가 없으면 이벤트 전체. 돌리고 나서 현황을 돌려준다. */
@@ -69,5 +74,14 @@ public class RagController {
             @RequestParam String query,
             @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK) {
         return ApiResponse.success(similarity.recommendPrompts(eventId, query, topK));
+    }
+
+    /** 유사 버전 탐색. 기준 버전과 비슷한 같은 이벤트 내 다른 버전을 유사도 순으로 보여준다. */
+    @GetMapping("/similar-versions")
+    public ApiResponse<List<VersionSimilarityResponse>> similarVersions(
+            @RequestParam Long eventId,
+            @RequestParam Long versionId,
+            @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK) {
+        return ApiResponse.success(comparing.similarVersions(eventId, versionId, topK));
     }
 }
