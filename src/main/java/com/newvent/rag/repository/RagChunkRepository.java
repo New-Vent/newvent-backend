@@ -6,6 +6,7 @@ import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.rag.domain.RagChunk;
 
@@ -52,6 +53,7 @@ public interface RagChunkRepository extends JpaRepository<RagChunk, Long>{
 
 	// 같은 이벤트 안 다른 버전에서 유사 청크 검색 (유사 버전 탐색용)
 	// findSimilar 와 반대로 event_id = 로 묶고 version_id <> 로 기준 버전을 거른다
+	@Transactional(readOnly = true)
 	@Query(value = """
 			select * from rag_chunks
 			 where embedding_model = :model
@@ -69,6 +71,7 @@ public interface RagChunkRepository extends JpaRepository<RagChunk, Long>{
 			@Param("limit") int limit);
 
 	// 기준 버전의 색인 청크. 없으면 빈 목록
+	@Transactional(readOnly = true)
 	@Query("select r from RagChunk r where r.event.id = :eventId and r.version.id = :versionId order by r.chunkIndex")
 	List<RagChunk> findChunksOfVersion(@Param("eventId") Long eventId,
 			@Param("versionId") Long versionId);

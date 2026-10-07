@@ -29,6 +29,9 @@ import com.newvent.rag.repository.RagChunkRepository;
 @Service
 public class VersionCompareServiceImpl implements VersionCompareService {
 
+	/** 버전당 후보 청크 조회 상한. topK(최대 10) * 3 을 넘지 않게 고정한다 */
+	private static final int MAX_CANDIDATES_PER_CHUNK = 60;
+
 	private final EventVersionRepository versions;
 	private final RagChunkRepository chunks;
 	private final EmbeddingClient embedding;
@@ -50,13 +53,14 @@ public class VersionCompareServiceImpl implements VersionCompareService {
 			return List.of();
 		}
 		int limit = topK <= 0 ? RagConstants.DEFAULT_TOP_K : topK;
+		int perChunk = Math.min(limit * 3, MAX_CANDIDATES_PER_CHUNK);
 		// 청크별 최소 거리로 합친다. 같은 청크가 여러 번 잡혀도 가장 가까운 것만 남긴다
 		Map<Long, Double> best = new HashMap<>();
 		Map<Long, RagChunk> byId = new HashMap<>();
 		for (RagChunk t : targetChunks) {
 			float[] q = Vectors.fromDb(t.getEmbedding());
 			List<RagChunk> hits = chunks.findSimilarInEvent(Vectors.toDb(q), embedding.modelName(),
-					eventId, target.getId(), RagConstants.MAX_DISTANCE, limit * 3);
+					eventId, target.getId(), RagConstants.MAX_DISTANCE, perChunk);
 			for (RagChunk h : hits) {
 				if (h.getVersion() == null || target.getId().equals(h.getVersion().getId())) {
 					continue;
@@ -66,16 +70,26 @@ public class VersionCompareServiceImpl implements VersionCompareService {
 				byId.putIfAbsent(h.getId(), h);
 			}
 		}
+		// ★ 버전 엔티티는 한 번에 묶어서 읽는다. 청크마다 getVersion().getVersionNo() 를 부르면
+		//   버전 수만큼 SELECT 가 나간다(N+1). findAllById 한 방으로 끝낸다.
+		//   (native 쿼리에는 join fetch 를 못 붙이므로 배치 로딩으로 해결한다.
+		//    getId() 는 프록시에서 DB 없이 꺼내지므로 여기서 쿼리는 안 나간다)
+		Map<Long, EventVersion> versionMap = new HashMap<>();
+		versions.findAllById(
+				byId.values().stream().map(h -> h.getVersion().getId()).distinct().toList()
+		).forEach(v -> versionMap.put(v.getId(), v));
 		// 버전별로 묶는다. 버전 유사도 = 소속 청크 중 가장 가까운 것 → 유사도
 		Map<Long, List<RagChunk>> perVersion = new HashMap<>();
 		Map<Long, Double> versionBest = new HashMap<>();
-		Map<Long, Integer> versionNos = new HashMap<>();
 		for (Map.Entry<Long, Double> e : best.entrySet()) {
 			RagChunk h = byId.get(e.getKey());
 			Long vid = h.getVersion().getId();
+			EventVersion version = versionMap.get(vid);
+			if (version == null) {
+				continue;
+			}
 			perVersion.computeIfAbsent(vid, k -> new ArrayList<>()).add(h);
 			versionBest.merge(vid, e.getValue(), Math::min);
-			versionNos.putIfAbsent(vid, h.getVersion().getVersionNo());
 		}
 		return versionBest.entrySet().stream()
 				.sorted(Map.Entry.comparingByValue())
@@ -89,13 +103,8 @@ public class VersionCompareServiceImpl implements VersionCompareService {
 							.map(c -> new ChunkResponse(c.getId(), c.getBlockKey(),
 									c.getChunkIndex(), c.getContent(), best.get(c.getId())))
 							.toList();
-					return new VersionSimilarityResponse(vid, versionNos.get(vid), similarity, top);
+					return new VersionSimilarityResponse(vid, versionMap.get(vid).getVersionNo(), similarity, top);
 				})
 				.toList();
-	}
-
-	@Override
-	public VersionDiff compare(Long eventId, Long oldVersionId, Long newVersionId) {
-		throw new UnsupportedOperationException("버전 간 비교는 b4(공개 API)와 함께 구현한다");
 	}
 }
