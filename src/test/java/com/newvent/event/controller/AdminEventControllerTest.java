@@ -56,6 +56,46 @@ import com.newvent.user.domain.MembershipGrade;
 @WithMockUser(roles = "ADMIN")
 class AdminEventControllerTest {
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "delete", "restore", "hardDelete", "publish", "unpublish", "changeStatus"})
+    void 로그인_관리자_ID를_전달하고_소유자_거절은_403으로_반환한다(String action) throws Exception {
+        var denied = new org.springframework.security.access.AccessDeniedException("소유자가 아닙니다");
+        org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request;
+        switch (action) {
+            case "delete" -> {
+                willThrow(denied).given(eventService).delete(99L, 1L);
+                request = delete("/api/admin/events/1");
+            }
+            case "restore" -> {
+                given(eventService.restore(99L, 1L)).willThrow(denied);
+                request = post("/api/admin/events/1/restore");
+            }
+            case "hardDelete" -> {
+                willThrow(denied).given(eventService).hardDelete(99L, 1L);
+                request = delete("/api/admin/events/1/permanent");
+            }
+            case "publish" -> {
+                given(eventService.publish(99L, 1L, 10L)).willThrow(denied);
+                request = post("/api/admin/events/1/publish")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"versionId\":10}");
+            }
+            case "unpublish" -> {
+                given(eventService.unpublish(99L, 1L)).willThrow(denied);
+                request = post("/api/admin/events/1/unpublish");
+            }
+            case "changeStatus" -> {
+                given(eventService.changeStatus(99L, 1L, EventStatus.ENDED)).willThrow(denied);
+                request = patch("/api/admin/events/1/status")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"ENDED\"}");
+            }
+            default -> throw new AssertionError(action);
+        }
+        mockMvc.perform(request.with(authentication(new UsernamePasswordAuthenticationToken(
+                        AuthUser.admin(99L), null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))))))
+                .andExpect(status().isForbidden());
+    }
+
     private RequestPostProcessor adminPrincipal() {
         return authentication(new UsernamePasswordAuthenticationToken(
                 AuthUser.admin(1L), null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
@@ -216,7 +256,7 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("이벤트명 누락은 400 과 COMMON400-0 을 반환한다")
     void 이벤트명_없으면_400을_반환한다() throws Exception {
-        mockMvc.perform(post("/api/admin/events")
+        mockMvc.perform(post("/api/admin/events").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -301,7 +341,7 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("수정 요청의 이벤트명이 공백만 있으면 400 과 COMMON400-0 을 반환한다")
     void 이벤트_수정_이름이_공백뿐이면_400을_반환한다() throws Exception {
-        mockMvc.perform(patch("/api/admin/events/1")
+        mockMvc.perform(patch("/api/admin/events/1").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "   " }
@@ -313,7 +353,7 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("수정 요청의 이벤트명이 빈 문자열이면 400 과 COMMON400-0 을 반환한다")
     void 이벤트_수정_이름이_빈_문자열이면_400을_반환한다() throws Exception {
-        mockMvc.perform(patch("/api/admin/events/1")
+        mockMvc.perform(patch("/api/admin/events/1").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "" }
@@ -336,20 +376,20 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("삭제 API 는 200 을 반환한다")
     void 이벤트_삭제에_성공한다() throws Exception {
-        mockMvc.perform(delete("/api/admin/events/1"))
+        mockMvc.perform(delete("/api/admin/events/1").with(adminPrincipal()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(eventService).delete(1L);
+        verify(eventService).delete(1L, 1L);
     }
 
     @Test
     @DisplayName("게시 중인 이벤트 삭제는 409 와 EVENT409-2 를 반환한다")
     void 게시중인_이벤트_삭제는_409를_반환한다() throws Exception {
         willThrow(new EventException(EventErrorCode.PUBLISHED_EVENT_DELETE_FORBIDDEN))
-                .given(eventService).delete(1L);
+                .given(eventService).delete(1L, 1L);
 
-        mockMvc.perform(delete("/api/admin/events/1"))
+        mockMvc.perform(delete("/api/admin/events/1").with(adminPrincipal()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("EVENT409-2"));
     }
@@ -358,9 +398,9 @@ class AdminEventControllerTest {
     @DisplayName("없는 이벤트 삭제는 404 와 EVENT404-0 을 반환한다")
     void 없는_이벤트_삭제는_404를_반환한다() throws Exception {
         willThrow(new EventException(EventErrorCode.EVENT_NOT_FOUND))
-                .given(eventService).delete(999L);
+                .given(eventService).delete(1L, 999L);
 
-        mockMvc.perform(delete("/api/admin/events/999"))
+        mockMvc.perform(delete("/api/admin/events/999").with(adminPrincipal()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("EVENT404-0"));
     }
@@ -369,9 +409,9 @@ class AdminEventControllerTest {
     @DisplayName("생성 중인 이벤트 삭제는 409 와 EVENT409-3 을 반환한다")
     void 생성중인_이벤트_삭제는_409를_반환한다() throws Exception {
         willThrow(new EventException(EventErrorCode.EVENT_GENERATING_DELETE_FORBIDDEN))
-                .given(eventService).delete(1L);
+                .given(eventService).delete(1L, 1L);
 
-        mockMvc.perform(delete("/api/admin/events/1"))
+        mockMvc.perform(delete("/api/admin/events/1").with(adminPrincipal()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("EVENT409-3"));
     }
@@ -379,20 +419,20 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("영구 삭제 API 는 200 을 반환한다")
     void 이벤트_영구삭제에_성공한다() throws Exception {
-        mockMvc.perform(delete("/api/admin/events/99/permanent"))
+        mockMvc.perform(delete("/api/admin/events/99/permanent").with(adminPrincipal()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(eventService).hardDelete(99L);
+        verify(eventService).hardDelete(1L, 99L);
     }
 
     @Test
     @DisplayName("삭제되지 않은 이벤트 영구삭제는 404 와 EVENT404-0 을 반환한다")
     void 삭제되지_않은_이벤트_영구삭제는_404를_반환한다() throws Exception {
         willThrow(new EventException(EventErrorCode.EVENT_NOT_FOUND))
-                .given(eventService).hardDelete(1L);
+                .given(eventService).hardDelete(1L, 1L);
 
-        mockMvc.perform(delete("/api/admin/events/1/permanent"))
+        mockMvc.perform(delete("/api/admin/events/1/permanent").with(adminPrincipal()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("EVENT404-0"));
     }
@@ -426,9 +466,9 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-01-11T00:00:00+09:00"),
                 null, MembershipGrade.NORMAL, null, false);
-        given(eventService.restore(99L)).willReturn(restored);
+        given(eventService.restore(1L, 99L)).willReturn(restored);
 
-        mockMvc.perform(post("/api/admin/events/99/restore"))
+        mockMvc.perform(post("/api/admin/events/99/restore").with(adminPrincipal()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(99));
@@ -437,9 +477,9 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("삭제되지 않은 이벤트 복구는 404 와 EVENT404-0 을 반환한다")
     void 삭제되지_않은_이벤트_복구는_404를_반환한다() throws Exception {
-        given(eventService.restore(1L)).willThrow(new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        given(eventService.restore(1L, 1L)).willThrow(new EventException(EventErrorCode.EVENT_NOT_FOUND));
 
-        mockMvc.perform(post("/api/admin/events/1/restore"))
+        mockMvc.perform(post("/api/admin/events/1/restore").with(adminPrincipal()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("EVENT404-0"));
     }
@@ -454,9 +494,9 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-30T13:00:00+09:00"),
                 "member_appreciation", MembershipGrade.NORMAL,
                 "<h1>가을 멤버십 더블 혜택</h1>", false);
-        given(eventService.changeStatus(3L, EventStatus.ENDED)).willReturn(ended);
+        given(eventService.changeStatus(1L, 3L, EventStatus.ENDED)).willReturn(ended);
 
-        mockMvc.perform(patch("/api/admin/events/3/status")
+        mockMvc.perform(patch("/api/admin/events/3/status").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "status": "ENDED" }
@@ -470,7 +510,7 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("상태 없이 종료를 요청하면 400 과 COMMON400-0 을 반환한다")
     void 상태_누락은_400을_반환한다() throws Exception {
-        mockMvc.perform(patch("/api/admin/events/3/status")
+        mockMvc.perform(patch("/api/admin/events/3/status").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
@@ -480,10 +520,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("게시 중이 아닌 이벤트 종료는 409 와 EVENT409-6 을 반환한다")
     void 게시중이_아닌_이벤트_종료는_409를_반환한다() throws Exception {
-        given(eventService.changeStatus(2L, EventStatus.ENDED))
+        given(eventService.changeStatus(1L, 2L, EventStatus.ENDED))
                 .willThrow(new EventException(EventErrorCode.EVENT_NOT_ENDABLE));
 
-        mockMvc.perform(patch("/api/admin/events/2/status")
+        mockMvc.perform(patch("/api/admin/events/2/status").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "status": "ENDED" }
@@ -495,10 +535,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("종료가 아닌 상태를 요청하면 400 과 EVENT400-2 를 반환한다")
     void 종료가_아닌_상태_요청은_400을_반환한다() throws Exception {
-        given(eventService.changeStatus(3L, EventStatus.PUBLISHED))
+        given(eventService.changeStatus(1L, 3L, EventStatus.PUBLISHED))
                 .willThrow(new EventException(EventErrorCode.UNSUPPORTED_STATUS_CHANGE));
 
-        mockMvc.perform(patch("/api/admin/events/3/status")
+        mockMvc.perform(patch("/api/admin/events/3/status").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "status": "PUBLISHED" }
@@ -517,9 +557,9 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-20T13:00:00+09:00"),
                 "member_appreciation", MembershipGrade.NORMAL,
                 null, false);
-        given(eventService.unpublish(3L)).willReturn(unpublished);
+        given(eventService.unpublish(1L, 3L)).willReturn(unpublished);
 
-        mockMvc.perform(post("/api/admin/events/3/unpublish"))
+        mockMvc.perform(post("/api/admin/events/3/unpublish").with(adminPrincipal()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(3))
@@ -529,10 +569,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("게시 중이 아닌 이벤트의 게시 내리기는 409 와 EVENT409-7 을 반환한다")
     void 게시중이_아닌_이벤트의_게시_내리기는_409를_반환한다() throws Exception {
-        given(eventService.unpublish(2L))
+        given(eventService.unpublish(1L, 2L))
                 .willThrow(new EventException(EventErrorCode.EVENT_NOT_UNPUBLISHABLE));
 
-        mockMvc.perform(post("/api/admin/events/2/unpublish"))
+        mockMvc.perform(post("/api/admin/events/2/unpublish").with(adminPrincipal()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("EVENT409-7"));
     }
@@ -540,10 +580,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("종료 시각이 지난 이벤트의 게시 내리기는 409 와 EVENT409-1 을 반환한다")
     void 종료_시각이_지난_이벤트의_게시_내리기는_409를_반환한다() throws Exception {
-        given(eventService.unpublish(4L))
+        given(eventService.unpublish(1L, 4L))
                 .willThrow(new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE));
 
-        mockMvc.perform(post("/api/admin/events/4/unpublish"))
+        mockMvc.perform(post("/api/admin/events/4/unpublish").with(adminPrincipal()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("EVENT409-1"));
     }
@@ -551,10 +591,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("없는 이벤트의 게시 내리기는 404 와 EVENT404-0 을 반환한다")
     void 없는_이벤트의_게시_내리기는_404를_반환한다() throws Exception {
-        given(eventService.unpublish(999L))
+        given(eventService.unpublish(1L, 999L))
                 .willThrow(new EventException(EventErrorCode.EVENT_NOT_FOUND));
 
-        mockMvc.perform(post("/api/admin/events/999/unpublish"))
+        mockMvc.perform(post("/api/admin/events/999/unpublish").with(adminPrincipal()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("EVENT404-0"));
     }
@@ -569,9 +609,9 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
                 null, MembershipGrade.NORMAL,
                 "<h1>게시된 버전</h1>", false);
-        given(eventService.publish(1L, 10L)).willReturn(published);
+        given(eventService.publish(1L, 1L, 10L)).willReturn(published);
 
-        mockMvc.perform(post("/api/admin/events/1/publish")
+        mockMvc.perform(post("/api/admin/events/1/publish").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "versionId": 10 }
@@ -584,7 +624,7 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("게시할 버전을 지정하지 않으면 400 과 COMMON400-0 을 반환한다")
     void 게시_버전_누락은_400을_반환한다() throws Exception {
-        mockMvc.perform(post("/api/admin/events/1/publish")
+        mockMvc.perform(post("/api/admin/events/1/publish").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
@@ -594,10 +634,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("종료된 이벤트 게시는 409 와 EVENT409-5 를 반환한다")
     void 종료된_이벤트_게시는_409를_반환한다() throws Exception {
-        given(eventService.publish(1L, 10L))
+        given(eventService.publish(1L, 1L, 10L))
                 .willThrow(new EventException(EventErrorCode.EVENT_ENDED_PUBLISH_FORBIDDEN));
 
-        mockMvc.perform(post("/api/admin/events/1/publish")
+        mockMvc.perform(post("/api/admin/events/1/publish").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "versionId": 10 }
@@ -609,10 +649,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("존재하지 않는 버전으로 게시하면 404 와 EVENT404-3 을 반환한다")
     void 없는_버전으로_게시하면_404를_반환한다() throws Exception {
-        given(eventService.publish(1L, 999L))
+        given(eventService.publish(1L, 1L, 999L))
                 .willThrow(new EventException(EventErrorCode.VERSION_NOT_FOUND));
 
-        mockMvc.perform(post("/api/admin/events/1/publish")
+        mockMvc.perform(post("/api/admin/events/1/publish").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "versionId": 999 }

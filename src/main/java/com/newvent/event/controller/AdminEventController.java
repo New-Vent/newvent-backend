@@ -95,43 +95,45 @@ public class AdminEventController {
 
     // 소프트 삭제(deletedAt). 게시 중인 이벤트는 거부한다.
     @DeleteMapping("/{id}")
-    public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
-        eventService.delete(id);
+    public ResponseEntity<ApiResponse<Void>> delete(@AuthenticationPrincipal AuthUser principal, @PathVariable Long id) {
+        eventService.delete(principal.id(), id);
         return ResponseEntity.ok(ApiResponse.successNoData());
     }
 
     // 휴지통에서 복구(deletedAt 해제)
     @PostMapping("/{id}/restore")
-    public ApiResponse<EventDetailResponse> restore(@PathVariable Long id) {
-        return ApiResponse.success(eventService.restore(id));
+    public ApiResponse<EventDetailResponse> restore(@AuthenticationPrincipal AuthUser principal, @PathVariable Long id) {
+        return ApiResponse.success(eventService.restore(principal.id(), id));
     }
 
     // 휴지통에서 영구 삭제. 복구 불가
     @DeleteMapping("/{id}/permanent")
-    public ResponseEntity<ApiResponse<Void>> hardDelete(@PathVariable Long id) {
-        eventService.hardDelete(id);
+    public ResponseEntity<ApiResponse<Void>> hardDelete(@AuthenticationPrincipal AuthUser principal, @PathVariable Long id) {
+        eventService.hardDelete(principal.id(), id);
         return ResponseEntity.ok(ApiResponse.successNoData());
     }
 
     // 종료(PUBLISHED → ENDED)만 받는다. 게시는 POST /{id}/publish
     @PatchMapping("/{id}/status")
     public ApiResponse<EventDetailResponse> changeStatus(
+            @AuthenticationPrincipal AuthUser principal,
             @PathVariable Long id,
             @Valid @RequestBody EventStatusChangeRequest request) {
-        return ApiResponse.success(eventService.changeStatus(id, request.status()));
+        return ApiResponse.success(eventService.changeStatus(principal.id(), id, request.status()));
     }
 
     // 게시(DRAFT→PUBLISHED) 또는 재게시(다른 버전으로 교체)
     @PostMapping("/{id}/publish")
     public ApiResponse<EventDetailResponse> publish(
+            @AuthenticationPrincipal AuthUser principal,
             @PathVariable Long id,
             @Valid @RequestBody EventPublishRequest request) {
-        return ApiResponse.success(eventService.publish(id, request.versionId()));
+        return ApiResponse.success(eventService.publish(principal.id(), id, request.versionId()));
     }
 
     // 게시 내리기(PUBLISHED → DRAFT) 종료는 PATCH /{id}/status
     @PostMapping("/{id}/unpublish")
-    public ApiResponse<EventDetailResponse> unpublish(@PathVariable Long id) {
-        return ApiResponse.success(eventService.unpublish(id));
+    public ApiResponse<EventDetailResponse> unpublish(@AuthenticationPrincipal AuthUser principal, @PathVariable Long id) {
+        return ApiResponse.success(eventService.unpublish(principal.id(), id));
     }
 }
