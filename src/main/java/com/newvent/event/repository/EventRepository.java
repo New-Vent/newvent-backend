@@ -32,6 +32,10 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     Optional<Event> findByIdAndDeletedAtIsNotNull(Long eventId);
 
+    // 이 이벤트에 대한 참여 기록이 하나라도 있는지 - 영구 삭제 보호용
+    @Query("SELECT COUNT(p) > 0 FROM EventParticipation p WHERE p.event.id = :eventId")
+    boolean hasParticipations(@Param("eventId") Long eventId);
+
     // publishedVersion은 LAZY 연관관계이고 open-in-view: false라, 트랜잭션 안에서 fetch join으로 같이 가져온다.
     @Query("SELECT e FROM Event e LEFT JOIN FETCH e.publishedVersion "
             + "WHERE e.id = :id AND e.deletedAt IS NULL AND e.status <> :excludedStatus")

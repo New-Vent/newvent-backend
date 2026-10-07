@@ -188,10 +188,14 @@ public class EventService {
     }
 
     // 휴지통에서 영구 삭제. 되돌릴 수 없다 — event_versions 등 하위 데이터는 DB CASCADE 로 함께 지워진다
+    // 참여 기록(event_participations)도 CASCADE 로 사라져 사용자의 참여·당첨 이력이 없어지므로, 있으면 막는다
     @Transactional
     public void hardDelete(Long id) {
         Event event = eventRepository.findByIdAndDeletedAtIsNotNull(id)
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        if (eventRepository.hasParticipations(id)) {
+            throw new EventException(EventErrorCode.PARTICIPATED_EVENT_PERMANENT_DELETE_FORBIDDEN);
+        }
         eventRepository.delete(event);
     }
 

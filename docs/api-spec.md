@@ -311,7 +311,7 @@ Content-Type: application/json
 | `DELETE` | `/api/admin/events/{id}` | 휴지통으로 보낸다 (`deletedAt` 기록). 응답 `data` 없음 | 404 `EVENT404-0` · 게시 중 409 `EVENT409-2` · 생성 작업 중 409 `EVENT409-3` |
 | `GET` | `/api/admin/events/trash` | 휴지통 목록. `page`·`size`·응답 필드(버전 번호·`thumbnailHtml` 포함)는 목록 API 와 같음. 삭제일 내림차순 | — |
 | `POST` | `/api/admin/events/{id}/restore` | 휴지통에서 복구. 복구된 `EventDetailResponse` | 휴지통에 없으면 404 `EVENT404-0` |
-| `DELETE` | `/api/admin/events/{id}/permanent` | 휴지통에서 영구 삭제. 되돌릴 수 없음 | 휴지통에 없으면 404 `EVENT404-0` |
+| `DELETE` | `/api/admin/events/{id}/permanent` | 휴지통에서 영구 삭제. 되돌릴 수 없음. **참여 기록이 하나라도 있는 이벤트는 영구 삭제할 수 없다** — 영구 삭제하면 사용자의 참여·당첨 기록이 함께 사라지기 때문이다. 휴지통으로 보내기와 복구는 참여 기록과 무관하게 가능하다 | 휴지통에 없으면 404 `EVENT404-0` · 참여 기록이 있으면 409 `EVENT409-9` |
 
 ---
 
