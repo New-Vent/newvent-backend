@@ -1,10 +1,13 @@
 package com.newvent.event.repository;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import jakarta.persistence.EntityManager;
 
+import org.hibernate.Session;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,7 +19,9 @@ import org.springframework.context.annotation.Import;
 
 // 영구 삭제 보호용 쿼리(hasParticipations)를 <b>실제 PostgreSQL 에서</b> 돌린다.
 // JPQL 이 참여 엔티티를 이름으로만 참조하고 SELECT 절에 불리언 식(COUNT(p) > 0)을 쓰므로, 저장소를 mock 으로 바꾸는 EventServiceTest 로는 쿼리가 실제로 맞는지 알 수 없다
-@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
+@DataJpaTest(properties = {
+        "spring.jpa.hibernate.ddl-auto=validate",
+        "spring.jpa.properties.hibernate.generate_statistics=true"})
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(com.newvent.common.config.JpaAuditingConfig.class)
 class EventRepositoryParticipationTest {
@@ -96,5 +101,55 @@ class EventRepositoryParticipationTest {
     @DisplayName("없는 이벤트 번호도 false 다")
     void 없는_이벤트는_false() {
         assertFalse(events.hasParticipations(-1L));
+    }
+
+    // ── N+1 점검 (리뷰 요청) ─────────────────────────────────────────────
+    // 참여 기록이 몇 건이든 SQL 이 한 번만 나가고, 참여 엔티티는 하나도 불러오지 않는다
+
+    private Statistics statistics() {
+        return tem.getEntityManager().unwrap(Session.class).getSessionFactory().getStatistics();
+    }
+
+    private Long eventWithParticipations(int count) {
+        EntityManager em = tem.getEntityManager();
+        Long admin = ((Number) em.createNativeQuery("SELECT id FROM admins WHERE login_id = 'part_admin'")
+                .getSingleResult()).longValue();
+        Long event = insertEvent(em, admin, "참여 많음 " + count);
+        for (int i = 0; i < count; i++) {
+            insertParticipation(em, event, insertUser(em, "part_bulk_" + count + "_" + i));
+        }
+        return event;
+    }
+
+    @Test
+    @DisplayName("참여가 1건이든 50건이든 쿼리는 한 번이고 엔티티를 불러오지 않는다 — N+1 이 아니다")
+    void 참여_건수와_상관없이_쿼리는_한_번이다() {
+        Long few = eventWithParticipations(1);
+        Long many = eventWithParticipations(50);
+        tem.flush();
+        tem.clear();
+        Statistics stats = statistics();
+
+        stats.clear();
+        assertTrue(events.hasParticipations(few));
+        assertEquals(1, stats.getPrepareStatementCount(), "참여 1건");
+        assertEquals(0, stats.getEntityLoadCount(), "참여 1건 — 엔티티 로드");
+
+        stats.clear();
+        assertTrue(events.hasParticipations(many));
+        assertEquals(1, stats.getPrepareStatementCount(), "참여 50건");
+        assertEquals(0, stats.getEntityLoadCount(), "참여 50건 — 엔티티 로드");
+    }
+
+    @Test
+    @DisplayName("참여가 없는 이벤트도 쿼리는 한 번이다")
+    void 참여가_없어도_쿼리는_한_번이다() {
+        tem.flush();
+        tem.clear();
+        Statistics stats = statistics();
+
+        stats.clear();
+        assertFalse(events.hasParticipations(withoutParticipation));
+        assertEquals(1, stats.getPrepareStatementCount());
     }
 }
