@@ -12,6 +12,7 @@ import java.util.concurrent.Executors;
 import jakarta.annotation.PreDestroy;
 
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,7 +37,9 @@ import com.newvent.registry.Block;
 import com.newvent.registry.BlockMerge;
 import com.newvent.registry.BlockValidator;
 import com.newvent.registry.PageShell;
+import com.newvent.registry.Palette;
 import com.newvent.registry.PromptBuilder;
+import com.newvent.registry.Variant;
 
 /**
  * 관리자의 채팅 요청 하나를 새 버전까지
@@ -128,6 +131,12 @@ public class EditService {
             return new StartResult.Rejected(bad.get());
         }
 
+        // ②-b 고른 영역 — 레지스트리에 있고 채팅으로 고칠 수 있는 것만. 모델을 부르기 전에 거른다
+        if (chosenBlocks(cmd) == null) {
+            log.info("수정 거절 — 고를 수 없는 영역 (event={}, blocks={})", cmd.eventId(), cmd.blocks());
+            return new StartResult.Rejected(EditErrorCode.INVALID_BLOCK);
+        }
+
         // ③ 고칠 게 있는가 — 여기서 봐야 404 가 관리자에게 도달한다
         VersionStore.Snapshot snapshot = versions.latest(cmd.eventId()).orElse(null);
         if (snapshot == null) {
@@ -138,7 +147,7 @@ public class EditService {
                 "edit", snapshot.versionId(), jobs, cmd.privacyConfirmed(), cmd.title());
         if (input.error() != null) return new StartResult.Rejected(input.error());
         EditCommand safeCommand = new EditCommand(cmd.eventId(),
-                cmd.title(), input.text(), cmd.privacyConfirmationJobId(), cmd.privacyConfirmed());
+                cmd.title(), input.text(), cmd.blocks(), cmd.privacyConfirmationJobId(), cmd.privacyConfirmed());
 
         // ④ 이미 돌고 있나 — **자리를 잡지 않고** 먼저 본다
         Optional<GenerationJob> already = jobs.ofEvent(cmd.eventId());
@@ -240,12 +249,40 @@ public class EditService {
             // checkDailyLimit 은 상태가 없어서 다시 보는 게 맞다.
             gateway.reserve(modelOps * retry.maxAttempts());
         }
+        // ★ 아무것도 안 바뀐 연산을 모은다 — 아래 "조용한 실패" 검사에 쓴다
+        List<Decision.Run> noChange = new ArrayList<>();
         for (Decision.Run step : plan) {
             if (job.checkCancelled()) return;
+            String beforeStep = BlockValidator.blockOf(doc, step.block());
             doc = apply(job, cmd, doc, step);
             if (doc == null) return;            // 실패 — job 에 문구가 담겼다
+            if (unchanged(beforeStep, BlockValidator.blockOf(doc, step.block()))) {
+                noChange.add(step);
+            }
         }
         if (job.checkCancelled()) return;
+
+        // ★★ 조용한 실패를 막는다.
+        //
+        //   실측(여름 수영장): "참여 대상 — 회원을 가운데로", "참여 버튼 — 파란색으로 물고기 느낌나게"
+        //   둘 다 화면이 **한 글자도 안 바뀌었는데** "v2 로 반영했어요" 가 나갔다.
+        //   관리자는 자기가 잘못 말한 줄 알고 같은 요청을 계속 다시 쓴다.
+        //   할 수 없는 일이면 못 한다고 말하는 쪽이 낫다 — 틀린 성공보다 정직한 실패다.
+        //
+        //   ★ 왜 모델에게 "못 하겠으면 말해라" 라고 안 시키나
+        //     모델은 자기가 못 한 걸 모른다. 늘 뭔가를 출력하고 "했다" 고 한다.
+        //     서버가 전후를 비교하는 것만이 확실하다. isTemplateBlock 주석이 이미
+        //     "모델은 바꿨다고 하는데 화면은 그대로인 게 제일 나쁘다" 고 적어 뒀는데,
+        //     그 검사는 템플릿 블록에만 있었고 일반 경로에는 없었다.
+        //
+        //   ★ 일부만 안 바뀐 건 통과시킨다. 두 가지를 시켰는데 하나만 됐으면
+        //     된 쪽은 저장하는 게 맞다. 전부 안 바뀐 경우만 막는다.
+        if (noChange.size() == plan.size()) {
+            log.info("수정 — 바뀐 게 없다 (event={}) — {}", cmd.eventId(),
+                    plan.stream().map(r -> r.op() + ":" + r.block().key()).toList());
+            job.fail(cannotDo(plan, cmd.hasBlocks()));
+            return;
+        }
 
         // ★ 연산을 다 통과한 뒤 한 번만 옮긴다. 진행률은 뒤로 가지 않는다
         job.to(GenerationJob.Phase.VALIDATING);
@@ -264,7 +301,118 @@ public class EditService {
         job.to(GenerationJob.Phase.DONE);
     }
 
+    /**
+     * 전후가 사실상 같은가. <b>공백과 class 순서는 차이로 보지 않는다.</b>
+     *
+     * ★ Jsoup 을 한 번 통과시키면 모델이 속성 순서나 따옴표를 바꿔도 같은 글자가 된다.
+     *   이걸 안 하면 "줄바꿈 하나 달라졌다" 를 변경으로 세어서 검사가 무력해진다.
+     */
+    private static boolean unchanged(String before, String after) {
+        return normalize(before).equals(normalize(after));
+    }
+
+    private static String normalize(String html) {
+        if (html == null) return "";
+        Document d = Jsoup.parseBodyFragment(html);
+        d.outputSettings().prettyPrint(false);
+        // ★ 들여쓰기만 다른 것을 "바뀌었다" 로 세면 검사가 통째로 무력해진다.
+        //   태그 사이의 공백뿐인 텍스트 노드를 지운다 — 글자 사이 공백은 건드리지 않는다.
+        for (org.jsoup.nodes.TextNode t : d.body().select("*").textNodes()) {
+            if (t.isBlank()) t.remove();
+        }
+        // class 는 순서에 의미가 없다 — 정렬해서 비교한다
+        for (Element el : d.body().select("[class]")) {
+            el.attr("class", new java.util.TreeSet<>(el.classNames()).stream()
+                    .collect(java.util.stream.Collectors.joining(" ")));
+        }
+        return d.body().html().replaceAll("\\s+", " ").strip();
+    }
+
+    /**
+     * 할 수 없는 요청에 <b>무엇은 할 수 있는지</b>를 붙여서 돌려준다.
+     *
+     * ★ "못 했습니다" 만 말하면 관리자는 같은 걸 또 쓴다. 실측에서 그랬다.
+     *   그 영역에 실제로 있는 모양 이름을 사람 말로 보여주면 다음 요청이 맞는다.
+     *
+     * ★ 색은 영역마다 못 바꾼다 — 페이지 전체 색감(팔레트)이 hero 에 걸린다.
+     *   "참여 버튼을 파란색으로" 가 안 되는 진짜 이유가 이것이고, 그걸 알려줘야 한다.
+     *   영역을 골랐으면 hero 라도 팔레트를 떼어 내므로(withoutPalette) hero 도 안 바뀐다 —
+     *   hero 가 아닐 때만 안내하면 "hero 골라놓고 파란색으로" 가 이유를 못 듣는다.
+     */
+    private static String cannotDo(List<Decision.Run> plan, boolean chosen) {
+        StringJoiner s = new StringJoiner(" ");
+        StringJoiner names = new StringJoiner(", ");
+        // ★ 공백으로 자르면 안 된다 — audience("참여 대상")와 cta("참여 버튼")가 둘 다 "참여" 가 된다.
+        //   문장 구분자(— 와 .)에서만 자른다.
+        for (Decision.Run r : plan) names.add(r.block().desc().split("[—.]")[0].strip());
+        s.add(names + " 영역에서 바꿀 수 있는 게 없어 그대로 두었습니다.");
+
+        boolean styled = plan.stream().anyMatch(r -> r.op() == Op.STYLE);
+        if (styled) {
+            for (Decision.Run r : plan) {
+                List<Variant> vs = Variant.of(r.block()).stream()
+                        .filter(v -> v.group() == Variant.Group.LAYOUT).toList();
+                if (vs.isEmpty()) continue;
+                StringJoiner looks = new StringJoiner(", ");
+                for (Variant v : vs) looks.add(v.desc().replaceAll("\\s*\\(.*?\\)", ""));
+                s.add("고를 수 있는 모양은 " + looks + " 입니다.");
+            }
+            if (chosen) {
+                s.add("색은 페이지 전체에 적용되는 값이라 영역을 고른 채로는 바꿀 수 없습니다. "
+                        + "영역 선택을 해제하고 '전체 색감을 파란색으로' 라고 말씀해 주세요.");
+                // ★ 안 되는 것만 말하면 관리자가 막힌다. 이 영역에서 되는 축을 같이 준다
+                s.add("이 영역만 바꾸려면 밝기나 분위기로 말씀해 주세요 — "
+                        + "예: 더 심플하게, 더 화려하게, 흰 배경으로.");
+            } else if (plan.stream().noneMatch(r -> r.block() == Block.HERO)) {
+                s.add("색은 영역별로 바꿀 수 없고 '전체 색감을 파란색으로' 처럼 페이지 전체로 말씀해 주세요.");
+            }
+        }
+        return s.toString();
+    }
+
     // ── 라우터 + 관문 ─────────────────────────────────────────────
+
+    /**
+     * 고른 영역을 Block 으로 — <b>Block 선언 순서</b>로 세운다. 하나라도 못 고르는 영역이면 null.
+     *
+     * ★ 선언 순서인 이유 — 연산이 그 순서로 실행되고, 저장 직전 정렬(PageShell.settle)과도 같은 순서다.
+     *   고른 순서를 따르면 "cta 를 먼저 고르고 hero 를 고른" 요청이 매번 다른 순서로 돈다.
+     * ★ 못 고르는 영역 — 레지스트리에 없는 key, 서버 소유(유의사항)
+     */
+    static List<Block> chosenBlocks(EditCommand cmd) {
+        Set<Block> out = EnumSet.noneOf(Block.class);
+        for (String key : cmd.blocks()) {
+            Optional<Block> b = Block.find(key);
+            if (b.isEmpty() || !b.get().canEdit()) return null;
+            out.add(b.get());
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * 라우터 결과를 고른 영역으로 좁힌다.
+     *
+     *   고른 영역을 라우터가 짚었으면    그 연산을 쓴다 — 지워줘 · 색 바꿔줘 · 따옴표 문구는 요청문에서 읽어야 한다
+     *   고른 영역을 라우터가 못 짚었으면  EDIT 으로 채운다 — "이거 바꿔줘" 처럼 영역을 말하지 않은 요청
+     *   고른 영역 밖을 짚었으면           버린다 (로그만)
+     *   같은 고른 영역에 연산이 여러 개면  첫 연산만 — 질문 여러 개를 ADD 여러 개로 쪼개도 거절되지 않게
+     */
+    static List<RawRoute> restrict(List<RawRoute> routed, List<Block> chosen, Long eventId) {
+        List<RawRoute> out = new ArrayList<>(chosen.size());
+        for (Block b : chosen) {
+            RawRoute hit = routed.stream().filter(r -> b.key().equals(r.target())).findFirst().orElse(null);
+            out.add(hit != null ? hit : new RawRoute(Op.EDIT.name(), b.key(), null));
+        }
+        List<String> dropped = routed.stream()
+                .map(RawRoute::target)
+                .filter(t -> chosen.stream().noneMatch(b -> b.key().equals(t)))
+                .toList();
+        if (!dropped.isEmpty()) {
+            log.info("수정 — 고른 영역 밖이라 버린다 (event={}, 고른={}, 버린={})",
+                    eventId, chosen.stream().map(Block::key).toList(), dropped);
+        }
+        return out;
+    }
 
     /**
      * 요청문을 실행 계획으로 바꾼다. <b>모델을 부르는 건 라우터 1회뿐이다.</b>
@@ -277,6 +425,11 @@ public class EditService {
         LlmCallContext ctx = LlmCallContext.of(cmd.eventId(), job.jobId());
 
         Optional<List<RawRoute>> routed = router.route(ctx, RequestFilter.clean(cmd.requestText()));
+        // ★ 관리자가 영역을 골랐으면 "어디를" 은 정해졌다. 라우터 결과는 "무엇을"(op · content)만 쓴다.
+        //   라우터가 아무것도 못 읽었어도 되묻지 않는다 — 고른 영역을 EDIT 으로 고친다
+        if (cmd.hasBlocks()) {
+            routed = Optional.of(restrict(routed.orElse(List.of()), chosenBlocks(cmd), cmd.eventId()));
+        }
         if (routed.isEmpty()) {
             // ★ 모델에게 다시 시키지 않는다. 관리자에게 다시 묻는다
             job.askBack("요청을 이해하지 못했습니다. 어느 부분을 어떻게 바꿀지 알려 주세요. "
@@ -374,7 +527,8 @@ public class EditService {
         RetryService.Result res;
         try {
             res = retry.run(ctx,
-                    PromptBuilder.edit(block, isTemplateBlock(before)),
+                    // ★ 영역을 골랐으면 hero 에도 페이지 전체 색감(팔레트)을 안내하지 않는다 — 선택 밖이 바뀐다
+                    PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks()),
                     userPrompt(cmd, step, before),
                     HtmlPolicy.edit(block, before, cmd.requestText()));
         } catch (RetryService.Aborted e) {
@@ -395,11 +549,32 @@ public class EditService {
                     + "요청을 조금 더 구체적으로 적어 다시 시도해 주세요.");
             return null;
         }
+        // ★ 영역을 골랐는데 모델이 팔레트를 붙였으면 떼어 낸다 — 프롬프트에서 뺐어도 출력은 보장되지 않는다.
+        //   남겨 두면 저장 직전 루트로 옮겨져(PageShell.hoistPalette) 고르지 않은 영역의 색까지 바뀐다
+        String html = cmd.hasBlocks() ? withoutPalette(res.html()) : res.html();
+
         // ★ 없던 영역이면 병합이 아니라 삽입이다.
         //   BlockMerge.merge 는 있는 섹션을 갈아끼울 뿐 새로 만들지 못한다
         return before.isBlank()
-                ? insertBlock(doc, block, res.html().strip())
-                : BlockMerge.merge(doc, block, res.html());
+                ? insertBlock(doc, block, html.strip())
+                : BlockMerge.merge(doc, block, html);
+    }
+
+    /** 섹션들의 palette-* class 를 걷어 낸다 — 선택 영역 수정용. 다른 class 는 그대로 */
+    static String withoutPalette(String html) {
+        org.jsoup.nodes.Document d = Jsoup.parseBodyFragment(html);
+        d.outputSettings().prettyPrint(false);
+        boolean changed = false;
+        for (Element el : d.body().select("[class]")) {
+            for (String c : List.copyOf(el.classNames())) {
+                if (Palette.looksLike(c)) {
+                    el.removeClass(c);
+                    changed = true;
+                }
+            }
+            if (el.classNames().isEmpty()) el.removeAttr("class");
+        }
+        return changed ? d.body().html() : html;
     }
 
     /**

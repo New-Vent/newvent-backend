@@ -1,0 +1,17 @@
+# 배포에서만 겹쳐 쓴다 — 박스에서 빌드하지 않고 ECR 이미지를 그대로 띄운다.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.deploy.yml up -d
+#
+#   build: !reset null 이 핵심이다.
+#   image: 만 덮으면 compose 가 build 정의를 그대로 들고 있어서, 이미지가 로컬에 없을 때
+#   박스에서 Gradle 을 돌린다. 1.9GB 박스에서 돌아가는 앱·DB 와 메모리를 두고 경쟁한다.
+#   !reset 으로 지워야 "받아서 띄우기" 만 한다.
+#
+#   프로젝트 이름을 바꾸지 말 것.
+#   /opt/newvent 에서 실행하면 프로젝트가 newvent 이고, DB 볼륨이 newvent_newvent-postgres-data 다.
+#   다른 디렉터리나 -p 로 돌리면 **빈 볼륨이 새로 생겨서 DB 가 비어 보인다.**
+
+services:
+  app:
+    image: ${IMAGE:?IMAGE 가 필요합니다 — deploy/remote-install.sh 가 넣는다}
+    build: !reset null

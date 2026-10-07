@@ -18,6 +18,9 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 import com.newvent.event.domain.Event;
 import com.newvent.generation.domain.FailureType;
@@ -133,6 +136,111 @@ class LlmCallLogRepositoryTest {
             repo.save(row(event, req, 1, KST_MIDNIGHT));
             repo.save(row(event, req, 1, NEXT_KST_MIDNIGHT));
         });
+    }
+
+    @Test
+    @DisplayName("필터 없이 조회하면 전체 로그를 최신순으로 페이징한다")
+    void 필터_없이_목록_조회() {
+        Event event = seedEvent();
+        Instant earlier = KST_MIDNIGHT;
+        Instant later = KST_MIDNIGHT.plusSeconds(60);
+
+        LlmCallLog first = repo.saveAndFlush(row(event, UUID.randomUUID(), 1, earlier));
+        LlmCallLog second = repo.saveAndFlush(row(event, UUID.randomUUID(), 1, later));
+        tem.clear();
+
+        Page<LlmCallLog> result = repo.search(
+                null, null, null, null,
+                PageRequest.of(0, 1, Sort.by(
+                        Sort.Direction.DESC, "createdAt")));
+
+        assertEquals(2L, result.getTotalElements());
+        assertEquals(2, result.getTotalPages());
+        assertEquals(1, result.getContent().size());
+        assertEquals(second.getId(), result.getContent().getFirst().getId());
+
+        Page<LlmCallLog> next = repo.search(
+                null, null, null, null,
+                PageRequest.of(1, 1, Sort.by(
+                        Sort.Direction.DESC, "createdAt")));
+
+        assertEquals(first.getId(), next.getContent().getFirst().getId());
+    }
+
+    @Test
+    @DisplayName("시작일만 지정하면 해당 시각을 포함한 이후 로그를 조회한다")
+    void 시작일만_지정하여_조회() {
+        Event event = seedEvent();
+
+        repo.save(row(event, UUID.randomUUID(), 1, KST_MIDNIGHT.minusSeconds(1)));
+        LlmCallLog boundary = repo.save(row(event, UUID.randomUUID(), 1, KST_MIDNIGHT));
+        repo.flush();
+        tem.clear();
+
+        Page<LlmCallLog> result = repo.search(
+                null, null, KST_MIDNIGHT, null,
+                PageRequest.of(0, 10));
+
+        assertEquals(1L, result.getTotalElements());
+        assertEquals(boundary.getId(), result.getContent().getFirst().getId());
+    }
+
+    @Test
+    @DisplayName("종료일만 지정하면 해당 시각을 포함한 이전 로그를 조회한다")
+    void 종료일만_지정하여_조회() {
+        Event event = seedEvent();
+
+        LlmCallLog boundary = repo.save(row(event, UUID.randomUUID(), 1, KST_MIDNIGHT));
+        repo.save(row(event, UUID.randomUUID(), 1, KST_MIDNIGHT.plusSeconds(1)));
+        repo.flush();
+        tem.clear();
+
+        Page<LlmCallLog> result = repo.search(
+                null, null, null, KST_MIDNIGHT,
+                PageRequest.of(0, 10));
+
+        assertEquals(1L, result.getTotalElements());
+        assertEquals(boundary.getId(), result.getContent().getFirst().getId());
+    }
+
+    @Test
+    @DisplayName("전체 필터를 지정하면 모든 조건을 만족하는 로그만 조회한다")
+    void 전체_필터_적용() {
+        Event event = seedEvent();
+        Instant start = KST_MIDNIGHT;
+        Instant end = NEXT_KST_MIDNIGHT;
+
+        LlmCallLog matched = repo.save(LlmCallLog.create(
+                event, null, UUID.randomUUID(), 1, "model-a", "mock",
+                null, null, null, false, false, false,
+                FailureType.TIMEOUT, null, null, start));
+
+        // 같은 기간이어도 호출 성공 여부가 다르면 제외
+        repo.save(row(event, UUID.randomUUID(), 1, start));
+
+        // 호출 실패여도 기간 밖이면 제외
+        repo.save(LlmCallLog.create(
+                event, null, UUID.randomUUID(), 1, "model-a", "mock",
+                null, null, null, false, false, false,
+                FailureType.TIMEOUT, null, null, start.minusSeconds(1)));
+
+        repo.flush();
+        tem.clear();
+
+        Page<LlmCallLog> result = repo.search(
+                event.getId(), false, start, end,
+                PageRequest.of(0, 10));
+
+        assertEquals(1L, result.getTotalElements());
+        assertEquals(matched.getId(), result.getContent().getFirst().getId());
+
+        // 다른 이벤트 ID로 조회하면 결과 없음
+        Page<LlmCallLog> otherEvent = repo.search(
+                -1L, false, start, end,
+                PageRequest.of(0, 10));
+
+        assertTrue(otherEvent.isEmpty());
+        assertEquals(0L, otherEvent.getTotalElements());
     }
 
 }

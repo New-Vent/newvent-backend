@@ -38,7 +38,7 @@ import com.newvent.generation.service.GenerationJobStore;
 @Service
 public class EventService {
 
-    public static final Duration CLOSING_SOON_WINDOW = Duration.ofDays(3);
+    public static final Duration CLOSING_SOON_WINDOW = Event.CLOSING_SOON_WINDOW;
 
     // Long 범위를 넘지 않게 18자리까지만 ID 로 본다.
     private static final Pattern ID_KEYWORD = Pattern.compile("\\d{1,18}");
@@ -277,14 +277,7 @@ public class EventService {
     }
 
     boolean closingSoon(Event event) {
-        if (event.getStatus() != EventStatus.PUBLISHED || event.deleted()) {
-            return false;
-        }
-        OffsetDateTime now = OffsetDateTime.now(clock);
-        if (now.isBefore(event.getStartDate()) || !now.isBefore(event.getEndDate())) {
-            return false;
-        }
-        return !now.isBefore(event.getEndDate().minus(CLOSING_SOON_WINDOW));
+        return event.closingSoon(OffsetDateTime.now(clock));
     }
 
     private boolean templateChanged(Event event, String templateKey) {

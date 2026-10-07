@@ -45,7 +45,7 @@
 
 멤버십 등급: `NORMAL` / `EXCELLENT` / `BEST` (화면 표시명 일반/우수/최우수)
 
-`closingSoon`: 저장 컬럼이 아니다. `PUBLISHED` 이고 지금이 기간 안이며 종료 3일 전부터면 `true`.
+`closingSoon`: 저장 컬럼이 아니다. `PUBLISHED` 이고 이미 시작했으며 종료 3일 전부터 종료 시각까지(포함)면 `true`. 종료일이 없으면 `false`.
 
 ### 이벤트 자동 종료
 

@@ -3,6 +3,7 @@ package com.newvent.registry;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -177,7 +178,20 @@ public enum Variant {
     SURFACE_DOTS(null, Group.SURFACE, "v-surface-dots", "점무늬 배경"),
     SURFACE_STRIPES(null, Group.SURFACE, "v-surface-stripes", "사선 무늬 배경"),
     SURFACE_OUTLINE(null, Group.SURFACE, "v-surface-outline", "브랜드색 테두리만"),
-    SURFACE_SHADOW(null, Group.SURFACE, "v-surface-shadow", "떠 있는 그림자 카드");
+    SURFACE_SHADOW(null, Group.SURFACE, "v-surface-shadow", "떠 있는 그림자 카드"),
+
+    // ── 배경 — 색 지정. 수정에서 "이 영역을 ○○색으로" 를 들어줄 길이다 ──
+    // ★ 팔레트와 무관한 고정 색이다. 위 배경들은 브랜드색(팔레트)을 따라가서
+    //   영역 하나만 파랗게 할 방법이 없었다 — 모델이 어두운 배경 따위로 때웠다.
+    // ★ 생성에는 싣지 않는다(sampleSurfaces). 팔레트와 따로 노는 색이 무작위로 섞이면 페이지가 지저분해진다
+    SURFACE_BLUE(null, Group.SURFACE, "v-surface-blue", "파란색 배경 (연한 파랑)", true),
+    SURFACE_GREEN(null, Group.SURFACE, "v-surface-green", "초록색 배경 (연한 초록)", true),
+    SURFACE_YELLOW(null, Group.SURFACE, "v-surface-yellow", "노란색 배경 (연한 노랑)", true),
+    SURFACE_ORANGE(null, Group.SURFACE, "v-surface-orange", "주황색 배경 (연한 주황)", true),
+    SURFACE_RED(null, Group.SURFACE, "v-surface-red", "빨간색 배경 (연한 빨강)", true),
+    SURFACE_PURPLE(null, Group.SURFACE, "v-surface-purple", "보라색 배경 (연한 보라)", true),
+    SURFACE_PINK(null, Group.SURFACE, "v-surface-pink", "분홍색 배경 (연한 분홍)", true),
+    SURFACE_GRAY(null, Group.SURFACE, "v-surface-gray", "회색 배경 (연한 회색)", true);
 
     /** 같은 묶음에서는 하나만 쓴다 */
     public enum Group {
@@ -200,22 +214,49 @@ public enum Variant {
             EnumSet.of(Block.INTRO, Block.STATS, Block.BENEFITS, Block.PRIZE, Block.COMPARE,
                     Block.AUDIENCE, Block.STEPS, Block.SCHEDULE, Block.FAQ);
 
+    /**
+     * 항목이 몇 개 이상이어야 말이 되는 변형. <b>프롬프트가 아니라 서버가 지킨다.</b>
+     *
+     * ★ 왜 프롬프트로 안 하나 — 해 봤고, 정반대로 터졌다.
+     *   "항목이 3개 미만이면 캐러셀(v-benefits-carousel · v-steps-carousel)을 고르지 마라" 를
+     *   넣었더니, 그 줄이 프롬프트에서 <b>v-benefits-carousel 이라는 이름이 나오는 유일한 자리</b>가
+     *   됐다(표본에는 pricing · checklist · stripe · three-col 만 실렸다).
+     *   모델은 금지문에서 이름을 배워서 혜택 2개짜리에 캐러셀을 골랐다(여름 수영장 2차 실측).
+     *   <b>금지하려고 쓴 이름이 추천이 됐다.</b>
+     *
+     * ★ 그래서 말하지 않고 지운다. 모델이 골라도 여기서 떨어진다.
+     *   event.css 가 li { flex: 0 0 78% } 라서 2개면 둘째 카드가 잘린 채 멈춘다.
+     *   시상대(v-prize-podium)도 1 · 2 · 3등 자리를 CSS 가 정해 두어 3개 미만이면 빈다.
+     */
+    private static final Map<Variant, Integer> NEEDS_ITEMS = Map.of(
+            BENEFITS_CAROUSEL, 3,
+            STEPS_CAROUSEL, 3,
+            PRIZE_PODIUM, 3);
+
     private final Block block;
     private final Group group;
     private final String cssClass;
     private final String desc;
+    /** 색 이름이 붙은 변형 — 관리자가 그 색을 말했을 때만 쓴다. 생성 목록에서 뺀다 */
+    private final boolean namedColor;
 
     Variant(Block block, Group group, String cssClass, String desc) {
+        this(block, group, cssClass, desc, false);
+    }
+
+    Variant(Block block, Group group, String cssClass, String desc, boolean namedColor) {
         this.block = block;
         this.group = group;
         this.cssClass = cssClass;
         this.desc = desc;
+        this.namedColor = namedColor;
     }
 
     public Block block()     { return block; }
     public Group group()     { return group; }
     public String cssClass() { return cssClass; }
     public String desc()     { return desc; }
+    public boolean namedColor() { return namedColor; }
 
     /** 그 블록에 쓸 수 있는 변형 전부 — 전용 배치 먼저, 배경 나중 */
     public static List<Variant> of(Block b) {
@@ -239,9 +280,10 @@ public enum Variant {
         return rotate(layouts, b.key() + "|" + (seed == null ? "" : seed), max);
     }
 
-    /** 생성 프롬프트에 실을 배경 변형 — {@link #sample} 과 같은 방식 */
+    /** 생성 프롬프트에 실을 배경 변형 — {@link #sample} 과 같은 방식. 색 지정 배경은 뺀다 */
     public static List<Variant> sampleSurfaces(String seed, int max) {
-        List<Variant> surfaces = Arrays.stream(values()).filter(v -> v.group == Group.SURFACE).toList();
+        List<Variant> surfaces = Arrays.stream(values())
+                .filter(v -> v.group == Group.SURFACE && !v.namedColor).toList();
         return rotate(surfaces, "surface|" + (seed == null ? "" : seed), max);
     }
 
@@ -283,12 +325,21 @@ public enum Variant {
      */
     public static void sanitize(Element section, Block b) {
         List<Variant> allowed = of(b);
+        // ★ 항목 수는 한 번만 센다. must 가 없는 블록(hero · cta)은 셀 것이 없다.
+        int items = (b.must() == null) ? Integer.MAX_VALUE : section.select(b.must()).size();
         EnumSet<Group> used = EnumSet.noneOf(Group.class);
         for (String c : List.copyOf(section.classNames())) {
             if (!looksLike(c)) continue;
             Optional<Variant> v = find(c).filter(allowed::contains);
             if (v.isEmpty() || !used.add(v.get().group)) {
                 section.removeClass(c);
+                continue;
+            }
+            // ★ 항목이 모자란 모양은 뗀다. class 만 떼고 내용은 그대로 둔다 —
+            //   기본 모양으로 그려지며, 잘린 카드보다 낫다.
+            if (items < NEEDS_ITEMS.getOrDefault(v.get(), 0)) {
+                section.removeClass(c);
+                used.remove(v.get().group);     // 같은 묶음에서 다른 것을 쓸 자리를 돌려준다
             }
         }
     }
