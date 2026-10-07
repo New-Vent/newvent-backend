@@ -59,7 +59,7 @@ class EmbeddingServiceIndexAllTest {
 
         assertEquals(2, out.totalEvents());
         assertEquals(2, out.succeeded());
-        assertTrue(out.failedEventIds().isEmpty());
+        assertTrue(out.failedEvents().isEmpty());
         assertEquals(15, out.totalChunks());
     }
 
@@ -78,7 +78,7 @@ class EmbeddingServiceIndexAllTest {
 
         assertEquals(3, out.totalEvents());
         assertEquals(2, out.succeeded());
-        assertEquals(List.of(2L), out.failedEventIds());
+        assertEquals(List.of(new ReindexAllResponse.FailedEvent(2L, "색인 터짐")), out.failedEvents());
         assertEquals(15, out.totalChunks());
     }
 

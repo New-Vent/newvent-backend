@@ -104,7 +104,7 @@ public class EmbeddingService {
 	 * ★ 시드 데이터(SEED: ...)는 건너뛴다. 데모용 낡은 벡터가 운영 검색에 섞이는 것을 막는다.
 	 */
 	public ReindexAllResponse indexAllEvents() {
-		List<Long> failed = new ArrayList<>();
+		List<ReindexAllResponse.FailedEvent> failed = new ArrayList<>();
 		int succeeded = 0;
 		int totalChunks = 0;
 		List<Event> targets = events.findAllByDeletedAtIsNull();
@@ -117,10 +117,14 @@ public class EmbeddingService {
 				succeeded++;
 			} catch (RuntimeException e) {
 				log.error("전체 재색인 실패: eventId={}", event.getId(), e);
-				failed.add(event.getId());
+				failed.add(new ReindexAllResponse.FailedEvent(event.getId(), errorOf(e)));
 			}
 		}
 		return new ReindexAllResponse(succeeded + failed.size(), succeeded, failed, totalChunks);
+	}
+
+	private static String errorOf(RuntimeException e) {
+		return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
 	}
 
 	// 시드 판정. 앞뒤 공백·대소문자를 무시한다 (" seed: ", "Seed:" 도 시드다)
