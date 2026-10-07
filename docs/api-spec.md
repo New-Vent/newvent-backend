@@ -317,6 +317,12 @@ Content-Type: application/json
 
 ## 게시
 
+게시·재게시·게시 내리기는 이벤트 소유 관리자만 실행할 수 있다. 다른 관리자가 요청하면
+`403 COMMON403-0`을 반환하며 이벤트 상태와 버전을 변경하지 않는다.
+
+같은 소유자 제한은 이벤트 수정·종료·휴지통 이동·복구·영구 삭제에도 적용한다.
+관리자 ID는 인증 정보에서 읽으며 요청 본문이나 쿼리로 받지 않는다.
+
 | Method | Path | 설명 | 오류 |
 | --- | --- | --- | --- |
 | `POST` | `/api/admin/events/{id}/publish` | 요청 `{ "versionId": 10 }`. 게시(`DRAFT` → `PUBLISHED`) 또는 재게시(다른 버전으로 교체). 고른 버전은 저장 지점으로 표시된다. 게시된 `EventDetailResponse` | `versionId` 누락 400 `COMMON400-0` · 없는 이벤트 404 `EVENT404-0` · 없는 버전 404 `EVENT404-3` · 종료된 이벤트 409 `EVENT409-5` |
