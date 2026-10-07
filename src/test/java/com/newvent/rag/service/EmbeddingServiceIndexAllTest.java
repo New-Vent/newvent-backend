@@ -97,4 +97,21 @@ class EmbeddingServiceIndexAllTest {
         assertEquals(1, out.succeeded());
         assertEquals(7, out.totalChunks());
     }
+
+    @Test
+    @DisplayName("앞뒤 공백·대소문자가 달라도 SEED: 로 보면 건너뛴다")
+    void seedVariantsSkipped() {
+        com.newvent.event.repository.EventRepository events = mock(com.newvent.event.repository.EventRepository.class);
+        List<Event> targets = List.of(
+                event(1L, " seed: 공백"), event(2L, "Seed: 대문자"), event(3L, "실제"));
+        when(events.findAllByDeletedAtIsNull()).thenReturn(targets);
+        FakeIndexAll service = (FakeIndexAll) indexing(events);
+        service.willReturn(3L, 4);
+
+        ReindexAllResponse out = service.indexAllEvents();
+
+        assertEquals(1, out.totalEvents());
+        assertEquals(1, out.succeeded());
+        assertEquals(4, out.totalChunks());
+    }
 }

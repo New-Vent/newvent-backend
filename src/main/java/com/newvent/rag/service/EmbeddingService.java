@@ -25,10 +25,13 @@ import com.newvent.rag.dto.response.ReindexAllResponse;
 import com.newvent.rag.repository.RagChunkRepository;
 import com.newvent.rag.service.RagChunkingService.Chunk;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * 임베딩 파이프라인 진입점. 자르기·저장·현황을 맡는다.
  * 찾기는 SimilarityService 몫이다.
  */
+@Slf4j
 @Service
 public class EmbeddingService {
 
@@ -106,17 +109,23 @@ public class EmbeddingService {
 		int totalChunks = 0;
 		List<Event> targets = events.findAllByDeletedAtIsNull();
 		for (Event event : targets) {
-			if (event.getTitle() != null && event.getTitle().startsWith("SEED:")) {
+			if (isSeedData(event.getTitle())) {
 				continue;
 			}
 			try {
 				totalChunks += reindex(event.getId(), null);
 				succeeded++;
 			} catch (RuntimeException e) {
+				log.error("전체 재색인 실패: eventId={}", event.getId(), e);
 				failed.add(event.getId());
 			}
 		}
 		return new ReindexAllResponse(succeeded + failed.size(), succeeded, failed, totalChunks);
+	}
+
+	// 시드 판정. 앞뒤 공백·대소문자를 무시한다 (" seed: ", "Seed:" 도 시드다)
+	static boolean isSeedData(String title) {
+		return title != null && title.strip().toUpperCase(java.util.Locale.ROOT).startsWith("SEED:");
 	}
 
 	// 주간 품질 추이. 호출 건수·RAG 사용 건수·청크 수를 주별로 묶는다.
@@ -125,18 +134,24 @@ public class EmbeddingService {
 	public List<QualityTrendResponse> getQualityTrend(int weeks) {
 		int w = weeks <= 0 ? 4 : weeks;
 		Instant from = Instant.now().minus(Duration.ofDays(w * 7L));
-		Map<LocalDate, long[]> byWeek = new LinkedHashMap<>();
+		Map<LocalDate, WeekAgg> byWeek = new LinkedHashMap<>();
 		for (var row : logs.sumRagUsageByWeek(from)) {
-			byWeek.put(row.getWeekStart(), new long[] { row.getTotalCalls(), row.getRagUsedCalls(), 0 });
+			byWeek.put(row.getWeekStart(),
+					new WeekAgg(row.getTotalCalls(), row.getRagUsedCalls(), 0));
 		}
 		for (var row : chunks.countChunksByWeek(from)) {
-			byWeek.computeIfAbsent(row.getWeekStart(), k -> new long[3])[2] = row.getChunkCount();
+			WeekAgg cur = byWeek.getOrDefault(row.getWeekStart(), new WeekAgg(0, 0, 0));
+			byWeek.put(row.getWeekStart(),
+					new WeekAgg(cur.totalCalls(), cur.ragUsedCalls(), row.getChunkCount()));
 		}
 		List<QualityTrendResponse> out = new ArrayList<>(byWeek.size());
-		for (Map.Entry<LocalDate, long[]> e : byWeek.entrySet()) {
-			long[] v = e.getValue();
-			out.add(new QualityTrendResponse(e.getKey(), v[0], v[1], v[2]));
+		for (Map.Entry<LocalDate, WeekAgg> e : byWeek.entrySet()) {
+			WeekAgg v = e.getValue();
+			out.add(new QualityTrendResponse(e.getKey(), v.totalCalls(), v.ragUsedCalls(), v.chunkCount()));
 		}
 		return out;
 	}
+
+	// 주별 집계 버킷. long[3] 배열 인덱스로 들고 있으면 자리 바뀔 때 컴파일이 못 잡는다
+	private record WeekAgg(long totalCalls, long ragUsedCalls, long chunkCount) {}
 }
