@@ -320,7 +320,7 @@ Content-Type: application/json
 
 | Method | Path | 설명 | 오류 |
 | --- | --- | --- | --- |
-| `POST` | `/api/admin/events/{id}/publish` | 요청 `{ "versionId": 10 }`. 게시(`DRAFT` → `PUBLISHED`) 또는 재게시(다른 버전으로 교체). 고른 버전은 저장 지점으로 표시된다. 게시된 `EventDetailResponse` | `versionId` 누락 400 `COMMON400-0` · 없는 이벤트 404 `EVENT404-0` · 없는 버전 404 `EVENT404-3` · 종료된 이벤트 409 `EVENT409-5` |
+| `POST` | `/api/admin/events/{id}/publish` | 요청 `{ "versionId": 10 }`. 게시(`DRAFT` → `PUBLISHED`) 또는 재게시(다른 버전으로 교체). 고른 버전은 저장 지점으로 표시된다. 게시 시각에 종료일시가 지났으면(종료 시각과 같은 순간 포함) 게시할 수 없다 — 기간을 고친 뒤 다시 게시한다. 시작일은 검사하지 않는다(진행 중 이벤트의 게시·재게시, 시작 전 이벤트의 예약 게시 모두 가능). 게시된 `EventDetailResponse` | `versionId` 누락 400 `COMMON400-0` · 없는 이벤트 404 `EVENT404-0` · 없는 버전 404 `EVENT404-3` · 종료된 이벤트 409 `EVENT409-5` · 종료일시가 지난 이벤트 409 `EVENT409-8` |
 | `POST` | `/api/admin/events/{id}/unpublish` | 게시 내리기(`PUBLISHED` → `DRAFT`). 요청 본문 없음. 게시 버전(`publishedVersion`)을 해제해 사용자 화면에서 내리고, 저장된 버전·참여 기록·알림 표시는 그대로 둔다. 내린 뒤에는 `POST /{id}/publish` 로 다시 게시할 수 있다. 내려진 `EventDetailResponse` (`status` 는 `DRAFT`, `closingSoon` 은 `false`) | 없거나 삭제된 이벤트 404 `EVENT404-0` · 게시 중(`PUBLISHED`)이 아닌 이벤트(`DRAFT`·`ENDED`) 409 `EVENT409-7` · 종료 시각이 지났지만 아직 `ENDED` 로 바뀌기 전인 이벤트 409 `EVENT409-1` |
 
 ---

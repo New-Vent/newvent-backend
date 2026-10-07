@@ -495,6 +495,118 @@ class EventServiceTest {
     }
 
     @Test
+    @DisplayName("종료일시가 지난 DRAFT 는 게시할 수 없고 DRAFT 로 남는다")
+    void 종료일이_지난_이벤트는_게시할_수_없다() {
+        Event event = newEvent(1L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-08-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-08-31T23:59:59+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.publish(1L, 10L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN.getCode());
+        assertThat(event.getStatus()).isEqualTo(EventStatus.DRAFT);
+        assertThat(event.getPublishedVersion()).isNull();
+        verifyNoInteractions(eventVersionRepository);
+    }
+
+    @Test
+    @DisplayName("종료 시각과 정확히 같은 순간에도 게시할 수 없다 — 수정 잠금(editLocked)과 같은 기준")
+    void 종료_시각과_같은_순간에는_게시할_수_없다() {
+        Event event = newEvent(1L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"), now);
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.publish(1L, 10L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN.getCode());
+    }
+
+    @Test
+    @DisplayName("종료 1초 전이면 게시할 수 있다")
+    void 종료_직전에는_게시할_수_있다() {
+        Event event = newEvent(1L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"), now.plusSeconds(1));
+        EventVersion version = newVersion(10L, false);
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
+
+        eventService.publish(1L, 10L);
+
+        assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+    }
+
+    @Test
+    @DisplayName("시작일이 아직 오지 않은 이벤트도 게시할 수 있다 — 시작일은 검사하지 않는다")
+    void 시작_전_이벤트도_게시할_수_있다() {
+        Event event = newEvent(1L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-09-20T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"));
+        EventVersion version = newVersion(10L, false);
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
+
+        eventService.publish(1L, 10L);
+
+        assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+    }
+
+    @Test
+    @DisplayName("이미 시작한 진행 중 이벤트도 게시할 수 있다 — 시작일이 과거여도 막지 않는다")
+    void 이미_시작한_이벤트도_게시할_수_있다() {
+        Event event = newEvent(1L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"));
+        EventVersion version = newVersion(10L, false);
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
+
+        eventService.publish(1L, 10L);
+
+        assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+    }
+
+    @Test
+    @DisplayName("종료 시각이 지났지만 아직 ENDED 로 바뀌기 전인 게시 중 이벤트는 다른 버전으로 재게시할 수 없다")
+    void 종료일이_지난_게시중_이벤트는_재게시할_수_없다() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-08-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-09-15T23:59:59+09:00"));
+        EventVersion oldVersion = newVersion(10L, true);
+        ReflectionTestUtils.setField(event, "publishedVersion", oldVersion);
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.publish(1L, 11L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN.getCode());
+        assertThat(event.getPublishedVersion()).isSameAs(oldVersion);
+        verifyNoInteractions(eventVersionRepository);
+    }
+
+    @Test
+    @DisplayName("종료일시가 지난 DRAFT 의 기간을 고치면 다시 게시할 수 있다")
+    void 기간을_고치면_다시_게시할_수_있다() {
+        Event event = newEvent(1L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-08-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-08-31T23:59:59+09:00"));
+        EventVersion version = newVersion(10L, false);
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
+        assertThatThrownBy(() -> eventService.publish(1L, 10L)).isInstanceOf(EventException.class);
+
+        // DRAFT 는 기간이 지나도 수정할 수 있다 (editLocked 는 ENDED 이거나 게시 중인 경우만 잠근다)
+        assertThat(event.editLocked(now)).isFalse();
+        event.updateInfo(event.getTitle(), null, OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"), event.getGrade());
+        eventService.publish(1L, 10L);
+
+        assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+    }
+
+    @Test
     @DisplayName("해당 이벤트의 버전이 아니면 EVENT404-3 이다")
     void 없는_버전으로_게시하면_404를_던진다() {
         Event event = newEvent(1L, EventStatus.DRAFT,
