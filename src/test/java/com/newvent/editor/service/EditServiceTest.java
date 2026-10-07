@@ -142,7 +142,17 @@ class EditServiceTest {
             <section data-block="notices"><p>유의사항</p></section>
             <section data-block="cta"><button class="btn">참여하기</button></section>""";
 
+    /**
+     * ★ BASE 의 steps 와 <b>달라야 한다.</b> 예전에는 글자 하나까지 같았고,
+     *   그래서 "바뀐 게 없으면 저장하지 않는다" 가 들어오자 이 테스트가 깨졌다.
+     *   이 테스트가 보려는 것은 "ADD 가 삽입이 아니라 병합인가" 이고,
+     *   내용이 같았던 건 우연이다. 달라야 병합이 실제로 갈아끼웠는지까지 보인다.
+     */
     private static final String NEW_STEPS =
+            "<section data-block=\"steps\"><ol><li>앱 열고 로그인</li><li>버튼 누르기</li></ol></section>";
+
+    /** BASE 의 steps 와 <b>똑같은</b> 응답. 모델이 아무것도 안 바꾼 상황을 만든다 */
+    private static final String SAME_STEPS =
             "<section data-block=\"steps\"><ol><li>앱 열기</li><li>버튼 누르기</li></ol></section>";
 
     private static final String NEW_BENEFITS =
@@ -631,6 +641,65 @@ class EditServiceTest {
         assertEquals(1, versionNo());
     }
 
+    // ── 조용한 실패 ───────────────────────────────────────────────
+
+    /**
+     * ★ 실측(여름 수영장): "참여 버튼을 파란색으로 물고기 느낌나게" 가 v4 로 저장되고
+     *   "반영했어요" 가 나갔는데 화면은 한 글자도 안 바뀌었다. cta 변형 11개가 전부 모양이고
+     *   색은 hero 에만 걸리는 팔레트라, 애초에 할 수 없는 요청이었다.
+     *   관리자는 자기가 잘못 말한 줄 알고 같은 요청을 계속 다시 쓴다.
+     */
+    @Test
+    @DisplayName("★ 모델이 똑같은 내용을 돌려주면 저장하지 않는다 — 틀린 성공보다 정직한 실패")
+    void 안_바뀌면_저장하지_않는다() {
+        router.willReturn(new RawRoute("STYLE", "steps", null));
+        retry.willReturn(ok(SAME_STEPS));
+
+        GenerationJob job = run("참여 방법을 물고기 느낌으로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.FAILED, job.phase());
+        assertEquals(1, versionNo(), "안 바뀌었는데 버전이 생겼다");
+        assertNull(job.versionId());
+    }
+
+    /**
+     * ★ "못 했습니다" 만 말하면 관리자가 같은 요청을 또 쓴다.
+     *   그 영역에 실제로 있는 모양을 사람 말로 보여줘야 다음 요청이 맞는다.
+     */
+    @Test
+    @DisplayName("무엇을 할 수 있는지 같이 알려준다")
+    void 할_수_있는_것을_알려준다() {
+        router.willReturn(new RawRoute("STYLE", "steps", null));
+        retry.willReturn(ok(SAME_STEPS));
+
+        GenerationJob job = run("참여 방법을 물고기 느낌으로 바꿔줘");
+
+        assertTrue(job.message().contains("그대로 두었습니다"), job.message());
+        assertTrue(job.message().contains("세로 타임라인"),
+                "고를 수 있는 모양 이름이 없으면 관리자가 또 같은 요청을 쓴다: " + job.message());
+        assertTrue(job.message().contains("전체 색감"),
+                "색은 영역별로 못 바꾼다는 것을 알려줘야 한다: " + job.message());
+    }
+
+    /**
+     * ★ 두 가지를 시켰는데 하나만 됐으면 된 쪽은 저장하는 게 맞다.
+     *   전부 막으면 "제목은 바뀌었는데 안 저장됨" 이 되어 더 나쁘다.
+     */
+    @Test
+    @DisplayName("연산 두 개 중 하나만 바뀌어도 저장한다")
+    void 일부만_바뀌면_저장한다() {
+        router.willReturn(
+                new RawRoute("EDIT", "hero", "가을 대축제"),
+                new RawRoute("EDIT", "steps", null));
+        retry.willReturn(ok(NEW_HERO), ok(SAME_STEPS));
+
+        GenerationJob job = run("제목 바꾸고 참여방법도 다듬어줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertEquals(2, versionNo());
+        assertTrue(savedHtml().contains("가을 대축제"));
+    }
+
     // ── 고른 영역 (미리보기에서 클릭한 블록) ───────────────────────
 
     private GenerationJob runOn(String text, String... blocks) {
@@ -727,7 +796,21 @@ class EditServiceTest {
 
     private static final String WRAPPED = "<div class=\"ev-container event-page\">" + BASE + "</div>";
 
+    /**
+     * 팔레트 <b>와 내용이 같이</b> 바뀐 응답.
+     *
+     * ★ 예전에는 BASE 의 hero 와 글자가 같고 class 만 달랐다. 그런데 선택 영역 수정은
+     *   팔레트를 떼어 내므로(withoutPalette), 떼고 나면 전후가 <b>완전히 동일</b>해진다.
+     *   "바뀐 게 없으면 저장하지 않는다" 가 그걸 조용한 실패로 보고 막는 게 맞다.
+     *   이 테스트가 보려는 것은 "팔레트가 페이지 전체로 새지 않는다" 이므로
+     *   내용은 달라도 된다. 오히려 달라야 <b>"내용은 되고 색만 막혔다"</b> 까지 보인다.
+     */
     private static final String HERO_WITH_PALETTE =
+            "<section data-block=\"hero\" class=\"palette-summer\"><h1>시원한 여름 대방출</h1>"
+            + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>";
+
+    /** 팔레트 <b>만</b> 붙고 내용은 그대로. 떼고 나면 아무것도 안 바뀐 상태가 된다 */
+    private static final String HERO_PALETTE_ONLY =
             "<section data-block=\"hero\" class=\"palette-summer\"><h1>여름 데이터 대방출</h1>"
             + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>";
 
@@ -761,6 +844,35 @@ class EditServiceTest {
 
         assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
         assertTrue(root(savedHtml()).hasClass("palette-summer"), "팔레트가 루트로 옮겨져야 합니다: " + savedHtml());
+    }
+
+    /**
+     * ★ 영역을 고른 채 색을 바꿔 달라는 요청은 <b>구조적으로 안 된다.</b>
+     *   색은 페이지 전체 값(팔레트)이라, 고른 영역만 바꿀 방법이 없어서 떼어 낸다.
+     *   그 결과 화면이 그대로인데, 관리자는 왜 안 됐는지 알 길이 없다.
+     *
+     *   예전 안내 문구는 hero 가 아닐 때만 색 얘기를 했다 —
+     *   정작 hero 를 골라 색을 요청한 경우에 그 설명이 빠졌다.
+     *
+     * ★ "안 된다" 만으로는 모자란다. <b>무엇은 되는지</b>를 같이 줘야 다음 요청이 맞는다.
+     */
+    @Test
+    @DisplayName("★ 영역을 고른 채 색을 바꿔 달라면 — 왜 안 되는지와 무엇이 되는지 알려준다")
+    void 고른_영역의_색_요청은_이유를_알려준다() {
+        setUpWith(WRAPPED);
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(HERO_PALETTE_ONLY));
+
+        GenerationJob job = runOn("파란색으로 바꿔줘", "hero");
+
+        assertEquals(GenerationJob.Phase.FAILED, job.phase(), "안 바뀌었는데 저장했다");
+        assertEquals(1, versionNo());
+        assertTrue(job.message().contains("색은 페이지 전체"),
+                "hero 를 골랐을 때도 색 얘기를 해줘야 한다: " + job.message());
+        assertTrue(job.message().contains("영역 선택을 해제"),
+                "어떻게 하면 되는지 알려줘야 한다: " + job.message());
+        assertTrue(job.message().contains("밝기나 분위기"),
+                "이 영역에서 되는 것도 알려줘야 한다: " + job.message());
     }
 
     /** 기준 문서를 바꿔 다시 세운다 */

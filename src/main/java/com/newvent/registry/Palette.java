@@ -40,7 +40,9 @@ public enum Palette {
     ESPORTS("palette-esports", "게임 · e스포츠 — 검정, 네온 초록"),
     LAVENDER("palette-lavender", "라벤더 — 연보라, 차분한"),
     COFFEE("palette-coffee", "카페 · 따뜻한 — 갈색, 크림"),
-    BRAND("palette-brand", "브랜드 — NewVent 마젠타 (특별한 분위기 요청이 없을 때)");
+    // ★ 설명에서 회사명을 뺐다. 이 문장이 그대로 프롬프트에 실리는데,
+    //   PR 리뷰의 "회사명 NewVent 를 문구에 넣는다 (요청에 없음)" 이 여기서 샜을 가능성이 높다.
+    BRAND("palette-brand", "브랜드 기본 — 마젠타 (특별한 분위기 요청이 없을 때)");
 
     public static final String PREFIX = "palette-";
 

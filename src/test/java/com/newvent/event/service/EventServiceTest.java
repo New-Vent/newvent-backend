@@ -213,6 +213,17 @@ class EventServiceTest {
     }
 
     @Test
+    @DisplayName("게시 중인데 날짜가 비어 있어도 상세 조회가 실패하지 않는다")
+    void 날짜가_빈_게시중_이벤트도_조회된다() {
+        Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
+        when(eventRepository.findAdminEventById(7L)).thenReturn(Optional.of(event));
+
+        EventDetailResponse detail = eventService.findAdminEvent(7L);
+
+        assertThat(detail.closingSoon()).isFalse();
+    }
+
+    @Test
     @DisplayName("종료 3일 전이 아니면 마감임박이 아니다")
     void 마감임박이_아닌_게시중_이벤트() {
         Event event = newEvent(1L, EventStatus.PUBLISHED,

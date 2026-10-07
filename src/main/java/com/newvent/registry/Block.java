@@ -24,6 +24,11 @@ import java.util.stream.Collectors;
  *   must 를 "ul li" 로만 두면 템플릿 블록이 전부 empty_benefits 로 떨어진다.
  *   그렇다고 shape 에 "둘 중 아무거나" 라고 쓰면 모델이 헷갈린다 —
  *   **시키는 말은 하나, 받아주는 모양은 여럿**이 맞다.
+ *
+ * ★ must 에는 **세고 싶은 항목**만 넣는다 (li · tr · dt · .benefit-card).
+ *   항목 안의 <strong> 같은 자식을 넣으면 BlockValidator 가 그 자식을 센다 —
+ *   개수 검사 · 항목 추가 검사 · duplicateCard 가 모두 틀어진다.
+ *   <strong> 을 쓰라는 요구는 shape 에 적는다. assertConsistent 가 이걸 지킨다.
  */
 public enum Block {
 
@@ -41,12 +46,14 @@ public enum Block {
     //   전부 시키면 페이지마다 출력이 두 배가 되고, 없는 내용을 지어낸다.
     HERO("hero", true, true, Source.MIXED,
             "이벤트 제목과 한 줄 소개. 기간은 서버가 넣는다",
-            "제목은 <h1>, 소개는 <p> 로 감싼다",
+            "제목은 <h1>, 소개는 <p> 로 감싼다. 제목 위에 짧은 꼬리말을 둘 수 있다 — "
+            + "<span class=\"badge\"> 안에 10글자 이하로 쓴다 (예: 선착순, 신규 가입자 전용)",
             "h1", null, 0, null),
 
     HIGHLIGHT("highlight", false, false, Source.LLM,
             "핵심 혜택을 한 줄로 강조하는 띠 배너 — 요청문에 있는 혜택으로만 쓴다",
-            "<p> 하나에 강조 문구를 한두 문장으로 쓴다",
+            "<p> 에 강조 문구를 한 문장으로 쓴다. 덧붙일 조건이 있으면 "
+            + "<p> 를 하나 더 써서 짧게 적는다 — 둘째 줄은 화면이 작고 흐리게 그린다",
             "p", null, 0, null),
 
     INTRO("intro", false, false, Source.LLM,
@@ -57,14 +64,23 @@ public enum Block {
     // ★ 숫자만 모은 블록이라 지어내기 위험이 제일 크다. 열쇠말이 있을 때만 열고,
     //   desc 로 "요청문 숫자만" 을 박는다. 수정에서는 ValueCheck 가 새 숫자를 잡는다.
     STATS("stats", false, false, Source.LLM,
-            "숫자로 보는 혜택 — 요청문에 있는 숫자만 크게 보여준다. 숫자를 지어내지 마라",
-            "<h2> 소제목과 <ul> 안에 <li><strong>숫자</strong> 설명</li> 을 2~4개",
+            "숫자로 보는 혜택 — 요청문에 **숫자로 적혀 있는 값만** 쓴다. "
+            + "세어서 만든 수는 숫자가 아니다 — 차수가 둘이라고 '2회', 혜택이 셋이라고 '3종' 이라고 쓰지 마라. "
+            + "그렇게 쓸 숫자가 2개 미만이면 이 영역을 만들지 마라",
+            "<h2> 소제목과 <ul> 안에 <li> 2개 이상. 각 <li> 는 "
+            + "<strong>14,820명</strong> 처럼 숫자를 <strong> 로 먼저 쓰고 "
+            + "그 뒤에 무엇의 숫자인지 짧게 붙인다",
+            // ★ "ul li strong" 이 아니다 — <li> 하나에 <strong> 이 2개면 항목 1개로 2개를 통과한다
             "ul li", "ul", 2,
-            "숫자로|한눈에|수치로"),
+            "(?i)(숫자로|한눈에|수치로|누적|돌파|달성률|참여자 ?수|명이 참여|지금까지 [0-9])"),
 
     BENEFITS("benefits", true, true, Source.MIXED,
             "혜택 — 항목은 폼 값, 문장만 다듬는다",
-            "<ul> 안에 <li> 로 항목을 나열한다. 2개 이상",
+            "<h2> 소제목과 <ul>. <ul> 안에 <li> 로 2개 이상 나열한다. <li> 와 <ul> 에는 class 를 붙이지 않는다. "
+            + "<li> 안은 이모지 하나를 담은 <div class=\"benefit-icon\">, "
+            + "혜택 이름 <div class=\"benefit-name\">, 설명 한 문장 <div class=\"benefit-desc\">, "
+            + "받는 값 <div class=\"benefit-value\"> 순서로 쓴다. "
+            + "짧은 꼬리말이 필요하면 <li> 맨 앞에 <span class=\"benefit-tag\">",
             // 백지: ul li · 템플릿: .benefit-card (계약 EVENT_STRUCTURE_CONTRACT §3)
             "ul li, .benefit-card", "ul, .benefits-list", 2, null),
 
@@ -73,16 +89,22 @@ public enum Block {
     //   "응모" 는 열쇠말로 쓰지 않는다 — "응모를 완료합니다" 처럼 거의 모든 이벤트 문장에 나온다.
     PRIZE("prize", false, false, Source.MIXED,
             "경품 — 등수와 경품은 요청문에 있는 것만 쓴다. 경품을 지어내지 마라",
-            "<h2> 소제목과 <ul> 안에 <li> 로 등수 · 경품을 나열한다",
+            "<h2> 소제목과 <ul> 안에 <li> 로 경품을 나열한다. "
+            + "요청문에 등수가 있으면 <strong>1등</strong> 처럼 등수를 <strong> 로 먼저 쓰고 "
+            + "그 뒤에 경품 이름을 붙인다. 등수가 없으면 경품 이름만 쓴다. "
+            + "가장 큰 경품을 맨 앞에 쓴다. "
+            + "선물·트로피 이모지를 쓰지 마라 — 화면이 자동으로 붙인다",
             "ul li", "ul", 1,
-            "경품|추첨|[0-9]등|등수"),
+            "(?i)(경품|추첨|상품권|기프티콘|등수|[1-9]등(?!급))"),
 
     // ★ 쿠폰 코드는 쓰지 않는다 — 코드는 서버가 발급해야 하는 값이다(슬롯이 아직 없다).
     COUPON("coupon", false, false, Source.LLM,
             "쿠폰 안내 — 쿠폰 이름 · 할인 · 사용 조건은 요청문에 있는 것만. 쿠폰 코드는 쓰지 마라",
-            "<h2> 소제목, <p> 로 쿠폰 이름과 할인, <ul> 안에 <li> 로 사용 조건",
+            "<h2> 에 짧은 영문 머리말(예: WELCOME COUPON), "
+            + "<p> 에 쿠폰 내용을 한 줄로(예: 전 상품 30% 할인), "
+            + "<ul> 안에 <li> 로 사용 조건을 쓴다",
             "p", null, 0,
-            "쿠폰"),
+            "(?i)(쿠폰|할인권|바우처|적립금)"),
 
     // ★ 표는 수치가 몰리는 자리다. "지어내지 마라" 를 역할 설명에 박아 둔다 —
     //   생성 프롬프트와 수정 프롬프트 둘 다 desc 를 읽는다. 수정에서는 ValueCheck 가 한 겹 더 막는다.
@@ -108,7 +130,10 @@ public enum Block {
 
     STEPS("steps", false, true, Source.LLM,
             "참여 방법 2~4단계",
-            "<ol> 안에 <li> 로 순서대로 나열한다",
+            "<h2> 소제목과 <ol>. <ol> 안에 <li> 로 순서대로 나열한다. <li> 와 <ol> 에는 class 를 붙이지 않는다. "
+            + "<li> 안은 두세 단어짜리 제목 <div class=\"step-title\"> 와 "
+            + "설명 한 문장 <div class=\"step-desc\"> 두 개만 쓴다. "
+            + "단계 번호는 적지 마라 — 화면이 자동으로 붙인다",
             "ol li, .step-card", "ol, .steps-list", 2, null),
 
     // ★ 날짜를 다루는 블록이다. 이벤트 기간은 서버가 슬롯으로 채우지만, 발표일 · 지급일은
@@ -116,9 +141,10 @@ public enum Block {
     //   "발표" 단독은 쓰지 않는다 — "당첨자 발표" 는 일정이 아니라 문장 속 말인 경우가 많다.
     SCHEDULE("schedule", false, false, Source.LLM,
             "일정 — 응모 · 발표 · 지급 날짜는 요청문에 있는 것만 쓴다. 날짜를 지어내지 마라",
-            "<h2> 소제목과 <ol> 안에 <li><strong>단계</strong> 날짜</li> 를 순서대로",
+            "<h2> 소제목과 <ol> 안에 <li> 2개 이상. 각 <li> 는 "
+            + "<strong>1차 · 10월 1일</strong> 처럼 때를 <strong> 로 먼저 쓰고 설명을 붙인다",
             "ol li", "ol", 2,
-            "일정|발표일|지급일|마감일|발표 날짜|지급 날짜"),
+            "(?i)(일정|발표일|지급일|마감일|발표 날짜|지급 날짜|차수|[1-9]차 |오픈일|타임라인|사전 ?예약)"),
 
     // ★ 모양이 두 벌이다 — 목록형 <dl> 과 펼침형 <details>.
     //   펼침(아코디언)은 class 만으로 못 만든다. 닫힌 <details> 의 내용은 CSS 로 꺼낼 수 없어서
@@ -186,6 +212,7 @@ public enum Block {
     public Source source()   { return source; }
     public String desc()     { return desc; }
     public String shape()    { return shape; }
+    /** 항목을 세는 기준이자 "비었나" 를 보는 선택자. <b>항목의 자식을 넣으면 안 된다</b> */
     public String must()     { return must; }
     public int minItems()    { return minItems; }
 
@@ -313,6 +340,10 @@ public enum Block {
         return null;
     }
 
+    /** must 에 넣으면 안 되는 것 — 항목의 자식이다. assertConsistent 가 쓴다 */
+    private static final Pattern CHILD_IN_MUST =
+            Pattern.compile("(?<![\\w-])(strong|em|b|i|span|small)(?![\\w-])");
+
     /**
      * shape 를 시킨 블록은 must 도 있어야 한다.
      * 애플리케이션 시작 시 한 번 부른다. 어긋나면 그 자리에서 죽는 게 낫다.
@@ -341,6 +372,17 @@ public enum Block {
                 throw new IllegalStateException(
                         b.key + ": minItems 와 container 는 짝이어야 합니다 "
                         + "(minItems=" + b.minItems + ", container=" + hasContainer + ")");
+            }
+            // ★ must 에 항목의 자식(<strong> 등)을 넣으면 안 된다.
+            //   BlockValidator 가 must 로 개수를 세고(checkShape · checkItemCount),
+            //   duplicateCard 는 must 로 찾은 것을 복제한다. <strong> 을 넣으면
+            //   <li> 하나에 <strong> 2개가 항목 2개로 통과하고, 항목 추가가
+            //   "<li> 복제" 대신 "<li> 안에 빈 <strong> 덧붙이기" 가 된다.
+            //   <strong> 을 쓰라는 요구는 shape 에 적는다 — 그건 모델에게 시키는 말이다.
+            if (b.minItems > 0 && CHILD_IN_MUST.matcher(b.must).find()) {
+                throw new IllegalStateException(
+                        b.key + ": must 에 \"" + b.must + "\" — 항목의 자식은 세는 기준이 될 수 없습니다. "
+                        + "세고 싶은 항목(li · tr · dt)만 넣고, 자식 요구는 shape 로 시키세요.");
             }
         }
     }
