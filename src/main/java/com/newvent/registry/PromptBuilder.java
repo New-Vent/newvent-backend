@@ -304,6 +304,24 @@ public final class PromptBuilder {
      *                       고르지 않은 영역의 색까지 바뀐다. 선택 영역 수정이 선택 밖을 건드리면 안 된다
      */
     public static String edit(Block b, boolean templateBlock, boolean allowPalette) {
+        return edit(b, templateBlock, allowPalette, false);
+    }
+
+    /**
+     * @param looksRequest 라우터가 이 연산을 STYLE(겉모양)로 분류했나.
+     *
+     * ★★ 왜 생겼나 — 라우터가 고른 op 이 **모델에게 안 가고 있었다.**
+     *   EditService 는 step.op() 을 DELETE 지름길과 로그 한 줄에만 쓰고,
+     *   프롬프트는 EDIT 이든 STYLE 이든 **글자 하나 다르지 않았다.**
+     *   그 결과 "제목을 더 화려하게" 에 모델이 이모지와 <strong> 만 붙이고
+     *   레이아웃은 오히려 v-hero-split → 기본 가운데 정렬로 밋밋해졌다(실제 화면).
+     *
+     *   아래 '모양 고르기' 가 "모양을 바꿔 달라는 요청일 때만" 이라는 **모델이 스스로
+     *   판단해야 하는 조건문** 뒤에 있는 게 원인이다. 작은 모델은 그 판단에서 늘 지고,
+     *   더 쉬운 길(문구 고치기)로 샌다. 라우터는 이미 STYLE 로 answer 를 갖고 있으니
+     *   그 답을 넘겨 조건문을 **단정문**으로 바꾼다.
+     */
+    public static String edit(Block b, boolean templateBlock, boolean allowPalette, boolean looksRequest) {
         if (b.source() == Block.Source.SERVER) {
             throw new IllegalArgumentException(
                     b.key() + " 는 서버 소유입니다. 모델에게 수정시키면 안 됩니다.");
@@ -312,13 +330,27 @@ public final class PromptBuilder {
         //   "모양 고르기" 를 언급만 하고 목록이 없으면 모델이 목록 밖 이름을 지어낸다.
         List<Variant> variants = templateBlock ? List.of() : Variant.of(b);
         boolean palette = b == Block.HERO && allowPalette;
-        boolean looks = !variants.isEmpty() || palette;
+        // ★★ 테마(basic · bloom · aurora)는 수정 프롬프트에 **한 번도 안 나왔다.**
+        //   "더 화려하게" 의 가장 큰 지렛대가 통째로 없었던 셈이다 — 변형은 영역 하나의
+        //   배치만 바꾸지만 테마는 페이지 전체의 꼴을 바꾼다.
+        // ★ 배관은 이미 다 깔려 있다. 모델이 hero 의 class 에 붙이면
+        //   BlockValidator.cleanLooks 가 hero 의 것 하나만 남기고(isRoot 가드),
+        //   저장 직전 PageShell.settle → hoist 가 루트로 옮긴다. 팔레트와 똑같은 길이다.
+        // ★ 템플릿에는 안내하지 않는다. 템플릿 페이지의 루트에는 theme-sports 처럼
+        //   **다른 벌**이 붙어 있어서, blankThemes 를 고르면 hoist 가 그걸 갈아끼워
+        //   템플릿 디자인이 통째로 깨진다.
+        boolean themes = palette && !templateBlock;
+        boolean looks = !variants.isEmpty() || palette || themes;
 
         StringJoiner s = new StringJoiner("\n");
         s.add("너는 이벤트 페이지의 영역 하나를 수정하는 도우미다.");
         s.add("");
         s.add("<section data-block=\"" + b.key() + "\"> 영역만 수정해서 그 영역만 출력한다.");
         s.add("이 영역의 역할: " + b.desc());
+        // ★ 같은 말을 앞과 뒤에 두 번 둔다. 작은 모델은 가운데를 흘린다
+        if (looksRequest && looks) {
+            s.add("이번 요청은 **겉모습**을 바꾸는 요청이다. 아래 '모양 고르기' 를 반드시 쓴다.");
+        }
         // ★ shape 는 백지 생성에서 시킨다. 수정에서는 주지 않는다.
         //   템플릿 benefits 는 .benefit-card div 인데 "<ul> 안에 <li>" 를 주면
         //   모델이 구조를 갈아엎어서 디자인이 망가진다.
@@ -366,7 +398,17 @@ public final class PromptBuilder {
 
         if (looks) {
             s.add("");
-            s.add("모양 고르기: (모양·색·분위기를 바꿔 달라는 요청일 때만. 문구는 그대로 둔다)");
+            if (looksRequest) {
+                // ★★ 단정문이다. "…일 때만" 을 쓰면 모델이 해당 여부를 스스로 판단하다가
+                //   더 쉬운 길(문구 고치기)로 샌다 — 그게 이 버그였다.
+                s.add("모양 고르기: **이번 요청이 이것이다. 반드시 하나를 골라 바꾼다.**");
+                s.add("- class 를 안 바꾸면 화면은 하나도 안 바뀐다. 문구만 고치고 끝내지 마라.");
+                s.add("- 지금 <section> 에 붙어 있는 이름과 **다른** 이름을 고른다.");
+                s.add("- 문장의 뜻과 숫자는 그대로 둔다. 바꾸는 것은 겉모습이다.");
+                s.add("- 위 '문구 꾸밈' 의 이름도 같이 더 붙여 강약을 준다.");
+            } else {
+                s.add("모양 고르기: (모양·색·분위기를 바꿔 달라는 요청일 때만. 문구는 그대로 둔다)");
+            }
             s.add("- <section> 의 class 에 아래 이름을 붙이거나 다른 이름으로 바꾼다. 목록에 없는 이름은 쓰지 마라.");
             addVariantLines(s, variants);
             // ★ 색을 콕 집어 말하면 그 색 이름의 배경을 고르라고 못 박는다.
@@ -374,8 +416,43 @@ public final class PromptBuilder {
             if (variants.stream().anyMatch(Variant::namedColor)) {
                 s.add("- 특정 색(파란색 · 초록색 …)으로 바꿔 달라면 배경에서 그 색 이름이 적힌 것을 고른다.");
             }
+            // ★★ 영역을 골라 고치면 팔레트가 빠진다(allowPalette=false). hero 는 배경 변형
+            //   대상도 아니라 v-surface-보라 같은 것도 없다. 그런데 '문구 꾸밈' 에는
+            //   t-badge-purple 처럼 **색 이름이 적힌** 항목이 있다.
+            //   그래서 "보라색으로" 요청에 프롬프트 전체에서 '보라' 가 적힌 유일한 것
+            //   (t-badge-purple)이 걸렸고, 모델이 VIP · 고객님 같은 단어에 보라 알약을
+            //   붙였다 — 페이지 색은 그대로인데 "v6 로 반영했어요" 가 나갔다(실제 화면).
+            //   모델이 틀린 게 아니라 **고를 게 그것뿐이었다.** 길을 막아 준다.
+            //
+            // ★ 둘째 줄이 중요하다. 아무것도 안 바꾸면 EditService 의 "조용한 실패" 검사가
+            //   걸려 cannotDo() 가 "영역 선택을 해제하고 '전체 색감을 보라색으로' 라고
+            //   말씀해 주세요" 를 관리자에게 보낸다. 틀린 성공보다 정직한 실패가 낫다.
+            if (!palette) {
+                s.add("- 이 영역에서는 페이지 색을 바꿀 수 없다. 색을 바꿔 달라는 요청이 와도 "
+                        + "문구 꾸밈(t-badge-* · t-accent)으로 대신하지 마라. "
+                        + "그건 단어 하나를 강조하는 자리지 색을 바꾸는 자리가 아니다.");
+                s.add("- 색만 바꿔 달라는 요청이고 바꿀 배치가 마땅치 않으면 아무것도 바꾸지 마라. "
+                        + "서버가 관리자에게 색 바꾸는 방법을 따로 안내한다.");
+            }
+            // ★ 생성(addLooks)과 같은 순서다 — 구조(테마)를 먼저 정하고 색(팔레트)을 얹는다
+            if (themes) {
+                s.add("- 페이지 전체 분위기: 아래 중 하나를 <section> 의 class 에 붙인다 (하나만). 페이지 전체에 적용된다.");
+                for (Theme t : Theme.blankThemes()) {
+                    s.add("    " + t.cssClass() + " : " + t.desc());
+                }
+            }
             if (palette) {
                 s.add("- 페이지 전체 색감: 아래 중 하나 (하나만). 페이지 전체에 적용된다.");
+                // ★★ 이 줄이 없어서 "전체 색감을 보라색으로" 가 통째로 실패했다(실제 화면).
+                //   팔레트 **이름**은 전부 분위기다 — spring · summer · autumn · lavender.
+                //   색 이름이 붙은 팔레트는 하나도 없다. 그래서 "보라색" 요청에 모델이
+                //   palette-purple 을 찾다가 못 찾고 **아무것도 안 골랐다.**
+                //   정작 설명에는 보라가 셋이나 있다 — sunset(코랄, 보라) · pastel(연보라, 민트) ·
+                //   lavender(연보라, 차분한). 이름이 아니라 **설명**을 보라고 말해 주면 된다.
+                // ★ 기존 "배경에서 그 색 이름이…" 줄과 다르다. 그건 v-surface-* 용이고
+                //   hero 는 배경 변형 대상이 아니라 아예 안 나간다.
+                s.add("  ★ 이름은 분위기(봄 · 여름 · 라벤더)이고, 색은 **설명**에 적혀 있다. "
+                        + "특정 색(보라색 · 파란색 …)으로 바꿔 달라면 그 색 이름이 **설명에 적힌** 것을 고른다.");
                 for (Palette p : Palette.all()) {
                     s.add("    " + p.cssClass() + " : " + p.desc());
                 }
@@ -485,7 +562,9 @@ public final class PromptBuilder {
         s.add("- \"EDIT\"    특정 영역의 내용을 고친다");
         s.add("- \"ADD\"     없는 영역을 새로 넣는다");
         s.add("- \"DELETE\"  영역을 통째로 지운다");
-        s.add("- \"STYLE\"   색·크기·굵기 등 겉모양만 바꾼다");
+        // ★ "겉모양만" 이라고만 쓰면 모델이 색·굵기로 좁게 읽는다. "더 화려하게" 는
+        //   레이아웃·분위기 요청인데 EDIT 으로 떨어져 문구만 고쳐졌다(실제 화면).
+        s.add("- \"STYLE\"   겉모양을 바꾼다 — 색·크기·굵기, 그리고 더 화려하게·눈에 띄게·고급스럽게 같은 분위기 요청");
         s.add("");
         s.add("content 규칙:");
         s.add("- 사용자가 **직접 쓴 문구**가 있으면 그 문구만 그대로 넣는다.");
@@ -512,6 +591,15 @@ public final class PromptBuilder {
         s.add("\"제목 바꾸고 참여방법도 더 친절하게 다듬어줘\"");
         s.add("{\"ops\":[{\"op\":\"EDIT\",\"target\":\"hero\",\"content\":null},"
                 + "{\"op\":\"EDIT\",\"target\":\"steps\",\"content\":null}]}");
+        s.add("");
+        // ★★ 바로 위 예시와 **짝**이다. 문장 꼴이 거의 같고(…도 더 ~하게) op 만 갈린다 —
+        //   "친절하게 다듬어줘" 는 문구라 EDIT, "화려하게" 는 겉모양이라 STYLE.
+        //   이 짝이 없을 때 "제목·소개 참여 방법 더 화려하게" 가 위 예시를 그대로 베껴
+        //   EDIT 으로 떨어졌고, 모델은 이모지만 붙이고 끝냈다(실제 화면).
+        // ★ 맨 뒤에 둔다. 모델은 마지막 예시를 제일 무겁게 읽는다.
+        s.add("\"제목이랑 참여 방법을 더 화려하게 해줘\"");
+        s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null},"
+                + "{\"op\":\"STYLE\",\"target\":\"steps\",\"content\":null}]}");
         s.add("");
         s.add("JSON 외에는 아무것도 출력하지 마라.");
         return s.toString();
