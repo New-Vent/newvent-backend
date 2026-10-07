@@ -49,6 +49,9 @@ public enum FailureCode {
     ID_LOST("id_lost", Category.PRESERVATION, Severity.HARD, Action.RETRY),
     ID_INVENTED("id_invented", Category.PRESERVATION, Severity.HARD, Action.RETRY),
     CLASS_CHANGED("class_changed", Category.PRESERVATION, Severity.HARD, Action.RETRY),
+    BEHAVIOR_LOST("behavior_lost", Category.PRESERVATION, Severity.HARD, Action.RETRY),
+    BEHAVIOR_INVENTED("behavior_invented", Category.PRESERVATION, Severity.HARD, Action.RETRY),
+    BUTTON_INVENTED("button_invented", Category.PRESERVATION, Severity.HARD, Action.RETRY),
 
     // ── 날조 — 주어지지 않은 것을 만들었다 ──────────────────────────
     PLACEHOLDER("placeholder", Category.FABRICATION, Severity.HARD, Action.RETRY),
