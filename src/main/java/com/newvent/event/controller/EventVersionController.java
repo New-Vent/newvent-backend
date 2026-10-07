@@ -74,8 +74,7 @@ public class EventVersionController {
         @PathVariable Long eventId,
         Authentication authentication
     ) {
-        adminId(authentication);
-        return ApiResponse.success(eventVersionService.getVersions(eventId));
+        return ApiResponse.success(eventVersionService.getVersions(eventId, adminId(authentication)));
     }
 
     @PutMapping("/{versionId}/checkpoint")
@@ -84,8 +83,7 @@ public class EventVersionController {
             @PathVariable Long versionId,
             Authentication authentication
     ) {
-        adminId(authentication);
-        eventVersionService.markCheckpoint(eventId, versionId);
+        eventVersionService.markCheckpoint(eventId, versionId, adminId(authentication));
         return ApiResponse.successNoData();
     }
 
@@ -95,8 +93,7 @@ public class EventVersionController {
             @PathVariable Long versionId,
             Authentication authentication
     ) {
-        adminId(authentication);
-        eventVersionService.unmarkCheckpoint(eventId, versionId);
+        eventVersionService.unmarkCheckpoint(eventId, versionId, adminId(authentication));
         return ApiResponse.successNoData();
     }
 
@@ -106,7 +103,6 @@ public class EventVersionController {
             @PathVariable Long versionId,
             Authentication authentication
     ) {
-        adminId(authentication);
-        return ApiResponse.success(eventVersionService.getVersion(eventId, versionId));
+        return ApiResponse.success(eventVersionService.getVersion(eventId, versionId, adminId(authentication)));
     }
 }
