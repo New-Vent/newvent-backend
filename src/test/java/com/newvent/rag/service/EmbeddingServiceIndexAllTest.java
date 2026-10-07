@@ -1,0 +1,100 @@
+package com.newvent.rag.service;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.util.List;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import com.newvent.event.domain.Event;
+import com.newvent.rag.dto.response.ReindexAllResponse;
+
+/** indexAllEvents 단위 테스트. DB 없이 돈다 — reindex()만 가짜로 갈아끼운다. */
+class EmbeddingServiceIndexAllTest {
+
+    static final class FakeIndexAll extends EmbeddingService {
+        private final java.util.Map<Long, Integer> results = new java.util.HashMap<>();
+        private final List<Long> exploding = new java.util.ArrayList<>();
+
+        FakeIndexAll(com.newvent.event.repository.EventRepository events) {
+            super(null, null, null, null, events, null);
+        }
+
+        void willReturn(Long eventId, int chunks) { results.put(eventId, chunks); }
+        void willExplode(Long eventId) { exploding.add(eventId); }
+
+        @Override
+        public int reindex(Long eventId, Long versionId) {
+            if (exploding.contains(eventId)) throw new RuntimeException("색인 터짐");
+            return results.getOrDefault(eventId, 0);
+        }
+    }
+
+    private static Event event(long id, String title) {
+        Event e = mock(Event.class);
+        when(e.getId()).thenReturn(id);
+        when(e.getTitle()).thenReturn(title);
+        return e;
+    }
+
+    private EmbeddingService indexing(com.newvent.event.repository.EventRepository events) {
+        return new FakeIndexAll(events);
+    }
+
+    @Test
+    @DisplayName("전체 성공하면 합계가 맞는다")
+    void allSucceed() {
+        com.newvent.event.repository.EventRepository events = mock(com.newvent.event.repository.EventRepository.class);
+        List<Event> targets = List.of(event(1L, "여름"), event(2L, "가을"));
+        when(events.findAllByDeletedAtIsNull()).thenReturn(targets);
+        FakeIndexAll service = (FakeIndexAll) indexing(events);
+        service.willReturn(1L, 10);
+        service.willReturn(2L, 5);
+
+        ReindexAllResponse out = service.indexAllEvents();
+
+        assertEquals(2, out.totalEvents());
+        assertEquals(2, out.succeeded());
+        assertTrue(out.failedEventIds().isEmpty());
+        assertEquals(15, out.totalChunks());
+    }
+
+    @Test
+    @DisplayName("하나가 터져도 멈추지 않고 다음으로 넘어간다")
+    void partialFailureContinues() {
+        com.newvent.event.repository.EventRepository events = mock(com.newvent.event.repository.EventRepository.class);
+        List<Event> targets = List.of(event(1L, "여름"), event(2L, "고장"), event(3L, "가을"));
+        when(events.findAllByDeletedAtIsNull()).thenReturn(targets);
+        FakeIndexAll service = (FakeIndexAll) indexing(events);
+        service.willReturn(1L, 10);
+        service.willExplode(2L);
+        service.willReturn(3L, 5);
+
+        ReindexAllResponse out = service.indexAllEvents();
+
+        assertEquals(3, out.totalEvents());
+        assertEquals(2, out.succeeded());
+        assertEquals(List.of(2L), out.failedEventIds());
+        assertEquals(15, out.totalChunks());
+    }
+
+    @Test
+    @DisplayName("SEED: 데이터는 건너뛴다")
+    void seedSkipped() {
+        com.newvent.event.repository.EventRepository events = mock(com.newvent.event.repository.EventRepository.class);
+        List<Event> targets = List.of(event(1L, "SEED: 데모"), event(2L, "실제"));
+        when(events.findAllByDeletedAtIsNull()).thenReturn(targets);
+        FakeIndexAll service = (FakeIndexAll) indexing(events);
+        service.willReturn(2L, 7);
+
+        ReindexAllResponse out = service.indexAllEvents();
+
+        assertEquals(1, out.totalEvents());
+        assertEquals(1, out.succeeded());
+        assertEquals(7, out.totalChunks());
+    }
+}

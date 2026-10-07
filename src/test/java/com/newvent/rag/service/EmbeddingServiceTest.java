@@ -16,7 +16,9 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 
 import com.newvent.event.exception.EventException;
+import com.newvent.event.repository.EventRepository;
 import com.newvent.event.repository.EventVersionRepository;
+import com.newvent.generation.repository.LlmCallLogRepository;
 import com.newvent.rag.dto.response.IndexStatusResponse;
 import com.newvent.rag.repository.RagChunkRepository;
 
@@ -32,11 +34,17 @@ class EmbeddingServiceTest {
     private RagChunkRepository chunks;
 
     @Autowired
+    private EventRepository events;
+
+    @Autowired
+    private LlmCallLogRepository logs;
+
+    @Autowired
     private TestEntityManager tem;
 
     private EmbeddingService indexing() {
         return new EmbeddingService(versions, chunks,
-                new RagChunkingService(), new MockEmbeddingClient());
+                new RagChunkingService(), new MockEmbeddingClient(), events, logs);
     }
 
     private static final String HTML = """
