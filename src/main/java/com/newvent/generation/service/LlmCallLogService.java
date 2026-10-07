@@ -167,4 +167,18 @@ public class LlmCallLogService {
                 .orElseThrow(() -> new LlmCallLogNotFoundException(id));
         return LlmCallLogDetailResponse.from(log);
     }
+
+    /**
+     * 기존 실패 로그의 RAG 정보 갱신.
+     * Aborted 예외 발생 시 Gateway가 실패 로그를 먼저 저장한 뒤,
+     * chunkIds를 전달해 RAG 사용 여부와 청크 ID를 갱신한다.
+     * 행이 없으면 스킵한다 (내부 배치 경로라 404 대신 무시).
+     */
+    @Transactional
+    public void updateRagInfo(UUID requestId, int attemptNo, String chunkIds) {
+        logs.findByRequestIdAndAttemptNo(requestId, attemptNo).ifPresent(log -> {
+            log.markRagUsed(chunkIds);
+            logs.save(log);
+        });
+    }
 }

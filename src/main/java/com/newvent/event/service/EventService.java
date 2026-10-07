@@ -138,7 +138,7 @@ public class EventService {
                 .collect(Collectors.toMap(row -> (Long) row[0], row -> (Integer) row[1]));
     }
 
-    // 게시 중인 이벤트는 휴지통으로 보낼 수 없다(먼저 게시를 종료해야 함).
+    // 게시 중인 이벤트는 휴지통으로 보낼 수 없다(먼저 게시를 내리거나 종료해야 함).
     // 생성 작업이 진행 중인 이벤트도 거부한다 — 안 그러면 휴지통으로 보낸 뒤에도 백그라운드 생성이 끝나면서 삭제된 이벤트에 새 버전이 저장될 수 있다.
     @Transactional
     public void delete(Long id) {
@@ -240,7 +240,7 @@ public class EventService {
         return EventDetailResponse.from(event, closingSoon(event));
     }
 
-    /** 상태 변경 API 는 종료(PUBLISHED → ENDED)만 한다. 게시는 게시 API 로 한다. */
+    // 상태 변경 API 는 종료(PUBLISHED → ENDED)만 한다. 게시는 게시 API 로 한다
     @Transactional
     public EventDetailResponse changeStatus(Long id, EventStatus target) {
         Event event = findActiveEvent(id);
@@ -251,6 +251,22 @@ public class EventService {
             throw new EventException(EventErrorCode.EVENT_NOT_ENDABLE);
         }
         event.end();
+        eventRepository.flush();
+        return EventDetailResponse.from(event, closingSoon(event));
+    }
+
+    // 게시 내리기(PUBLISHED → DRAFT) - 종료 전까지만 가능
+    // 종료 시각이 지났는데 자동 종료가 아직 안 돈 이벤트도 막기 - 내리면 DRAFT 가 되어 수정 잠금이 풀리고, 종료된 이벤트를 수정·재게시할 수 있게 되기 때문
+    @Transactional
+    public EventDetailResponse unpublish(Long id) {
+        Event event = findActiveEvent(id);
+        if (!event.published()) {
+            throw new EventException(EventErrorCode.EVENT_NOT_UNPUBLISHABLE);
+        }
+        if (event.editLocked(OffsetDateTime.now(clock))) {
+            throw new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
+        }
+        event.unpublish();
         eventRepository.flush();
         return EventDetailResponse.from(event, closingSoon(event));
     }

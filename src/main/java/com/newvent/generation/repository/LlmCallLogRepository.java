@@ -2,11 +2,18 @@ package com.newvent.generation.repository;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import jakarta.persistence.criteria.Predicate;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -16,7 +23,7 @@ import com.newvent.generation.domain.LlmCallLog;
  *  - countToday() -> 아래 범위 카운트 (일일 상한 체크용, 매 호출 실행이라 인덱스 필수)
  *  - weeklyUsage() -> 아래 주간 합계 (관리자 사용량 화면용)
  */
-public interface LlmCallLogRepository extends JpaRepository<LlmCallLog, Long>{
+public interface LlmCallLogRepository extends JpaRepository<LlmCallLog, Long>, JpaSpecificationExecutor<LlmCallLog> {
 
 	// (start, end) 구간 행 수. KST 자정 ~ 자정 범위는 서비스가 계산해서 넘김
 	// 레포지토리는 타임존을 모름 ( 시간 정책은 서비스 + Clock 이 소유 )
@@ -45,18 +52,29 @@ public interface LlmCallLogRepository extends JpaRepository<LlmCallLog, Long>{
 		long getOutputTokens();
 	}
 
-	// 관리자 목록용. null 조건은 무시한다.
-	// JPQL이라 카운트 쿼리는 Spring Data 가 자동 생성한다.
-	@Query("""
-			select l from LlmCallLog l
-			 where (:eventId is null or l.event.id = :eventId)
-			   and (:callOk is null or l.callOk = :callOk)
-			   and (:from is null or l.createdAt >= :from)
-			   and (:to is null or l.createdAt <= :to)
-			""")
-	Page<LlmCallLog> search(@Param("eventId") Long eventId,
-			@Param("callOk") Boolean callOk,
-			@Param("from") Instant from,
-			@Param("to") Instant to,
-			Pageable pageable);
+	// Aborted 실패 시도 복구용. Gateway가 먼저 저장한 행을 (request_id, attempt_no) UK로 찾는다
+	Optional<LlmCallLog> findByRequestIdAndAttemptNo(UUID requestId, int attemptNo);
+
+	// 관리자 목록용. 값이 있는 필터만 조회 조건에 포함한다.
+	// 페이징·정렬·전체 건수 조회는 Spring Data JPA가 처리한다.
+	default Page<LlmCallLog> search(
+			Long eventId,
+			Boolean callOk,
+			Instant from,
+			Instant to,
+			Pageable pageable
+	) {
+		Specification<LlmCallLog> spec = (root, query, cb) -> {
+			List<Predicate> conditions = new ArrayList<>();
+
+			if (eventId != null) conditions.add(cb.equal(root.get("event").get("id"), eventId));
+			if (callOk != null) conditions.add(cb.equal(root.get("callOk"), callOk));
+			if (from != null) conditions.add(cb.greaterThanOrEqualTo(root.get("createdAt"), from));
+			if (to != null) conditions.add(cb.lessThanOrEqualTo(root.get("createdAt"), to));
+
+			return cb.and(conditions.toArray(new Predicate[0]));
+		};
+
+		return findAll(spec, pageable);
+	}
 }

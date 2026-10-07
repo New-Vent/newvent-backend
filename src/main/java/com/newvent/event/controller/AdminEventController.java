@@ -128,4 +128,10 @@ public class AdminEventController {
             @Valid @RequestBody EventPublishRequest request) {
         return ApiResponse.success(eventService.publish(id, request.versionId()));
     }
+
+    // 게시 내리기(PUBLISHED → DRAFT) 종료는 PATCH /{id}/status
+    @PostMapping("/{id}/unpublish")
+    public ApiResponse<EventDetailResponse> unpublish(@PathVariable Long id) {
+        return ApiResponse.success(eventService.unpublish(id));
+    }
 }

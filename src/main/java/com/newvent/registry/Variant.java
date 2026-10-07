@@ -177,7 +177,20 @@ public enum Variant {
     SURFACE_DOTS(null, Group.SURFACE, "v-surface-dots", "점무늬 배경"),
     SURFACE_STRIPES(null, Group.SURFACE, "v-surface-stripes", "사선 무늬 배경"),
     SURFACE_OUTLINE(null, Group.SURFACE, "v-surface-outline", "브랜드색 테두리만"),
-    SURFACE_SHADOW(null, Group.SURFACE, "v-surface-shadow", "떠 있는 그림자 카드");
+    SURFACE_SHADOW(null, Group.SURFACE, "v-surface-shadow", "떠 있는 그림자 카드"),
+
+    // ── 배경 — 색 지정. 수정에서 "이 영역을 ○○색으로" 를 들어줄 길이다 ──
+    // ★ 팔레트와 무관한 고정 색이다. 위 배경들은 브랜드색(팔레트)을 따라가서
+    //   영역 하나만 파랗게 할 방법이 없었다 — 모델이 어두운 배경 따위로 때웠다.
+    // ★ 생성에는 싣지 않는다(sampleSurfaces). 팔레트와 따로 노는 색이 무작위로 섞이면 페이지가 지저분해진다
+    SURFACE_BLUE(null, Group.SURFACE, "v-surface-blue", "파란색 배경 (연한 파랑)", true),
+    SURFACE_GREEN(null, Group.SURFACE, "v-surface-green", "초록색 배경 (연한 초록)", true),
+    SURFACE_YELLOW(null, Group.SURFACE, "v-surface-yellow", "노란색 배경 (연한 노랑)", true),
+    SURFACE_ORANGE(null, Group.SURFACE, "v-surface-orange", "주황색 배경 (연한 주황)", true),
+    SURFACE_RED(null, Group.SURFACE, "v-surface-red", "빨간색 배경 (연한 빨강)", true),
+    SURFACE_PURPLE(null, Group.SURFACE, "v-surface-purple", "보라색 배경 (연한 보라)", true),
+    SURFACE_PINK(null, Group.SURFACE, "v-surface-pink", "분홍색 배경 (연한 분홍)", true),
+    SURFACE_GRAY(null, Group.SURFACE, "v-surface-gray", "회색 배경 (연한 회색)", true);
 
     /** 같은 묶음에서는 하나만 쓴다 */
     public enum Group {
@@ -204,18 +217,26 @@ public enum Variant {
     private final Group group;
     private final String cssClass;
     private final String desc;
+    /** 색 이름이 붙은 변형 — 관리자가 그 색을 말했을 때만 쓴다. 생성 목록에서 뺀다 */
+    private final boolean namedColor;
 
     Variant(Block block, Group group, String cssClass, String desc) {
+        this(block, group, cssClass, desc, false);
+    }
+
+    Variant(Block block, Group group, String cssClass, String desc, boolean namedColor) {
         this.block = block;
         this.group = group;
         this.cssClass = cssClass;
         this.desc = desc;
+        this.namedColor = namedColor;
     }
 
     public Block block()     { return block; }
     public Group group()     { return group; }
     public String cssClass() { return cssClass; }
     public String desc()     { return desc; }
+    public boolean namedColor() { return namedColor; }
 
     /** 그 블록에 쓸 수 있는 변형 전부 — 전용 배치 먼저, 배경 나중 */
     public static List<Variant> of(Block b) {
@@ -239,9 +260,10 @@ public enum Variant {
         return rotate(layouts, b.key() + "|" + (seed == null ? "" : seed), max);
     }
 
-    /** 생성 프롬프트에 실을 배경 변형 — {@link #sample} 과 같은 방식 */
+    /** 생성 프롬프트에 실을 배경 변형 — {@link #sample} 과 같은 방식. 색 지정 배경은 뺀다 */
     public static List<Variant> sampleSurfaces(String seed, int max) {
-        List<Variant> surfaces = Arrays.stream(values()).filter(v -> v.group == Group.SURFACE).toList();
+        List<Variant> surfaces = Arrays.stream(values())
+                .filter(v -> v.group == Group.SURFACE && !v.namedColor).toList();
         return rotate(surfaces, "surface|" + (seed == null ? "" : seed), max);
     }
 
