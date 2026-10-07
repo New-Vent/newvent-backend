@@ -22,6 +22,35 @@ import com.newvent.registry.BlockValidator.Failure;
  */
 class ValueCheckTest {
 
+    @Test
+    void 태그와_공백으로_나뉜_새_수치도_차단한다() {
+        for (String value : List.of("3 만원", "<strong>3</strong>만원",
+                "3<span>만</span>원", "3&nbsp;만원", "20 GB", "20 %")) {
+            assertTrue(ValueCheck.diff("<p>10% 할인</p>", "<p>" + value + " 지급</p>",
+                    "문구를 다듬어줘").stream().anyMatch(Failure::isBlocking), value);
+        }
+    }
+
+    @Test
+    void 동일_금액의_엔티티와_강조_표기는_통과한다() {
+        for (String value : List.of("10,000&nbsp;원", "<strong>1</strong>만원", "1 만 원")) {
+            assertTrue(ValueCheck.diff("<p>1만원</p>", "<p>" + value + "</p>",
+                    "문구를 다듬어줘").isEmpty(), value);
+        }
+    }
+
+    @Test
+    void 요청문에_명시된_공백_수치는_허용한다() {
+        assertFalse(ValueCheck.diff("<p>10GB</p>", "<p><strong>20</strong>GB</p>",
+                "10GB를 20 GB로 바꿔줘").stream().anyMatch(Failure::isBlocking));
+    }
+
+    @Test
+    void 별도_문단의_숫자와_단위를_붙이지_않는다() {
+        assertFalse(ValueCheck.extract("<p>3</p><p>4만원</p>").contains("34만원"));
+        assertTrue(ValueCheck.extract("<p>3</p><p>4만원</p>").contains("4만원"));
+    }
+
     // ── 토큰 추출 기본 동작 ───────────────────────────────────────
 
     @Test

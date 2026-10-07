@@ -24,7 +24,9 @@ public enum EventErrorCode implements ErrorCode {
     // REQ-EVT-07. 종료(ENDED)는 되돌릴 수 없다. 게시 내리기(PUBLISHED → DRAFT)는 종료 전까지만 가능하다
     EVENT_NOT_ENDABLE(HttpStatus.CONFLICT, "EVENT409-6", "게시 중인 이벤트만 종료할 수 있습니다."),
     EVENT_NOT_UNPUBLISHABLE(HttpStatus.CONFLICT, "EVENT409-7", "게시 중인 이벤트만 게시를 내릴 수 있습니다."),
-    // EVENT409-8 은 열려 있는 PR(종료일이 지난 이벤트 게시 거부)이 쓴다. 번호가 겹치지 않게 9 로 둔다
+    // 종료일시가 지난 채로 게시하면 곧바로 자동 종료되어 수정·재게시가 막힌다. 시작일은 검사하지 않는다(진행 중 이벤트 게시·재게시)
+    EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN(HttpStatus.CONFLICT, "EVENT409-8",
+            "종료일시가 지난 이벤트는 게시할 수 없습니다. 이벤트 기간을 수정한 뒤 다시 게시해주세요."),
     // 영구 삭제하면 event_participations 가 ON DELETE CASCADE 로 함께 지워지므로, 참여 기록이 있으면 막는다
     PARTICIPATED_EVENT_PERMANENT_DELETE_FORBIDDEN(HttpStatus.CONFLICT, "EVENT409-9",
             "참여 기록이 있는 이벤트는 영구 삭제할 수 없습니다. 참여한 사용자의 참여·당첨 기록이 함께 사라지기 때문입니다."),
