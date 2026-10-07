@@ -9,9 +9,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-import com.newvent.participation.exception.ParticipationErrorCode;
-import com.newvent.participation.exception.ParticipationException;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,9 +17,12 @@ import com.newvent.event.domain.EventStatus;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.participation.domain.EventGameConfig;
 import com.newvent.participation.domain.EventParticipation;
+import com.newvent.participation.exception.ParticipationErrorCode;
+import com.newvent.participation.exception.ParticipationException;
 import com.newvent.participation.repository.EventGameConfigRepository;
 import com.newvent.participation.repository.EventParticipationRepository;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j

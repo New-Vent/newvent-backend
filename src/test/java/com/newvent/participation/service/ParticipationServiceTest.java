@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import com.newvent.event.repository.EventRepository;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +26,7 @@ import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.exception.EventNotAccessibleException;
+import com.newvent.event.repository.EventRepository;
 import com.newvent.event.service.PublicEventService;
 import com.newvent.participation.domain.EventGameConfig;
 import com.newvent.participation.domain.EventParticipation;

@@ -16,8 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import com.newvent.participation.exception.ParticipationErrorCode;
-import com.newvent.participation.exception.ParticipationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +28,8 @@ import com.newvent.event.repository.EventRepository;
 import com.newvent.participation.domain.EventGameConfig;
 import com.newvent.participation.domain.EventParticipation;
 import com.newvent.participation.domain.Game;
+import com.newvent.participation.exception.ParticipationErrorCode;
+import com.newvent.participation.exception.ParticipationException;
 import com.newvent.participation.repository.EventGameConfigRepository;
 import com.newvent.participation.repository.EventParticipationRepository;
 

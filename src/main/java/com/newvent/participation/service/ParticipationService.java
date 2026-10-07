@@ -3,7 +3,6 @@ package com.newvent.participation.service;
 import java.util.List;
 import java.util.Map;
 
-import com.newvent.event.repository.EventRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,6 +11,7 @@ import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
+import com.newvent.event.repository.EventRepository;
 import com.newvent.event.service.PublicEventService;
 import com.newvent.participation.domain.EventGameConfig;
 import com.newvent.participation.domain.EventParticipation;

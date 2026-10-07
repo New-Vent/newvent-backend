@@ -149,7 +149,9 @@ Authorization: Bearer {accessToken}
 }
 ```
 
-`PENDING`은 추후 결과 확정이 필요한 참여를 의미한다. 실제 결과 확정 기능은 별도 구현 범위다.
+`PENDING`은 추후 결과 확정이 필요한 참여를 의미한다.
+기본형 `DELAYED`는 발표 시각에 도달하면 자동 추첨 스케줄러가
+`WON` 또는 `LOST`로 확정한다. 스포츠 예측형의 결과 확정은 미구현이다.
 
 ### 단순 참여 완료
 
@@ -172,15 +174,15 @@ Authorization: Bearer {accessToken}
 
 아래 설정은 `event_game_configs.config`에 저장한다. 사용자 참여 요청 본문에 보내는 데이터가 아니다.
 
-| `games.code` 및 처리 방식     | 설정 예시                                                                |
-|-------------------------------|--------------------------------------------------------------------------|
-| `BASIC` — 참여 기록만 저장    | `{}`                                                                     |
-| `BASIC` — 결과 대기           | `{"resultMode":"DELAYED"}`                                               |
-| `BASIC` — 즉시 추첨           | `{"resultMode":"IMMEDIATE","winProbability":30,"prizeName":"커피 쿠폰"}` |
-| `BASIC` — 전원 지급 결과 기록 | `{"resultMode":"GUARANTEED","prizeName":"커피 쿠폰"}`                    |
-| `SPORTS_PREDICTION`           | `{"predictionOptions":["HOME_WIN","DRAW","AWAY_WIN"]}`                   |
-| `PRE_REGISTRATION`            | `{}`                                                                     |
-| `LUCKY_POUCH`                 | `{"pouchCount":3,"winProbability":30,"prizeName":"커피 쿠폰"}`           |
+| `games.code` 및 처리 방식     | 설정 예시                                                                                                        |
+|-------------------------------|------------------------------------------------------------------------------------------------------------------|
+| `BASIC` — 참여 기록만 저장    | `{}`                                                                                                             |
+| `BASIC` — 추후 추첨           | `{"resultMode":"DELAYED","winnerCount":10,"announcementAt":"2026-10-15T14:00:00+09:00","prizeName":"커피 쿠폰"}` |
+| `BASIC` — 즉시 추첨           | `{"resultMode":"IMMEDIATE","winProbability":30,"prizeName":"커피 쿠폰"}`                                         |
+| `BASIC` — 전원 지급 결과 기록 | `{"resultMode":"GUARANTEED","prizeName":"커피 쿠폰"}`                                                            |
+| `SPORTS_PREDICTION`           | `{"predictionOptions":["HOME_WIN","DRAW","AWAY_WIN"]}`                                                           |
+| `PRE_REGISTRATION`            | `{}`                                                                                                             |
+| `LUCKY_POUCH`                 | `{"pouchCount":3,"winProbability":30,"prizeName":"커피 쿠폰"}`                                                   |
 
 상세 설정 규칙은 [이벤트 참여 설정 규칙](event-participation-config.md)을 참고한다.
 
@@ -189,9 +191,12 @@ Authorization: Bearer {accessToken}
 - `predictionOptions`: 비어 있지 않은 문자열 배열
 - `pouchCount`: 1 이상의 정수
 - `winProbability`: 0~100 사이 정수. 단위는 `%`
-- `prizeName`: 즉시 추첨 또는 전원 지급 결과 기록에 필요한 경품명. 공백만 있는 값은 허용하지 않음
+- `winnerCount`: 추후 추첨의 당첨 인원. 1 이상의 정수
+- `announcementAt`: 추후 추첨의 발표 시각. 시간대 오프셋을 포함하며 이벤트 종료 시각 이후여야 함
+- `prizeName`: 즉시 추첨·추후 추첨·전원 지급 결과 기록에 필요한 경품명. 공백만 있는 값은 허용하지 않음
 - 기본형의 `resultMode`가 없으면 단순 참여 기록과 빈 결과 저장
 - 기본형의 `resultMode`가 `DELAYED`이면 `PENDING` 저장
+- `DELAYED`에서는 `winnerCount`, `announcementAt`, `prizeName`을 필수로 설정한다.
 - 기본형의 `resultMode`가 `IMMEDIATE`이면 즉시 추첨
 - 기본형의 `resultMode`가 `GUARANTEED`이면 난수 생성 없이 모든 참여자에게 `WON`과 경품명 저장
 - `GUARANTEED`에서는 `winProbability`가 필요하지 않음
@@ -204,6 +209,25 @@ Authorization: Bearer {accessToken}
 즉시 추첨은 서버에서 0~99 사이 난수를 생성하고, 난수가 `winProbability`보다 작으면 당첨으로 판정한다.
 
 복주머니 선택 번호에 따른 확률 차이는 없다.
+
+## 기본형 추후 추첨 자동 처리
+
+자동 추첨 스케줄러는 기본적으로 매분 실행한다.
+참여 마감이 지났고 발표 시각에 도달한 `BASIC`·`DELAYED` 이벤트의
+`PENDING` 참여자 중 `winnerCount`명만큼 중복 없이 무작위로 선정한다.
+
+- 당첨자는 `{"status":"WON","prizeName":"설정된 경품명"}`을 저장한다.
+- 나머지 참여자는 `{"status":"LOST"}`를 저장한다.
+- 참여자가 당첨 인원보다 적으면 전원 당첨 처리한다.
+- 삭제된 이벤트와 `PUBLISHED`·`ENDED` 이외의 상태는 제외한다.
+- 발표 시각에 서버가 중단되어 있어도 이후 실행에서 미처리 건을 처리한다.
+- 이벤트 잠금을 획득한 뒤 대기 참여자를 조회하고, 전체 결과를 한 트랜잭션에서 변경한다.
+- 결과 확정 후 `PENDING` 참여자가 없으면 재추첨하지 않는다.
+- 설정 오류 등으로 실패하면 해당 이벤트의 변경은 롤백하고 로그를 남긴다. 다른 이벤트는 계속 처리한다.
+- 실행 주기는 `event.draw.cron`으로 변경할 수 있다. 기본값은 `0 * * * * *`이다.
+- 결과는 기존 `GET /api/users/me/participations`에서 확인할 수 있다.
+
+스포츠 예측형의 `PENDING` 참여 기록은 자동 추첨 대상에서 제외한다.
 
 ## 데이터 저장
 
@@ -218,15 +242,17 @@ Authorization: Bearer {accessToken}
 
 ### 결과 데이터
 
-| 참여 방식 및 결과     | `result_data` 예시                         |
-|-----------------------|--------------------------------------------|
-| 기본형 — 설정 없음    | `{}`                                       |
-| 기본형 — `DELAYED`    | `{"status":"PENDING"}`                     |
-| 스포츠 예측형         | `{"status":"PENDING"}`                     |
-| 사전예약형            | `{}`                                       |
-| 즉시 추첨 — 당첨      | `{"status":"WON","prizeName":"커피 쿠폰"}` |
-| 즉시 추첨 — 미당첨    | `{"status":"LOST"}`                        |
-| 기본형 — `GUARANTEED` | `{"status":"WON","prizeName":"커피 쿠폰"}` |
+| 참여 방식 및 결과          | `result_data` 예시                         |
+|----------------------------|--------------------------------------------|
+| 기본형 — 설정 없음         | `{}`                                       |
+| 기본형 — `DELAYED` 참여 시 | `{"status":"PENDING"}`                     |
+| 기본형 — 추후 추첨 당첨    | `{"status":"WON","prizeName":"커피 쿠폰"}` |
+| 기본형 — 추후 추첨 미당첨  | `{"status":"LOST"}`                        |
+| 스포츠 예측형              | `{"status":"PENDING"}`                     |
+| 사전예약형                 | `{}`                                       |
+| 즉시 추첨 — 당첨           | `{"status":"WON","prizeName":"커피 쿠폰"}` |
+| 즉시 추첨 — 미당첨         | `{"status":"LOST"}`                        |
+| 기본형 — `GUARANTEED`      | `{"status":"WON","prizeName":"커피 쿠폰"}` |
 
 응답의 `resultData`는 저장한 참여 엔티티의 결과 데이터와 동일하다.
 
@@ -255,7 +281,7 @@ Authorization: Bearer {accessToken}
 - 기존에 저장된 참여 설정을 조회하며, 설정을 생성하거나 수정하지 않는다.
 - 즉시 추첨과 전원 지급 결과 기록을 지원한다.
 - 결과와 경품명을 저장·반환하며, 실제 쿠폰 발급이나 경품 재고 차감은 수행하지 않는다.
-- 기본형 `DELAYED`와 스포츠 예측형은 결과 대기 상태를 저장한다.
-- 결과 대기 상태를 당첨·미당첨으로 확정하는 기능은 별도 구현 범위다.
+- 기본형 `DELAYED`는 참여 시 결과 대기 상태를 저장하고, 발표 시각에 자동 추첨으로 당첨·미당첨을 확정한다.
+- 스포츠 예측형은 결과 대기 상태를 저장하며, 결과 확정 기능은 미구현이다.
 - 참여 목록 및 상세 조회는 별도 API에서 제공한다.
 - 복주머니도 현재는 이벤트당 1회 참여만 허용한다. 매일 참여는 지원하지 않는다.
