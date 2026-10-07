@@ -208,6 +208,10 @@ public class EventService {
         if (event.getStatus() == EventStatus.ENDED) {
             throw new EventException(EventErrorCode.EVENT_ENDED_PUBLISH_FORBIDDEN);
         }
+        // 종료일시가 지난 채로 게시하면 사용자에게 한 번도 보이지 않은 채 곧 자동 종료된다. 시작일은 보지 않는다
+        if (event.periodEnded(OffsetDateTime.now(clock))) {
+            throw new EventException(EventErrorCode.EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN);
+        }
         EventVersion version = eventVersionRepository.findByIdAndEventId(versionId, id)
                 .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
 
