@@ -2,16 +2,25 @@ package com.newvent.registry;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+
 /**
  * 서버가 behavior 를 심는 곳. **모델은 behavior 를 만들지 않는다** — {@link Behavior}.
  *
- *   plantGenerated   백지 생성 결과 — 저장 전에. 이벤트 값과 무관한 것만
+ *   decide           동작 배치기(LLM)가 고른 JSON 을 검증된 배치로 — 백지 생성이 저장 전에 부른다
+ *   plantGenerated   배치기를 못 쓸 때의 기본 배치 — 이벤트 값과 무관한 것만
  *                      hero    countdown 자리 · 혜택(또는 참여 방법)으로 가는 scroll-to 버튼
  *                      cta     participate
  *   bind             보여 줄 때 이벤트 값을 묶는다 — countdown 의 종료 시각
@@ -106,7 +115,7 @@ public final class BehaviorPlanter {
 
     // ── 백지 생성 ──────────────────────────────────────────────────
 
-    /** 백지 생성의 기본 배치 — 참여 · 카운트다운 · 혜택(없으면 참여 방법)으로 이동 */
+    /** 백지 생성의 기본 배치 — 배치기를 못 쓸 때. 참여 · 카운트다운 · 혜택(없으면 참여 방법)으로 이동 */
     public static List<Placement> defaults(Element scope) {
         List<Placement> out = new ArrayList<>();
         out.add(Placement.of(Behavior.PARTICIPATE, Block.CTA));
@@ -118,7 +127,7 @@ public final class BehaviorPlanter {
     }
 
     /**
-     * 백지 생성 결과에 기본 배치를 심는다.
+     * 백지 생성 결과에 기본 배치를 심는다 — 동작 배치기가 없거나 실패했을 때.
      *
      * ★ 생성 정화가 data-behavior · id 를 지운 **뒤에** 부른다. 순서가 반대면 서버가 심은 것도 지워진다
      */
@@ -128,11 +137,91 @@ public final class BehaviorPlanter {
         return apply(doc.body(), defaults(doc.body())) ? doc.body().html() : html;
     }
 
-    /** 배치 결과를 조각으로 — 생성 · 수정 경로 공통 */
+    /** 배치 결과를 조각으로 */
     public static String apply(String html, List<Placement> placements) {
         Document doc = Jsoup.parseBodyFragment(html == null ? "" : html);
         doc.outputSettings().prettyPrint(false);
         return apply(doc.body(), placements) ? doc.body().html() : html;
+    }
+
+    // ── 동작 배치기 (LLM 출력) ─────────────────────────────────────────
+
+    /** 한 번에 받는 배치 수. 넘치면 자르지 않고 실패다 */
+    static final int MAX_ACTIONS = 6;
+
+    private static final ObjectMapper JSON = JsonMapper.builder()
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .build();
+
+    /**
+     * 동작 배치기(LLM)의 출력을 심을 배치로 바꾼다 — 모델은 "무엇을 어디에" 만 고르고, HTML 은 서버가 만든다.
+     *
+     * <pre>{"actions":[{"behavior":"countdown","block":"hero","target":null},
+     *             {"behavior":"scroll-to","block":"hero","target":"benefits"}]}</pre>
+     *
+     * ★ 모델 출력을 믿지 않는다 — 버리는 것
+     *   목록 밖 동작(Behavior.PLANNABLE 만) · 같은 동작 두 번째 · 문서에 없는 영역 · 유의사항(서버 소유) ·
+     *   scroll-to 대상이 없거나 자기 자신
+     * ★ 참여 버튼은 모델이 빠뜨려도 cta 에 붙인다 — 참여 버튼 없는 이벤트 페이지는 없다
+     *
+     * @return 못 읽으면 빈 값 — 호출부는 기본 배치({@link #defaults})로 간다
+     */
+    public static Optional<List<Placement>> decide(String raw, Element scope) {
+        JsonNode actions = actionsOf(raw);
+        if (actions == null) return Optional.empty();
+
+        List<Placement> out = new ArrayList<>();
+        Set<Behavior> seen = EnumSet.noneOf(Behavior.class);
+        for (JsonNode n : actions) {
+            if (!n.isObject()) return Optional.empty();
+            Behavior b = Behavior.find(text(n, "behavior")).orElse(null);
+            if (b == null || !Behavior.PLANNABLE.contains(b) || !seen.add(b)) continue;   // 한 동작은 한 곳에만
+
+            Block block = present(scope, text(n, "block")).orElse(null);
+            if (block == null) continue;
+
+            Block target = null;
+            if (b == Behavior.SCROLL_TO) {
+                target = present(scope, text(n, "target")).orElse(null);
+                if (target == null || target == block) continue;
+            }
+            out.add(new Placement(b, block, target));
+        }
+        if (!seen.contains(Behavior.PARTICIPATE)) out.add(Placement.of(Behavior.PARTICIPATE, Block.CTA));
+        return Optional.of(List.copyOf(out));
+    }
+
+    /** {"actions":[…]} 또는 [ … ] 에서 배열을 꺼낸다. 앞뒤 군더더기 · 코드펜스는 버린다. 못 읽으면 null */
+    private static JsonNode actionsOf(String raw) {
+        if (raw == null) return null;
+        String t = raw.replace("```json", "").replace("```", "");
+        int brace = t.indexOf('{'), bracket = t.indexOf('[');
+        int s = brace < 0 ? bracket : bracket < 0 ? brace : Math.min(brace, bracket);
+        int e = Math.max(t.lastIndexOf('}'), t.lastIndexOf(']'));
+        if (s < 0 || e <= s) return null;
+        JsonNode root;
+        try {
+            root = JSON.readTree(t.substring(s, e + 1));
+        } catch (Exception ex) {
+            return null;
+        }
+        JsonNode actions = root.isArray() ? root : root.get("actions");
+        return actions != null && actions.isArray() && actions.size() <= MAX_ACTIONS ? actions : null;
+    }
+
+    /** 문서에 있는 영역만 — 유의사항은 서버 소유라 아무것도 안 붙인다 */
+    private static Optional<Block> present(Element scope, String key) {
+        return Block.find(key)
+                .filter(b -> b != Block.NOTICES)
+                .filter(b -> scope.selectFirst(b.selector()) != null);
+    }
+
+    /** 없는 필드 · null · "null" · 빈 문자열은 전부 null */
+    private static String text(JsonNode n, String field) {
+        JsonNode v = n.get(field);
+        if (v == null || v.isNull() || !v.isValueNode()) return null;
+        String s = v.asText().trim();
+        return s.isEmpty() || s.equalsIgnoreCase("null") ? null : s;
     }
 
     // ── 보여 줄 때 ─────────────────────────────────────────────────

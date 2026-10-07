@@ -340,6 +340,8 @@ public final class PromptBuilder {
                 + (looks ? " 단, 아래 '모양 고르기' 에 있는 class 는 바꿀 수 있다." : ""));
         s.add("- id 를 지우거나 새로 만들지 마라. 화면 기능이 id 로 요소를 찾는다.");
         s.add("- <button> 을 <a> 나 <div> 로 바꾸지 마라.");
+        // ★ 이름 목록은 싣지 않는다 — 모델이 behavior 를 고르게 하면 안 된다. 있는 것을 두라고만 한다
+        s.add("- data-behavior 속성과 data-target 같은 동작 속성은 지우거나 바꾸지 마라. 새로 만들지도 마라.");
         // ★ 이모지 보존을 명시한다. 템플릿 블록 안에 58개가 있고,
         //   그중 일부는 슬롯 옆에 붙어 있다(📅 기간).
         //   지우는 것은 요청받지 않은 변경이고 검증기가 못 잡는다.
@@ -505,6 +507,59 @@ public final class PromptBuilder {
                 + "{\"op\":\"EDIT\",\"target\":\"steps\",\"content\":null}]}");
         s.add("");
         s.add("JSON 외에는 아무것도 출력하지 마라.");
+        return s.toString();
+    }
+
+    // ── 동작 배치기 ─────────────────────────────────────────────────
+
+    /**
+     * 동작 배치기 — 방금 만든 백지 페이지에 "어떤 동작을 어디에" 둘지 JSON 으로만 고른다 (GenerationService).
+     *
+     * ★ 모델은 HTML · data-behavior 를 쓰지 않는다. 이름을 고르기만 하고, 검증 · 심기는 서버다(BehaviorPlanter.decide · apply)
+     * ★ 이 목록은 Behavior.PLANNABLE 과 짝이다
+     */
+    public static String behaviorPlanner() {
+        StringJoiner s = new StringJoiner("\n");
+        s.add("너는 이벤트 페이지에 동작을 놓는 동작 배치기다. JSON 하나만 출력한다.");
+        s.add("");
+        s.add("동작:");
+        s.add("- \"countdown\"    마감까지 남은 시간 표시");
+        s.add("- \"scroll-to\"    다른 영역으로 내려가는 버튼. block 은 버튼을 둘 영역, target 은 이동할 영역");
+        s.add("- \"participate\"  참여 버튼. 그 영역의 버튼에 붙는다 (보통 cta)");
+        s.add("");
+        s.add("출력 형식:");
+        s.add("{\"actions\":[{\"behavior\":\"<동작>\",\"block\":\"<영역>\",\"target\":<영역 또는 null>}]}");
+        s.add("");
+        s.add("규칙:");
+        s.add("- block · target 은 [페이지 영역] 에 있는 이름만 쓴다.");
+        s.add("- 이벤트 요청문의 분위기에 맞는 동작만 고른다. 필요 없는 동작은 넣지 마라.");
+        s.add("- 마감 · 기간 한정 · 선착순 같은 말이 있으면 hero 에 countdown 을 둔다.");
+        s.add("- 혜택이나 참여 방법이 길면 hero 에 그 영역으로 가는 scroll-to 를 둔다.");
+        s.add("- 참여 버튼(participate)은 cta 에 둔다.");
+        s.add("- 위 목록에 없는 동작(투표 · 복주머니 · 룰렛 같은 게임 등)은 넣지 마라.");
+        s.add("");
+        s.add("예시:");
+        s.add("\"이번 주말까지만 데이터 2배! 선착순 1000명\"");
+        s.add("{\"actions\":[{\"behavior\":\"countdown\",\"block\":\"hero\",\"target\":null},"
+                + "{\"behavior\":\"participate\",\"block\":\"cta\",\"target\":null}]}");
+        s.add("");
+        s.add("\"신규 가입 혜택 3가지와 가입 방법 안내\"");
+        s.add("{\"actions\":[{\"behavior\":\"scroll-to\",\"block\":\"hero\",\"target\":\"benefits\"},"
+                + "{\"behavior\":\"participate\",\"block\":\"cta\",\"target\":null}]}");
+        s.add("");
+        s.add("JSON 외에는 아무것도 출력하지 마라.");
+        return s.toString();
+    }
+
+    /** 동작 배치기의 사용자 메시지 — 페이지 영역과 이벤트 요청문 */
+    public static String behaviorPlannerUser(String requestText, List<Block> present) {
+        StringJoiner names = new StringJoiner(", ");
+        for (Block b : present) if (b != Block.NOTICES) names.add(b.key());
+        StringJoiner s = new StringJoiner("\n");
+        s.add("[페이지 영역] " + names);
+        s.add("");
+        s.add("[이벤트 요청문]");
+        s.add(requestText == null ? "" : requestText.strip());
         return s.toString();
     }
 }

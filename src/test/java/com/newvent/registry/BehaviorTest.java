@@ -217,4 +217,54 @@ class BehaviorTest {
         assertEquals("이벤트", doc.title());
         assertEquals(1, doc.select("script").size());
     }
+
+    // ── 동작 배치기 출력 (decide) ─────────────────────────────────────
+
+    private static final Element SCOPE = Jsoup.parseBodyFragment(GENERATED
+            + "<section class=\"ev-block\" data-block=\"notices\"><p>n</p></section>").body();
+
+    private static List<BehaviorPlanter.Placement> decided(String json) {
+        return BehaviorPlanter.decide(json, SCOPE).orElseThrow(() -> new AssertionError("못 읽었습니다: " + json));
+    }
+
+    @Test
+    @DisplayName("배치기 형식 — 정상 · 래퍼 빠짐 · 코드펜스를 받고, 규격 밖 · 상한(6건) 초과는 빈 값(기본 배치로)")
+    void 배치기_형식() {
+        assertEquals(2, decided("```json\n{\"actions\":[{\"behavior\":\"countdown\",\"block\":\"hero\"}]}\n```").size());
+        assertEquals(1, decided("[{\"behavior\":\"participate\",\"block\":\"cta\"}]").size());
+        assertTrue(BehaviorPlanter.decide("동작 없음", SCOPE).isEmpty());
+        assertTrue(BehaviorPlanter.decide("{\"foo\":1}", SCOPE).isEmpty());
+        assertTrue(BehaviorPlanter.decide("{\"actions\":[\"countdown\"]}", SCOPE).isEmpty());
+
+        String one = "{\"behavior\":\"countdown\",\"block\":\"hero\"}";
+        assertTrue(BehaviorPlanter.decide("{\"actions\":[" + String.join(",", java.util.Collections.nCopies(7, one)) + "]}", SCOPE)
+                .isEmpty(), "상한을 넘으면 자르지 않고 실패");
+    }
+
+    @Test
+    @DisplayName("★ 배치기 판정 — 목록 밖 · 중복 · 없는 영역 · 유의사항 · 대상 없는 이동 버튼은 버리고, 참여 버튼은 항상 cta 에")
+    void 배치기_판정() {
+        List<BehaviorPlanter.Placement> p = decided("{\"actions\":["
+                + "{\"behavior\":\"countdown\",\"block\":\"hero\"},"
+                + "{\"behavior\":\"countdown\",\"block\":\"cta\"},"                        // 중복
+                + "{\"behavior\":\"game\",\"block\":\"cta\"},"                             // 목록 밖
+                + "{\"behavior\":\"scroll-to\",\"block\":\"faq\",\"target\":\"benefits\"},"   // 문서에 없는 영역
+                + "{\"behavior\":\"scroll-to\",\"block\":\"hero\",\"target\":\"notices\"}]}");  // 유의사항은 대상이 못 된다
+
+        assertEquals(List.of(BehaviorPlanter.Placement.of(Behavior.COUNTDOWN, Block.HERO),
+                BehaviorPlanter.Placement.of(Behavior.PARTICIPATE, Block.CTA)), p);
+    }
+
+    @Test
+    @DisplayName("배치기 판정 — 고른 대로 심긴다 (혜택으로 가는 이동 버튼 · 참여 버튼, 타이머 없음)")
+    void 배치기_결과를_심는다() {
+        List<BehaviorPlanter.Placement> p = decided("{\"actions\":["
+                + "{\"behavior\":\"scroll-to\",\"block\":\"hero\",\"target\":\"benefits\"},"
+                + "{\"behavior\":\"participate\",\"block\":\"cta\",\"target\":null}]}");
+
+        Document d = Jsoup.parseBodyFragment(BehaviorPlanter.apply(GENERATED, p));
+        assertEquals("ev-benefits", d.selectFirst("[data-behavior=scroll-to]").attr("data-target"));
+        assertEquals("participate", d.selectFirst("[data-block=cta] a.btn").attr("data-behavior"));
+        assertNull(d.selectFirst("[data-behavior=countdown]"), "고르지 않은 타이머를 심었습니다");
+    }
 }
