@@ -8,6 +8,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.jsoup.Jsoup;
+
 import com.newvent.registry.BlockValidator.Failure;
 
 /**
@@ -55,11 +57,11 @@ public final class ValueCheck {
      */
     private static final Pattern TOKEN = Pattern.compile(
             // 금액은 천/만/천만/억 및 '1만 원'처럼 원 앞의 공백을 허용한다.
-            "\\d[\\d,]*(?:\\.\\d+)?(?:천만|천|만|억)?\\s*원(?![A-Za-z])"
+            "\\d[\\d,]*(?:\\.\\d+)?\\s*(?:천만|천|만|억)?\\s*원(?![A-Za-z])"
             // 금액 외 숫자+단위
-            + "|\\d[\\d,]*(?:\\.\\d+)?(?:시간|일|분|초|회|개월?|달|배|명|장|점|종|GB|MB|KB|TB|GHz|Mbps|Gbps)(?![A-Za-z])"
+            + "|\\d[\\d,]*(?:\\.\\d+)?\\s*(?:시간|일|분|초|회|개월?|달|배|명|장|점|종|GB|MB|KB|TB|GHz|Mbps|Gbps)(?![A-Za-z])"
             // 숫자 + %
-            + "|\\d[\\d,]*(?:\\.\\d+)?%",
+            + "|\\d[\\d,]*(?:\\.\\d+)?\\s*%",
             Pattern.UNICODE_CHARACTER_CLASS
     );
 
@@ -115,8 +117,10 @@ public final class ValueCheck {
      */
     static Set<String> extract(String text) {
         if (text == null || text.isBlank()) return Set.of();
-        // HTML 태그 제거 (단순 치환, Jsoup 없이)
-        String plain = text.replaceAll("<[^>]*>", " ");
+        // 인라인 강조 태그는 수치를 끊지 않고, HTML 엔티티는 실제 문자로 읽는다.
+        var body = Jsoup.parseBodyFragment(text).body();
+        body.select("script, style").remove();
+        String plain = body.text();
         Set<String> tokens = new LinkedHashSet<>();
         Matcher m = TOKEN.matcher(plain);
         while (m.find()) {
@@ -133,6 +137,7 @@ public final class ValueCheck {
     }
 
     private static String normalize(String token) {
+        token = token.replaceAll("\\s+", "");
         Matcher money = MONEY.matcher(token);
         if (!money.matches()) return token;
 
