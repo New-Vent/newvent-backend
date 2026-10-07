@@ -1,18 +1,27 @@
 package com.newvent.rag.service;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventVersion;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
+import com.newvent.event.repository.EventRepository;
 import com.newvent.event.repository.EventVersionRepository;
+import com.newvent.generation.repository.LlmCallLogRepository;
 import com.newvent.rag.domain.RagChunk;
 import com.newvent.rag.dto.response.IndexStatusResponse;
+import com.newvent.rag.dto.response.QualityTrendResponse;
+import com.newvent.rag.dto.response.ReindexAllResponse;
 import com.newvent.rag.repository.RagChunkRepository;
 import com.newvent.rag.service.RagChunkingService.Chunk;
 
@@ -27,13 +36,18 @@ public class EmbeddingService {
 	private final RagChunkRepository chunks;
 	private final RagChunkingService chunking;
 	private final EmbeddingClient embedding;
+	private final EventRepository events;
+	private final LlmCallLogRepository logs;
 
 	public EmbeddingService(EventVersionRepository versions, RagChunkRepository chunks,
-	        RagChunkingService chunking, EmbeddingClient embedding) {
+	        RagChunkingService chunking, EmbeddingClient embedding,
+	        EventRepository events, LlmCallLogRepository logs) {
 		this.versions = versions;
 		this.chunks = chunks;
 		this.chunking = chunking;
 		this.embedding = embedding;
+		this.events = events;
+		this.logs = logs;
 	}
 
 	/**
@@ -78,5 +92,51 @@ public class EmbeddingService {
 		long indexed = chunks.countIndexedVersions(eventId);
 		return new IndexStatusResponse(eventId, total, indexed, total - indexed,
 				chunks.countChunks(eventId), chunks.lastIndexedAt(eventId));
+	}
+
+	/**
+	 * 전체 이벤트 재색인. 하나가 터져도 멈추지 않고 다음으로 넘어간다.
+	 * ★ @Transactional 을 붙이지 않는다. 붙이면 내부 reindex() 들이 같은 트랜잭션에 합류해서
+	 *   하나 실패 시 전부 롤백된다. 이벤트별 독립 트랜잭션이어야 부분 실패를 허용할 수 있다.
+	 * ★ 시드 데이터(SEED: ...)는 건너뛴다. 데모용 낡은 벡터가 운영 검색에 섞이는 것을 막는다.
+	 */
+	public ReindexAllResponse indexAllEvents() {
+		List<Long> failed = new ArrayList<>();
+		int succeeded = 0;
+		int totalChunks = 0;
+		List<Event> targets = events.findAllByDeletedAtIsNull();
+		for (Event event : targets) {
+			if (event.getTitle() != null && event.getTitle().startsWith("SEED:")) {
+				continue;
+			}
+			try {
+				totalChunks += reindex(event.getId(), null);
+				succeeded++;
+			} catch (RuntimeException e) {
+				failed.add(event.getId());
+			}
+		}
+		return new ReindexAllResponse(succeeded + failed.size(), succeeded, failed, totalChunks);
+	}
+
+	// 주간 품질 추이. 호출 건수·RAG 사용 건수·청크 수를 주별로 묶는다.
+	// distance 평균은 저장하지 않으므로(쿼리 시점 계산값) 건수 기반으로 추이를 본다.
+	@Transactional(readOnly = true)
+	public List<QualityTrendResponse> getQualityTrend(int weeks) {
+		int w = weeks <= 0 ? 4 : weeks;
+		Instant from = Instant.now().minus(Duration.ofDays(w * 7L));
+		Map<LocalDate, long[]> byWeek = new LinkedHashMap<>();
+		for (var row : logs.sumRagUsageByWeek(from)) {
+			byWeek.put(row.getWeekStart(), new long[] { row.getTotalCalls(), row.getRagUsedCalls(), 0 });
+		}
+		for (var row : chunks.countChunksByWeek(from)) {
+			byWeek.computeIfAbsent(row.getWeekStart(), k -> new long[3])[2] = row.getChunkCount();
+		}
+		List<QualityTrendResponse> out = new ArrayList<>(byWeek.size());
+		for (Map.Entry<LocalDate, long[]> e : byWeek.entrySet()) {
+			long[] v = e.getValue();
+			out.add(new QualityTrendResponse(e.getKey(), v[0], v[1], v[2]));
+		}
+		return out;
 	}
 }
