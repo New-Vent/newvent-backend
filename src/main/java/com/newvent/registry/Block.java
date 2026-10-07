@@ -24,6 +24,11 @@ import java.util.stream.Collectors;
  *   must 를 "ul li" 로만 두면 템플릿 블록이 전부 empty_benefits 로 떨어진다.
  *   그렇다고 shape 에 "둘 중 아무거나" 라고 쓰면 모델이 헷갈린다 —
  *   **시키는 말은 하나, 받아주는 모양은 여럿**이 맞다.
+ *
+ * ★ must 에는 **세고 싶은 항목**만 넣는다 (li · tr · dt · .benefit-card).
+ *   항목 안의 <strong> 같은 자식을 넣으면 BlockValidator 가 그 자식을 센다 —
+ *   개수 검사 · 항목 추가 검사 · duplicateCard 가 모두 틀어진다.
+ *   <strong> 을 쓰라는 요구는 shape 에 적는다. assertConsistent 가 이걸 지킨다.
  */
 public enum Block {
 
@@ -65,7 +70,8 @@ public enum Block {
             "<h2> 소제목과 <ul> 안에 <li> 2개 이상. 각 <li> 는 "
             + "<strong>14,820명</strong> 처럼 숫자를 <strong> 로 먼저 쓰고 "
             + "그 뒤에 무엇의 숫자인지 짧게 붙인다",
-            "ul li strong", "ul", 2,
+            // ★ "ul li strong" 이 아니다 — <li> 하나에 <strong> 이 2개면 항목 1개로 2개를 통과한다
+            "ul li", "ul", 2,
             "(?i)(숫자로|한눈에|수치로|누적|돌파|달성률|참여자 ?수|명이 참여|지금까지 [0-9])"),
 
     BENEFITS("benefits", true, true, Source.MIXED,
@@ -137,7 +143,7 @@ public enum Block {
             "일정 — 응모 · 발표 · 지급 날짜는 요청문에 있는 것만 쓴다. 날짜를 지어내지 마라",
             "<h2> 소제목과 <ol> 안에 <li> 2개 이상. 각 <li> 는 "
             + "<strong>1차 · 10월 1일</strong> 처럼 때를 <strong> 로 먼저 쓰고 설명을 붙인다",
-            "ol li strong", "ol", 2,
+            "ol li", "ol", 2,
             "(?i)(일정|발표일|지급일|마감일|발표 날짜|지급 날짜|차수|[1-9]차 |오픈일|타임라인|사전 ?예약)"),
 
     // ★ 모양이 두 벌이다 — 목록형 <dl> 과 펼침형 <details>.
@@ -206,6 +212,7 @@ public enum Block {
     public Source source()   { return source; }
     public String desc()     { return desc; }
     public String shape()    { return shape; }
+    /** 항목을 세는 기준이자 "비었나" 를 보는 선택자. <b>항목의 자식을 넣으면 안 된다</b> */
     public String must()     { return must; }
     public int minItems()    { return minItems; }
 
@@ -333,6 +340,10 @@ public enum Block {
         return null;
     }
 
+    /** must 에 넣으면 안 되는 것 — 항목의 자식이다. assertConsistent 가 쓴다 */
+    private static final Pattern CHILD_IN_MUST =
+            Pattern.compile("(?<![\\w-])(strong|em|b|i|span|small)(?![\\w-])");
+
     /**
      * shape 를 시킨 블록은 must 도 있어야 한다.
      * 애플리케이션 시작 시 한 번 부른다. 어긋나면 그 자리에서 죽는 게 낫다.
@@ -361,6 +372,17 @@ public enum Block {
                 throw new IllegalStateException(
                         b.key + ": minItems 와 container 는 짝이어야 합니다 "
                         + "(minItems=" + b.minItems + ", container=" + hasContainer + ")");
+            }
+            // ★ must 에 항목의 자식(<strong> 등)을 넣으면 안 된다.
+            //   BlockValidator 가 must 로 개수를 세고(checkShape · checkItemCount),
+            //   duplicateCard 는 must 로 찾은 것을 복제한다. <strong> 을 넣으면
+            //   <li> 하나에 <strong> 2개가 항목 2개로 통과하고, 항목 추가가
+            //   "<li> 복제" 대신 "<li> 안에 빈 <strong> 덧붙이기" 가 된다.
+            //   <strong> 을 쓰라는 요구는 shape 에 적는다 — 그건 모델에게 시키는 말이다.
+            if (b.minItems > 0 && CHILD_IN_MUST.matcher(b.must).find()) {
+                throw new IllegalStateException(
+                        b.key + ": must 에 \"" + b.must + "\" — 항목의 자식은 세는 기준이 될 수 없습니다. "
+                        + "세고 싶은 항목(li · tr · dt)만 넣고, 자식 요구는 shape 로 시키세요.");
             }
         }
     }
