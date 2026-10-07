@@ -3,6 +3,7 @@ package com.newvent.event.service;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -122,11 +123,36 @@ public class EventService {
 
     private PageResponse<EventSummaryResponse> toSummaryPage(Page<Event> result, int page, int size) {
         Map<Long, Integer> latestVersionNos = latestVersionNos(result.getContent());
+        Map<Long, String> latestVersionHtmls = latestVersionHtmls(result.getContent());
         List<EventSummaryResponse> content = result.getContent().stream()
                 .map(event -> EventSummaryResponse.from(
-                        event, closingSoon(event), latestVersionNos.get(event.getId())))
+                        event, closingSoon(event), latestVersionNos.get(event.getId()),
+                        thumbnailHtmlOf(event, latestVersionHtmls)))
                 .toList();
         return PageResponse.of(content, page, size, result.getTotalElements());
+    }
+
+    // 게시 버전이 없는 이벤트만 한 페이지 단위로 한 번에 읽는다. 전부 게시 버전이 있으면 쿼리를 보내지 않는다
+    private Map<Long, String> latestVersionHtmls(List<Event> events) {
+        List<Long> ids = events.stream()
+                .filter(event -> event.getPublishedVersion() == null)
+                .map(Event::getId)
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> htmls = new HashMap<>();
+        for (Object[] row : eventVersionRepository.findLatestVersionHtmls(ids)) {
+            htmls.put((Long) row[0], (String) row[1]);
+        }
+        return htmls;
+    }
+
+    // 게시 버전이 있으면 그걸로 하고, 없으면(DRAFT 등) 최신 버전의 hero. 종료 이벤트는 게시 버전이 남아 있어 그걸로 쓴다
+    private String thumbnailHtmlOf(Event event, Map<Long, String> latestVersionHtmls) {
+        EventVersion published = event.getPublishedVersion();
+        String html = published != null ? published.getHtmlContent() : latestVersionHtmls.get(event.getId());
+        return ThumbnailHtml.of(event, html);
     }
 
     private Map<Long, Integer> latestVersionNos(List<Event> events) {
