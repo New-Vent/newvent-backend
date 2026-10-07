@@ -50,9 +50,6 @@ public enum Behavior {
     /** 남은 시간을 센다 — data-until(ISO 시각) 이 있으면 그때까지, 없으면 data-seconds 초 데모 */
     COUNTDOWN("countdown"),
 
-    /** 참여자 수처럼 늘어나는 숫자 — 데모 */
-    COUNTER("counter"),
-
     /** 같은 묶음의 투표 버튼 중 하나를 고른다 — data-vote. 실제 집계 API 는 후속 */
     VOTE("vote"),
 
@@ -66,13 +63,14 @@ public enum Behavior {
     GAME("game");
 
     /**
-     * LLM(동작 배치기)이 고를 수 있는 것 — BehaviorGate 가 이 밖의 것은 버린다.
+     * LLM(동작 배치기)이 고를 수 있는 것 — HTML 에 이름표를 붙이는 것만으로 끝나는 것들. 이 밖의 것은 서버가 버린다.
      *
      * ★ 나머지(toast · shake · open · vote)는 템플릿 · 서버만 쓴다.
      *   vote · open 은 게임 자리 안에서 서버가 만들고, toast · shake 는 템플릿 연출이다
+     * ★ game(게임 자리)도 고를 수 없다 — 안을 그리려면 참여 설정이 있어야 하고, 참여 설정은 배치기가 만들지 않는다
      */
     public static final Set<Behavior> PLANNABLE =
-            EnumSet.of(COUNTDOWN, COUNTER, SCROLL_TO, PARTICIPATE, GAME);
+            EnumSet.of(COUNTDOWN, SCROLL_TO, PARTICIPATE);
 
     /** 요소에 선언하는 속성 */
     public static final String ATTR = "data-behavior";
