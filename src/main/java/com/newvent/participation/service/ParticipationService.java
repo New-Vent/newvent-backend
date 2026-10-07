@@ -3,6 +3,7 @@ package com.newvent.participation.service;
 import java.util.List;
 import java.util.Map;
 
+import com.newvent.event.repository.EventRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,9 +37,14 @@ public class ParticipationService {
     private final EventGameConfigRepository eventGameConfigRepository;
     private final ParticipationValidator participationValidator;
     private final ParticipationResultProcessor participationResultProcessor;
+    private final EventRepository eventRepository;
 
     @Transactional
     public ParticipationCreateResponse participate(Long eventId, Long userId, ParticipationCreateRequest request) {
+
+        eventRepository.findByIdForDraw(eventId)
+            .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_ACCESSIBLE));
+
         Event event = publicEventService.getPublicEvent(eventId);
 
         // 실제 참여는 게시 중인 이벤트에만 허용함

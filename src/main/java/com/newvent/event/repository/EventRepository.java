@@ -196,4 +196,12 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     // 관리자 목록 화면 상단 카운트 — 상태별로 묶어서 한 번에 센다(삭제된 건 제외).
     @Query("SELECT e.status, COUNT(e) FROM Event e WHERE e.deletedAt IS NULL GROUP BY e.status")
     List<Object[]> countGroupedByStatus();
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT e
+        FROM Event e
+        WHERE e.id = :eventId
+        """)
+    Optional<Event> findByIdForDraw(@Param("eventId") Long eventId);
 }

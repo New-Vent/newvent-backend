@@ -1,7 +1,10 @@
 package com.newvent.participation.repository;
 
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
+import com.newvent.event.domain.EventStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -89,5 +92,52 @@ public interface EventParticipationRepository extends JpaRepository<EventPartici
     )
     ParticipationSummaryProjection findSummaryByUserId(
             @Param("userId") Long userId
+    );
+
+    // 마감된 기본형 추후 추첨 이벤트 중 PENDING 참여자가 있는 이벤트를 조회한다.
+    // 발표 시각은 서비스에서 읽고 검증한다.
+    @Query("""
+        SELECT DISTINCT c.event.id
+        FROM EventGameConfig c
+        WHERE c.game.code = 'BASIC'
+          AND function(
+              'jsonb_extract_path_text',
+              c.config,
+              'resultMode'
+          ) = 'DELAYED'
+          AND c.event.deletedAt IS NULL
+          AND c.event.status IN :statuses
+          AND c.event.endDate < :now
+          AND EXISTS (
+              SELECT p.id
+              FROM EventParticipation p
+              WHERE p.event.id = c.event.id
+                AND function(
+                    'jsonb_extract_path_text',
+                    p.resultData,
+                    'status'
+                ) = 'PENDING'
+          )
+        ORDER BY c.event.id
+        """)
+    List<Long> findDelayedDrawCandidateEventIds(
+        @Param("statuses") List<EventStatus> statuses,
+        @Param("now") OffsetDateTime now
+    );
+
+    // 반드시 이벤트 잠금을 획득한 뒤 호출
+    @Query("""
+        SELECT p
+        FROM EventParticipation p
+        WHERE p.event.id = :eventId
+          AND function(
+              'jsonb_extract_path_text',
+              p.resultData,
+              'status'
+          ) = 'PENDING'
+        ORDER BY p.id
+        """)
+    List<EventParticipation> findPendingByEventId(
+        @Param("eventId") Long eventId
     );
 }

@@ -86,4 +86,8 @@ public class EventParticipation {
         participation.resultData = new LinkedHashMap<>(resultData);
         return participation;
     }
+
+    public void updateResultData(Map<String, Object> resultData) {
+        this.resultData = new LinkedHashMap<>(resultData);
+    }
 }
