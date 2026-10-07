@@ -657,7 +657,7 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-08-31T23:59:59+09:00"));
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
 
-        assertThatThrownBy(() -> eventService.publish(1L, 10L))
+        assertThatThrownBy(() -> eventService.publish(1L, 1L, 10L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN.getCode());
@@ -673,7 +673,7 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-09-01T00:00:00+09:00"), now);
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
 
-        assertThatThrownBy(() -> eventService.publish(1L, 10L))
+        assertThatThrownBy(() -> eventService.publish(1L, 1L, 10L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN.getCode());
@@ -688,7 +688,7 @@ class EventServiceTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
         when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
 
-        eventService.publish(1L, 10L);
+        eventService.publish(1L, 1L, 10L);
 
         assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
     }
@@ -703,7 +703,7 @@ class EventServiceTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
         when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
 
-        eventService.publish(1L, 10L);
+        eventService.publish(1L, 1L, 10L);
 
         assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
     }
@@ -718,7 +718,7 @@ class EventServiceTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
         when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
 
-        eventService.publish(1L, 10L);
+        eventService.publish(1L, 1L, 10L);
 
         assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
     }
@@ -733,7 +733,7 @@ class EventServiceTest {
         ReflectionTestUtils.setField(event, "publishedVersion", oldVersion);
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
 
-        assertThatThrownBy(() -> eventService.publish(1L, 11L))
+        assertThatThrownBy(() -> eventService.publish(1L, 1L, 11L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN.getCode());
@@ -750,13 +750,13 @@ class EventServiceTest {
         EventVersion version = newVersion(10L, false);
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
         when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
-        assertThatThrownBy(() -> eventService.publish(1L, 10L)).isInstanceOf(EventException.class);
+        assertThatThrownBy(() -> eventService.publish(1L, 1L, 10L)).isInstanceOf(EventException.class);
 
         // DRAFT 는 기간이 지나도 수정할 수 있다 (editLocked 는 ENDED 이거나 게시 중인 경우만 잠근다)
         assertThat(event.editLocked(now)).isFalse();
         event.updateInfo(event.getTitle(), null, OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"), event.getGrade());
-        eventService.publish(1L, 10L);
+        eventService.publish(1L, 1L, 10L);
 
         assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
     }
