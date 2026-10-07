@@ -1,5 +1,6 @@
 package com.newvent.event.domain;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Objects;
 
@@ -18,6 +19,8 @@ import lombok.NoArgsConstructor;
 @Table(name = "events")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Event extends BaseTimeEntity {
+
+    public static final Duration CLOSING_SOON_WINDOW = Duration.ofDays(3);
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -171,6 +174,20 @@ public class Event extends BaseTimeEntity {
 
     public boolean published() {
         return status == EventStatus.PUBLISHED;
+    }
+
+    /**
+     * 게시 중이고 이미 시작했으며, 종료 3일 전부터 종료 시각까지(포함)면 마감 임박.
+     * 종료 시각 포함은 자동 종료({@code endDate < now})·공개 접근 기간과 같은 기준이다.
+     */
+    public boolean closingSoon(OffsetDateTime now) {
+        if (status != EventStatus.PUBLISHED || deleted() || endDate == null) {
+            return false;
+        }
+        if (startDate != null && now.isBefore(startDate)) {
+            return false;
+        }
+        return !now.isAfter(endDate) && !now.isBefore(endDate.minus(CLOSING_SOON_WINDOW));
     }
 
     /** 게시 중인지는 서비스가 확인한 뒤 호출한다. 게시 버전(publishedVersion)은 그대로 둔다. */
