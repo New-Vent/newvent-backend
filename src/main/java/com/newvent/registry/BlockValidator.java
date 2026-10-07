@@ -493,6 +493,34 @@ public class BlockValidator {
                 if (ok) paletteKept = true;
                 else el.removeClass(c);
             }
+
+            // ★ 테마도 팔레트와 같은 규칙이다 — hero 에 하나만, 목록에 있는 것만.
+            //   지어낸 이름(theme-두쫀쿠)은 CSS 가 없어 효과도 없지만, 남겨 두면
+            //   다음 수정에서 모델이 그걸 보고 따라 쓴다. 들어오는 자리에서 지운다.
+            //
+            // ★★ 단, **루트(.ev-container)는 건드리지 않는다.**
+            //   이 반복문은 class 가 있는 모든 요소를 돈다. 루트는 section 이 아니라
+            //   b == null 이 되어 "hero 가 아니다" 로 판정되고, 그대로 두면 템플릿이
+            //   들고 온 theme-sports 가 지워진다. 그러면 PageShell.ensureRoot 가
+            //   "테마 없음" 으로 보고 기본 테마를 박아 **템플릿 테마가 전부 basic 이 된다**
+            //   (SavedTemplateHtmlTest 5건으로 실제로 잡혔다).
+            //   루트의 테마는 서버(PageShell)가 쥔다. 여기는 모델 출력만 다룬다.
+            //
+            // ★ 팔레트 쪽에 같은 가드가 없는 것은 SavedTemplateHtml 이 루트 팔레트를
+            //   따로 집어 두었다가 되붙여서 가려져 있을 뿐이다. 테마에는 그 보정이 없다.
+            //
+            // ★ 기본 테마를 "넣는" 일은 여기서 하지 않는다. 이 함수는 RetryService 를 거쳐
+            //   **수정 경로도** 지난다. 수정마다 블록에 theme-* 가 박히면 루트 테마가
+            //   매번 리셋되고, EditService 의 "안 바뀌었으면 실패" 검사도 전후가 늘
+            //   달라져 무력해진다. 기본값은 PageShell.ensureRoot 한 곳에서만 박는다.
+            boolean isRoot = el.hasClass("ev-container") || el.hasClass("event-page");
+            boolean themeKept = false;
+            for (String c : List.copyOf(el.classNames())) {
+                if (isRoot || !Theme.looksLike(c)) continue;
+                boolean ok = b == Block.HERO && !themeKept && Theme.find(c).isPresent();
+                if (ok) themeKept = true;
+                else el.removeClass(c);
+            }
             if (el.classNames().isEmpty()) el.removeAttr("class");
         }
     }
