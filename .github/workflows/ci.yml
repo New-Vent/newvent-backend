@@ -219,8 +219,12 @@ jobs:
           sha, image = os.environ["GITHUB_SHA"], os.environ["IMAGE"]
           cmd = "\n".join([
               "set -e",
+              # SSM Run Command 는 root 로 돌지만 HOME 을 주지 않는다.
+              #   git config --global 은 $HOME/.gitconfig 에 쓰려다 `fatal: $HOME not set` 으로 죽고,
+              #   docker login 도 $HOME/.docker/config.json 에 쓴다. 둘 다 이 한 줄로 해결된다.
+              "export HOME=/root",
               "cd /opt/newvent",
-              # SSM Run Command 는 root 로 돈다. 레포는 ssm-user 소유라 git 이 거부한다.
+              # 레포가 ssm-user 소유라 root 로 돌리는 git 이 dubious ownership 으로 거부한다.
               "git config --global --add safe.directory /opt/newvent",
               "git fetch --quiet origin",
               # .env 는 .gitignore 라 checkout 이 건드리지 않는다.
