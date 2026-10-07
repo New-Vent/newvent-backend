@@ -421,6 +421,15 @@ public final class PromptBuilder {
         StringJoiner line = new StringJoiner(" | ");
         for (Variant v : surfaces) line.add(v.cssClass() + " (" + v.desc() + ")");
         s.add("  배경 (hero · highlight · coupon · cta 를 뺀 내용 영역에 하나씩): " + line);
+        // ★ 테마를 색감보다 **먼저** 보여 준다 — 구조를 정하고 색을 얹는 순서다.
+        //   금지문을 쓰지 않는다. v-benefits-carousel 은 프롬프트 전체에서
+        //   "고르지 마라" 문장에만 나왔고, 모델이 거기서 이름을 배워 골랐다.
+        //   대신 BASIC 의 desc 가 "분위기가 분명하지 않으면 이것" 이라는
+        //   **긍정형 출구**를 준다. 목록을 벗어난 이름은 BlockValidator 가 지운다.
+        s.add("- 페이지 분위기: hero 의 class 에 아래 중 하나를 붙인다 (하나만).");
+        for (Theme t : Theme.blankThemes()) {
+            s.add("    " + t.cssClass() + " : " + t.desc());
+        }
         s.add("- 페이지 전체 색감: hero 의 class 에 아래 중 하나를 붙인다 (하나만).");
         for (Palette p : Palette.all()) {
             if (p == Palette.BASE) continue;     // 생성에는 되돌릴 원래 색이 없다
