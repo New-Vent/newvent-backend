@@ -1,11 +1,8 @@
 package com.newvent.participation.service;
 
 import java.math.BigDecimal;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -16,7 +13,6 @@ import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.participation.domain.EventGameConfig;
-import com.newvent.participation.domain.EventParticipation;
 import com.newvent.participation.exception.ParticipationErrorCode;
 import com.newvent.participation.exception.ParticipationException;
 import com.newvent.participation.repository.EventGameConfigRepository;
@@ -34,7 +30,9 @@ public class DelayedEventDrawService {
     private final EventGameConfigRepository eventGameConfigRepository;
     private final EventParticipationRepository eventParticipationRepository;
     private final Clock clock;
-    private final SecureRandom random = new SecureRandom();
+
+    // 한 번에 조회·갱신할 개수
+    private static final int DRAW_BATCH_SIZE = 1_000;
 
     @Transactional(readOnly = true)
     public List<Long> findCandidateEventIds() {
@@ -88,31 +86,51 @@ public class DelayedEventDrawService {
 
         if (announcementAt.isAfter(now)) return;
 
-        // 잠금을 기다린 실행도 여기서 최신 PENDING 목록을 다시 조회한다.
-        List<EventParticipation> pending = new ArrayList<>(
-            eventParticipationRepository.findPendingByEventId(eventId)
-        );
+        int remainingWinnerCount = winnerCount;
+        long wonCount = 0;
 
-        if (pending.isEmpty()) return;
+        // 설정된 당첨 인원까지 최대 1,000명씩 선정·갱신한다.
+        while (remainingWinnerCount > 0) {
+            int batchSize = Math.min(DRAW_BATCH_SIZE, remainingWinnerCount);
 
-        Collections.shuffle(pending, random);
+            List<Long> winnerIds = eventParticipationRepository.findRandomPendingIds(eventId, batchSize);
 
-        int actualWinnerCount = Math.min(winnerCount, pending.size());
+            // 남은 대기 참여자가 없으면 당첨자 선정을 종료한다.
+            if (winnerIds.isEmpty()) break;
 
-        for (int index = 0; index < pending.size(); index++) {
-            Map<String, Object> result = index < actualWinnerCount
-                ? Map.of("status", "WON", "prizeName", prizeName)
-                : Map.of("status", "LOST");
+            int updatedCount = eventParticipationRepository.updateWinners(
+                eventId,
+                winnerIds,
+                prizeName
+            );
 
-            pending.get(index).updateResultData(result);
+            // 갱신 건수가 다르면 앞서 처리한 묶음까지 전체 롤백한다.
+            if (updatedCount != winnerIds.size()) {
+                throw new IllegalStateException("추후 추첨 당첨 결과 변경 건수가 일치하지 않습니다. eventId=" + eventId);
+            }
+
+            wonCount += updatedCount;
+            remainingWinnerCount -= updatedCount;
         }
 
-        // 조회한 엔티티이므로 트랜잭션 커밋 시 변경 감지로 저장
+        // 당첨 처리 후 남은 대기 참여자도 최대 1,000명씩 갱신한다.
+        long lostCount = 0;
+
+        while (true) {
+            int updatedCount = eventParticipationRepository.updatePendingAsLostInBatch(eventId, DRAW_BATCH_SIZE);
+
+            if (updatedCount == 0) break;
+
+            lostCount += updatedCount;
+        }
+
+        if (wonCount + lostCount == 0) return;
+
         log.info(
             "추후 추첨 결과 변경: eventId={}, participantCount={}, winnerCount={}",
             eventId,
-            pending.size(),
-            actualWinnerCount
+            wonCount + lostCount,
+            wonCount
         );
     }
 

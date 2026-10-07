@@ -209,8 +209,8 @@ class DelayedEventDrawIntegrationTest {
         assertThat(service.findCandidateEventIds()).contains(eventId);
 
         transaction.executeWithoutResult(status -> {
-            assertThat(participationRepository.findPendingByEventId(eventId))
-                .hasSize(5);
+            assertThat(participationRepository.findRandomPendingIds(eventId, 2))
+                .hasSize(2);
         });
 
         service.drawEvent(eventId);
@@ -293,6 +293,118 @@ class DelayedEventDrawIntegrationTest {
         assertResultCounts(2, 3, 0);
     }
 
+    @Test
+    void 미당첨_갱신은_한_번에_요청한_개수까지만_처리한다() {
+        transaction.executeWithoutResult(status -> {
+            eventRepository.findByIdForDraw(eventId).orElseThrow();
+
+            assertThat(participationRepository.updatePendingAsLostInBatch(eventId, 2))
+                .isEqualTo(2);
+            assertThat(participationRepository.updatePendingAsLostInBatch(eventId, 2))
+                .isEqualTo(2);
+            assertThat(participationRepository.updatePendingAsLostInBatch(eventId, 2))
+                .isEqualTo(1);
+            assertThat(participationRepository.updatePendingAsLostInBatch(eventId, 2))
+                .isZero();
+        });
+
+        assertResultCounts(0, 5, 0);
+    }
+
+    @Test
+    void 여러_묶음을_처리해도_전체_롤백과_재실행이_동작한다() {
+        // 기존 5명 + 추가 2,000명 = 2,005명
+        // 당첨 1,001명, 미당첨 1,004명으로 양쪽 모두 배치 경계를 넘는다.
+        prepareLargeDraw(2_000, 1_001);
+
+        assertThatThrownBy(() ->
+            transaction.executeWithoutResult(status -> {
+                service.drawEvent(eventId);
+                throw new IllegalStateException("강제 실패");
+            })
+        )
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("강제 실패");
+
+        assertResultCounts(0, 0, 2_005);
+
+        service.drawEvent(eventId);
+
+        assertResultCounts(1_001, 1_004, 0);
+
+        List<Map<String, Object>> firstResults = readResults();
+
+        service.drawEvent(eventId);
+
+        assertThat(readResults()).containsExactlyElementsOf(firstResults);
+    }
+
+    private void prepareLargeDraw(int additionalCount, int winnerCount) {
+        transaction.executeWithoutResult(status -> {
+            Event event = entityManager.find(Event.class, eventId);
+
+            EventGameConfig config = entityManager.createQuery("""
+                SELECT c
+                FROM EventGameConfig c
+                WHERE c.event.id = :eventId
+                """, EventGameConfig.class)
+                .setParameter("eventId", eventId)
+                .getSingleResult();
+
+            ReflectionTestUtils.setField(config, "config", Map.of(
+                "resultMode", "DELAYED",
+                "winnerCount", winnerCount,
+                "announcementAt", NOW.toString(),
+                "prizeName", "커피 쿠폰"
+            ));
+
+            List<User> additionalUsers = new ArrayList<>();
+
+            for (int index = 0; index < additionalCount; index++) {
+                String unique = UUID.randomUUID().toString();
+
+                User user = new User(
+                    "draw-" + unique,
+                    "test-password-hash",
+                    "추첨 테스트 회원",
+                    unique + "@example.com",
+                    "01012345678",
+                    50000,
+                    MembershipGrade.NORMAL
+                );
+
+                ReflectionTestUtils.setField(user, "createdAt", NOW.minusDays(2));
+                ReflectionTestUtils.setField(user, "updatedAt", NOW.minusDays(2));
+
+                entityManager.persist(user);
+                additionalUsers.add(user);
+
+                EventParticipation participation = EventParticipation.create(
+                    event,
+                    user,
+                    Map.of(),
+                    Map.of("status", "PENDING")
+                );
+
+                ReflectionTestUtils.setField(
+                    participation,
+                    "createdAt",
+                    NOW.minusDays(2)
+                );
+
+                entityManager.persist(participation);
+            }
+
+            entityManager.flush();
+
+            // 기존 cleanUp()에서 추가 회원도 삭제하도록 ID를 기록한다.
+            for (User user : additionalUsers) {
+                userIds.add(user.getId());
+            }
+        });
+    }
+
+
     private List<Map<String, Object>> readResults() {
         return transaction.execute(status ->
             entityManager.createQuery("""
@@ -312,7 +424,7 @@ class DelayedEventDrawIntegrationTest {
     private void assertResultCounts(long won, long lost, long pending) {
         List<Map<String, Object>> results = readResults();
 
-        assertThat(results).hasSize(5);
+        assertThat(results).hasSize(Math.toIntExact(won + lost + pending));
 
         assertThat(countStatus(results, "WON")).isEqualTo(won);
         assertThat(countStatus(results, "LOST")).isEqualTo(lost);

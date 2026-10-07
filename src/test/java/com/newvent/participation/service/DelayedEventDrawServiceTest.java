@@ -2,19 +2,15 @@ package com.newvent.participation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.LongStream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,7 +22,6 @@ import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.participation.domain.EventGameConfig;
-import com.newvent.participation.domain.EventParticipation;
 import com.newvent.participation.domain.Game;
 import com.newvent.participation.exception.ParticipationErrorCode;
 import com.newvent.participation.exception.ParticipationException;
@@ -94,14 +89,25 @@ class DelayedEventDrawServiceTest {
         prepareEvent(EventStatus.PUBLISHED);
         prepareConfig(2, NOW, "커피 쿠폰");
 
-        List<EventParticipation> participants = pendingParticipants(5);
+        List<Long> winnerIds = List.of(11L, 12L);
 
-        when(eventParticipationRepository.findPendingByEventId(EVENT_ID))
-            .thenReturn(participants);
+        when(eventParticipationRepository.findRandomPendingIds(EVENT_ID, 2))
+            .thenReturn(winnerIds);
+        when(eventParticipationRepository.updateWinners(
+            EVENT_ID, winnerIds, "커피 쿠폰"
+        )).thenReturn(2);
+        when(eventParticipationRepository.updatePendingAsLostInBatch(EVENT_ID, 1_000))
+            .thenReturn(3, 0);
 
         service.drawEvent(EVENT_ID);
 
-        assertResults(participants, 2, 3);
+        var order = inOrder(eventParticipationRepository);
+        order.verify(eventParticipationRepository)
+            .findRandomPendingIds(EVENT_ID, 2);
+        order.verify(eventParticipationRepository)
+            .updateWinners(EVENT_ID, winnerIds, "커피 쿠폰");
+        order.verify(eventParticipationRepository, times(2))
+            .updatePendingAsLostInBatch(EVENT_ID, 1_000);
     }
 
     @Test
@@ -109,14 +115,22 @@ class DelayedEventDrawServiceTest {
         prepareEvent(EventStatus.ENDED);
         prepareConfig(1, NOW.minusHours(1), "커피 쿠폰");
 
-        List<EventParticipation> participants = pendingParticipants(3);
+        List<Long> winnerIds = List.of(11L);
 
-        when(eventParticipationRepository.findPendingByEventId(EVENT_ID))
-            .thenReturn(participants);
+        when(eventParticipationRepository.findRandomPendingIds(EVENT_ID, 1))
+            .thenReturn(winnerIds);
+        when(eventParticipationRepository.updateWinners(
+            EVENT_ID, winnerIds, "커피 쿠폰"
+        )).thenReturn(1);
+        when(eventParticipationRepository.updatePendingAsLostInBatch(EVENT_ID, 1_000))
+            .thenReturn(2, 0);
 
         service.drawEvent(EVENT_ID);
 
-        assertResults(participants, 1, 2);
+        verify(eventParticipationRepository)
+            .updateWinners(EVENT_ID, winnerIds, "커피 쿠폰");
+        verify(eventParticipationRepository, times(2))
+            .updatePendingAsLostInBatch(EVENT_ID, 1_000);
     }
 
     @Test
@@ -124,14 +138,75 @@ class DelayedEventDrawServiceTest {
         prepareEvent(EventStatus.PUBLISHED);
         prepareConfig(10, NOW, "커피 쿠폰");
 
-        List<EventParticipation> participants = pendingParticipants(3);
+        List<Long> winnerIds = List.of(11L, 12L, 13L);
 
-        when(eventParticipationRepository.findPendingByEventId(EVENT_ID))
-            .thenReturn(participants);
+        when(eventParticipationRepository.findRandomPendingIds(EVENT_ID, 10))
+            .thenReturn(winnerIds);
+
+        // 서비스 호출 전에 등록한다.
+        when(eventParticipationRepository.findRandomPendingIds(EVENT_ID, 7))
+            .thenReturn(List.of());
+
+        when(eventParticipationRepository.updateWinners(
+            EVENT_ID, winnerIds, "커피 쿠폰"
+        )).thenReturn(3);
+
+        when(eventParticipationRepository.updatePendingAsLostInBatch(EVENT_ID, 1_000))
+            .thenReturn(0);
 
         service.drawEvent(EVENT_ID);
 
-        assertResults(participants, 3, 0);
+        verify(eventParticipationRepository)
+            .updateWinners(EVENT_ID, winnerIds, "커피 쿠폰");
+        verify(eventParticipationRepository)
+            .findRandomPendingIds(EVENT_ID, 7);
+        verify(eventParticipationRepository)
+            .updatePendingAsLostInBatch(EVENT_ID, 1_000);
+    }
+
+    @Test
+    void 대기_참여자가_없으면_건너뛴다() {
+        prepareEvent(EventStatus.PUBLISHED);
+        prepareConfig(2, NOW, "커피 쿠폰");
+
+        when(eventParticipationRepository.findRandomPendingIds(EVENT_ID, 2))
+            .thenReturn(List.of());
+
+        service.drawEvent(EVENT_ID);
+
+        verify(eventParticipationRepository, never())
+            .updateWinners(any(), anyList(), any());
+        verify(eventParticipationRepository)
+            .updatePendingAsLostInBatch(EVENT_ID, 1_000);
+    }
+
+    @Test
+    void 재실행에서_대기_참여자가_없으면_결과를_다시_변경하지_않는다() {
+        prepareEvent(EventStatus.PUBLISHED);
+        prepareConfig(2, NOW, "커피 쿠폰");
+
+        List<Long> winnerIds = List.of(11L, 12L);
+
+        when(eventParticipationRepository.findRandomPendingIds(EVENT_ID, 2))
+            .thenReturn(winnerIds)
+            .thenReturn(List.of());
+        when(eventParticipationRepository.updateWinners(
+            EVENT_ID, winnerIds, "커피 쿠폰"
+        )).thenReturn(2);
+        when(eventParticipationRepository.updatePendingAsLostInBatch(EVENT_ID, 1_000))
+            .thenReturn(3, 0);
+
+        service.drawEvent(EVENT_ID);
+        service.drawEvent(EVENT_ID);
+
+        verify(eventParticipationRepository, times(2))
+            .findRandomPendingIds(EVENT_ID, 2);
+        verify(eventParticipationRepository, times(1))
+            .updateWinners(EVENT_ID, winnerIds, "커피 쿠폰");
+
+        // 첫 실행: 3 → 0, 재실행: 0이므로 총 세 번 호출한다.
+        verify(eventParticipationRepository, times(3))
+            .updatePendingAsLostInBatch(EVENT_ID, 1_000);
     }
 
     @Test
@@ -142,7 +217,7 @@ class DelayedEventDrawServiceTest {
         service.drawEvent(EVENT_ID);
 
         verify(eventParticipationRepository, never())
-            .findPendingByEventId(any());
+            .findRandomPendingIds(any(), anyInt());
     }
 
     @Test
@@ -193,7 +268,7 @@ class DelayedEventDrawServiceTest {
             );
 
         verify(eventParticipationRepository, never())
-            .findPendingByEventId(any());
+            .findRandomPendingIds(any(), anyInt());
     }
 
     @Test
@@ -208,7 +283,7 @@ class DelayedEventDrawServiceTest {
         service.drawEvent(EVENT_ID);
 
         verify(eventParticipationRepository, never())
-            .findPendingByEventId(any());
+            .findRandomPendingIds(any(), anyInt());
     }
 
     @Test
@@ -224,7 +299,7 @@ class DelayedEventDrawServiceTest {
             );
 
         verify(eventParticipationRepository, never())
-            .findPendingByEventId(any());
+            .findRandomPendingIds(any(), anyInt());
     }
 
     @Test
@@ -253,7 +328,7 @@ class DelayedEventDrawServiceTest {
             );
 
         verify(eventParticipationRepository, never())
-            .findPendingByEventId(any());
+            .findRandomPendingIds(any(), anyInt());
     }
 
     @Test
@@ -267,45 +342,6 @@ class DelayedEventDrawServiceTest {
                 exception -> assertThat(exception.getErrorCode())
                     .isEqualTo(ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED)
             );
-    }
-
-    @Test
-    void 대기_참여자가_없으면_건너뛴다() {
-        prepareEvent(EventStatus.PUBLISHED);
-        prepareConfig(2, NOW, "커피 쿠폰");
-
-        when(eventParticipationRepository.findPendingByEventId(EVENT_ID))
-            .thenReturn(List.of());
-
-        service.drawEvent(EVENT_ID);
-
-        verify(eventParticipationRepository).findPendingByEventId(EVENT_ID);
-    }
-
-    @Test
-    void 재실행에서_대기_참여자가_없으면_기존_결과를_유지한다() {
-        prepareEvent(EventStatus.PUBLISHED);
-        prepareConfig(2, NOW, "커피 쿠폰");
-
-        List<EventParticipation> participants = pendingParticipants(5);
-
-        // 실제 DB에서는 첫 실행 후 PENDING이 없어진다.
-        when(eventParticipationRepository.findPendingByEventId(EVENT_ID))
-            .thenReturn(participants)
-            .thenReturn(List.of());
-
-        service.drawEvent(EVENT_ID);
-
-        List<Map<String, Object>> firstResults = participants.stream()
-            .map(p -> Map.copyOf(p.getResultData()))
-            .toList();
-
-        service.drawEvent(EVENT_ID);
-
-        assertThat(participants.stream()
-            .map(EventParticipation::getResultData)
-            .toList())
-            .containsExactlyElementsOf(firstResults);
     }
 
     private void prepareEvent(EventStatus status) {
@@ -332,47 +368,87 @@ class DelayedEventDrawServiceTest {
         ));
     }
 
-    private List<EventParticipation> pendingParticipants(int count) {
-        List<EventParticipation> participants = new ArrayList<>();
+    @Test
+    void 당첨_인원_1000명은_허용한다() {
+        prepareEvent(EventStatus.PUBLISHED);
+        prepareConfig(1_000, NOW, "커피 쿠폰");
 
-        for (int index = 0; index < count; index++) {
-            participants.add(EventParticipation.create(
-                event,
-                null,
-                Map.of(),
-                Map.of("status", "PENDING")
-            ));
-        }
+        when(eventParticipationRepository.findRandomPendingIds(EVENT_ID, 1_000))
+            .thenReturn(List.of());
 
-        return participants;
+        service.drawEvent(EVENT_ID);
+
+        verify(eventParticipationRepository)
+            .findRandomPendingIds(EVENT_ID, 1_000);
     }
 
-    private void assertResults(
-        List<EventParticipation> participants,
-        int winnerCount,
-        int loserCount
-    ) {
-        assertThat(participants.stream()
-            .filter(p -> "WON".equals(p.getResultData().get("status")))
-            .count())
-            .isEqualTo(winnerCount);
+    @Test
+    void 당첨_인원이_2500명이면_1000명씩_나눠서_처리한다() {
+        prepareEvent(EventStatus.PUBLISHED);
+        prepareConfig(2_500, NOW, "커피 쿠폰");
 
-        assertThat(participants.stream()
-            .filter(p -> "LOST".equals(p.getResultData().get("status")))
-            .count())
-            .isEqualTo(loserCount);
+        List<Long> first = LongStream.rangeClosed(1, 1_000).boxed().toList();
+        List<Long> second = LongStream.rangeClosed(1_001, 2_000).boxed().toList();
+        List<Long> third = LongStream.rangeClosed(2_001, 2_500).boxed().toList();
 
-        for (EventParticipation participation : participants) {
-            Map<String, Object> result = participation.getResultData();
+        when(eventParticipationRepository.findRandomPendingIds(EVENT_ID, 1_000))
+            .thenReturn(first, second);
+        when(eventParticipationRepository.findRandomPendingIds(EVENT_ID, 500))
+            .thenReturn(third);
 
-            if ("WON".equals(result.get("status"))) {
-                assertThat(result).isEqualTo(Map.of(
-                    "status", "WON",
-                    "prizeName", "커피 쿠폰"
-                ));
-            } else {
-                assertThat(result).isEqualTo(Map.of("status", "LOST"));
-            }
-        }
+        when(eventParticipationRepository.updateWinners(EVENT_ID, first, "커피 쿠폰"))
+            .thenReturn(1_000);
+        when(eventParticipationRepository.updateWinners(EVENT_ID, second, "커피 쿠폰"))
+            .thenReturn(1_000);
+        when(eventParticipationRepository.updateWinners(EVENT_ID, third, "커피 쿠폰"))
+            .thenReturn(500);
+
+        when(eventParticipationRepository.updatePendingAsLostInBatch(EVENT_ID, 1_000))
+            .thenReturn(1_000, 500, 0);
+
+        service.drawEvent(EVENT_ID);
+
+        var order = inOrder(eventParticipationRepository);
+
+        order.verify(eventParticipationRepository)
+            .findRandomPendingIds(EVENT_ID, 1_000);
+        order.verify(eventParticipationRepository)
+            .updateWinners(EVENT_ID, first, "커피 쿠폰");
+
+        order.verify(eventParticipationRepository)
+            .findRandomPendingIds(EVENT_ID, 1_000);
+        order.verify(eventParticipationRepository)
+            .updateWinners(EVENT_ID, second, "커피 쿠폰");
+
+        order.verify(eventParticipationRepository)
+            .findRandomPendingIds(EVENT_ID, 500);
+        order.verify(eventParticipationRepository)
+            .updateWinners(EVENT_ID, third, "커피 쿠폰");
+
+        order.verify(eventParticipationRepository, times(3))
+            .updatePendingAsLostInBatch(EVENT_ID, 1_000);
+
+        order.verifyNoMoreInteractions();
+    }
+
+    @Test
+    void 당첨_변경_건수가_선정_인원과_다르면_실패한다() {
+        prepareEvent(EventStatus.PUBLISHED);
+        prepareConfig(2, NOW, "커피 쿠폰");
+
+        List<Long> winnerIds = List.of(11L, 12L);
+
+        when(eventParticipationRepository.findRandomPendingIds(EVENT_ID, 2))
+            .thenReturn(winnerIds);
+        when(eventParticipationRepository.updateWinners(
+            EVENT_ID, winnerIds, "커피 쿠폰"
+        )).thenReturn(1);
+
+        assertThatThrownBy(() -> service.drawEvent(EVENT_ID))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("변경 건수가 일치하지 않습니다");
+
+        verify(eventParticipationRepository, never())
+            .updatePendingAsLostInBatch(any(), anyInt());
     }
 }

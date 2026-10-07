@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -125,19 +126,68 @@ public interface EventParticipationRepository extends JpaRepository<EventPartici
         @Param("now") OffsetDateTime now
     );
 
-    // 반드시 이벤트 잠금을 획득한 뒤 호출
-    @Query("""
-        SELECT p
-        FROM EventParticipation p
-        WHERE p.event.id = :eventId
-          AND function(
-              'jsonb_extract_path_text',
-              p.resultData,
-              'status'
-          ) = 'PENDING'
-        ORDER BY p.id
-        """)
-    List<EventParticipation> findPendingByEventId(
-        @Param("eventId") Long eventId
+    // 이벤트 잠금을 획득한 뒤 호출한다.
+    // 전체 참여자 엔티티 대신 당첨자로 선정된 ID만 조회한다.
+    @Query(
+        value = """
+        SELECT p.id
+        FROM event_participations p
+        WHERE p.event_id = :eventId
+          AND p.result_data ->> 'status' = 'PENDING'
+        ORDER BY random()
+        LIMIT :winnerCount
+        """,
+        nativeQuery = true
+    )
+    List<Long> findRandomPendingIds(
+        @Param("eventId") Long eventId,
+        @Param("winnerCount") int winnerCount
+    );
+
+    // 선정된 참여자의 결과를 당첨으로 일괄 변경한다.
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(
+        value = """
+        UPDATE event_participations
+        SET result_data = jsonb_build_object(
+            'status', 'WON',
+            'prizeName', CAST(:prizeName AS text)
+        )
+        WHERE event_id = :eventId
+          AND id IN (:winnerIds)
+          AND result_data ->> 'status' = 'PENDING'
+        """,
+        nativeQuery = true
+    )
+    int updateWinners(
+        @Param("eventId") Long eventId,
+        @Param("winnerIds") List<Long> winnerIds,
+        @Param("prizeName") String prizeName
+    );
+
+    // 남은 대기 참여자를 최대 batchSize명씩 미당첨으로 변경한다.
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(
+        value = """
+        WITH targets AS (
+            SELECT p.id
+            FROM event_participations p
+            WHERE p.event_id = :eventId
+              AND p.result_data ->> 'status' = 'PENDING'
+            ORDER BY p.id
+            LIMIT :batchSize
+        )
+        UPDATE event_participations p
+        SET result_data = jsonb_build_object('status', 'LOST')
+        FROM targets t
+        WHERE p.id = t.id
+          AND p.event_id = :eventId
+          AND p.result_data ->> 'status' = 'PENDING'
+        """,
+        nativeQuery = true
+    )
+    int updatePendingAsLostInBatch(
+        @Param("eventId") Long eventId,
+        @Param("batchSize") int batchSize
     );
 }
