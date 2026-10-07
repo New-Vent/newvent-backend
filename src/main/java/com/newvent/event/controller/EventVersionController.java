@@ -69,17 +69,22 @@ public class EventVersionController {
         return user.id();
     }
 
-    // TODO: 인증/인가 구현 후 관리자만 조회할 수 있도록 제한
     @GetMapping
-    public ApiResponse<EventVersionListResponse> getVersions(@PathVariable Long eventId) {
+    public ApiResponse<EventVersionListResponse> getVersions(
+        @PathVariable Long eventId,
+        Authentication authentication
+    ) {
+        adminId(authentication);
         return ApiResponse.success(eventVersionService.getVersions(eventId));
     }
 
     @PutMapping("/{versionId}/checkpoint")
     public ApiResponse<Void> markCheckpoint(
             @PathVariable Long eventId,
-            @PathVariable Long versionId
+            @PathVariable Long versionId,
+            Authentication authentication
     ) {
+        adminId(authentication);
         eventVersionService.markCheckpoint(eventId, versionId);
         return ApiResponse.successNoData();
     }
@@ -87,8 +92,10 @@ public class EventVersionController {
     @DeleteMapping("/{versionId}/checkpoint")
     public ApiResponse<Void> unmarkCheckpoint(
             @PathVariable Long eventId,
-            @PathVariable Long versionId
+            @PathVariable Long versionId,
+            Authentication authentication
     ) {
+        adminId(authentication);
         eventVersionService.unmarkCheckpoint(eventId, versionId);
         return ApiResponse.successNoData();
     }
@@ -96,8 +103,10 @@ public class EventVersionController {
     @GetMapping("/{versionId}")
     public ApiResponse<EventVersionDetailResponse> getVersion(
             @PathVariable Long eventId,
-            @PathVariable Long versionId
+            @PathVariable Long versionId,
+            Authentication authentication
     ) {
+        adminId(authentication);
         return ApiResponse.success(eventVersionService.getVersion(eventId, versionId));
     }
 }

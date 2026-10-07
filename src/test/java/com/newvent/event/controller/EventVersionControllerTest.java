@@ -65,7 +65,7 @@ class EventVersionControllerTest {
                 .build();
         when(eventVersionService.getVersions(eventId)).thenReturn(response);
 
-        mockMvc.perform(get("/api/admin/events/{eventId}/versions", eventId))
+        mockMvc.perform(get("/api/admin/events/{eventId}/versions", eventId).principal(ADMIN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.eventId").value(12))
@@ -80,7 +80,8 @@ class EventVersionControllerTest {
     void markCheckpoint_returnsSuccess() throws Exception {
         mockMvc.perform(put(
                         "/api/admin/events/{eventId}/versions/{versionId}/checkpoint",
-                        12L, 102L))
+                        12L, 102L)
+                        .principal(ADMIN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
@@ -91,7 +92,8 @@ class EventVersionControllerTest {
     void unmarkCheckpoint_returnsSuccess() throws Exception {
         mockMvc.perform(delete(
                         "/api/admin/events/{eventId}/versions/{versionId}/checkpoint",
-                        12L, 102L))
+                        12L, 102L)
+                        .principal(ADMIN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
@@ -106,7 +108,8 @@ class EventVersionControllerTest {
 
         mockMvc.perform(delete(
                         "/api/admin/events/{eventId}/versions/{versionId}/checkpoint",
-                        12L, 102L))
+                        12L, 102L)
+                        .principal(ADMIN))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("EVENT409-0"));
 
@@ -126,7 +129,8 @@ class EventVersionControllerTest {
 
         mockMvc.perform(get(
                         "/api/admin/events/{eventId}/versions/{versionId}",
-                        12L, 102L))
+                        12L, 102L)
+                        .principal(ADMIN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.versionId").value(102))
@@ -266,7 +270,7 @@ class EventVersionControllerTest {
 
         when(eventVersionService.getVersions(12L)).thenReturn(response);
 
-        mockMvc.perform(get("/api/admin/events/{eventId}/versions", 12L))
+        mockMvc.perform(get("/api/admin/events/{eventId}/versions", 12L).principal(ADMIN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.versions.length()").value(2))
                 .andExpect(jsonPath("$.data.versions[0].checkpoint").value(false))
