@@ -274,6 +274,34 @@ class VariantPaletteTest {
     }
 
     @Test
+    @DisplayName("색 지정 배경 — 수정 프롬프트에만 실리고, 생성 표본에는 안 실리며, 다른 배경과 하나만 남는다")
+    void 색_지정_배경() {
+        List<Variant> colors = List.of(Variant.values()).stream().filter(Variant::namedColor).toList();
+        assertFalse(colors.isEmpty());
+        for (Variant v : colors) {
+            assertEquals(Variant.Group.SURFACE, v.group(), v + " 는 배경 묶음이어야 다른 배경을 대신한다");
+        }
+
+        // 수정 — 배경을 쓰는 블록에는 색 배경과 "색 이름으로 고르라" 는 안내가 실린다
+        String intro = PromptBuilder.edit(Block.INTRO, false);
+        assertTrue(intro.contains("v-surface-blue") && intro.contains("파란색"), intro);
+        assertTrue(intro.contains("그 색 이름이 적힌 것을 고른다"));
+        // 배경이 없는 블록에는 안내도 없다 — 목록 없이 말만 하면 모델이 이름을 지어낸다
+        assertFalse(PromptBuilder.edit(Block.CTA, false).contains("그 색 이름이"));
+
+        // 생성 — 팔레트와 따로 노는 색은 섞지 않는다
+        for (int i = 0; i < 300; i++) {
+            assertTrue(Variant.sampleSurfaces("요청 " + i, 4).stream().noneMatch(Variant::namedColor));
+        }
+
+        // 정화 — 원래 배경을 남긴 채 파란색을 붙이면 앞의 것 하나만 남는다
+        Element sec = root("<section data-block=\"intro\" class=\"v-surface-blue v-surface-tint\"><p>x</p></section>",
+                "section");
+        Variant.sanitize(sec, Block.INTRO);
+        assertEquals(Set.of("v-surface-blue"), sec.classNames());
+    }
+
+    @Test
     @DisplayName("새 블록(stats · prize · coupon · schedule)도 변형과 배경을 갖고, prize 는 항목이 폼 값이다")
     void 새_블록_레지스트리() {
         for (Block b : List.of(Block.STATS, Block.PRIZE, Block.COUPON, Block.SCHEDULE)) {
@@ -303,6 +331,19 @@ class VariantPaletteTest {
         String heroTpl = PromptBuilder.edit(Block.HERO, true);
         assertTrue(heroTpl.contains("palette-autumn"));
         assertFalse(heroTpl.contains("v-hero-left"));
+    }
+
+    @Test
+    @DisplayName("영역을 골라 고칠 때는 hero 에도 페이지 전체 팔레트를 안내하지 않는다 — 선택 밖 영역의 색이 바뀐다")
+    void 선택_영역_수정은_팔레트_안내_없음() {
+        String chosen = PromptBuilder.edit(Block.HERO, false, false);
+        assertFalse(chosen.contains("palette-"), "선택 영역 수정에 팔레트가 안내됐습니다");
+        assertFalse(chosen.contains("페이지 전체 색감"));
+        assertTrue(chosen.contains("v-hero-left"), "hero 자체 모양 변형은 그대로 안내해야 합니다");
+
+        assertTrue(PromptBuilder.edit(Block.HERO, false, true).contains("palette-summer"), "영역을 안 고르면 지금처럼 안내");
+        // 템플릿 hero + 선택 영역이면 고를 것이 없다 — 모양 고르기 절 자체가 없어야 한다
+        assertFalse(PromptBuilder.edit(Block.HERO, true, false).contains("모양 고르기"));
     }
 
     @Test
