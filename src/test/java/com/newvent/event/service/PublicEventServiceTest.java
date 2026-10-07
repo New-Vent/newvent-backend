@@ -24,12 +24,12 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventProgress;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventTemplate;
 import com.newvent.event.domain.EventVersion;
-import com.newvent.event.dto.response.PageResponse;
 import com.newvent.event.dto.response.PublicEventSummaryResponse;
 import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.exception.EventNotFoundException;

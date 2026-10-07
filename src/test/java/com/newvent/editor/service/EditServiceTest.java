@@ -700,6 +700,181 @@ class EditServiceTest {
         assertTrue(savedHtml().contains("가을 대축제"));
     }
 
+    // ── 고른 영역 (미리보기에서 클릭한 블록) ───────────────────────
+
+    private GenerationJob runOn(String text, String... blocks) {
+        return await(started(service.start(new EditCommand(EVENT, "여름 이벤트", text, List.of(blocks)))));
+    }
+
+    @Test
+    @DisplayName("고른 영역만 고친다 — 라우터가 다른 영역을 짚어도 버린다")
+    void 고른_영역만_고친다() {
+        router.willReturn(new RawRoute("EDIT", "hero", null));
+        retry.willReturn(ok(NEW_BENEFITS));
+
+        GenerationJob job = runOn("좀 더 눈에 띄게 바꿔줘", "benefits");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls(), "고른 영역 하나만 모델을 불러야 한다");
+        assertTrue(retry.prompts().get(0).contains("data-block=\"benefits\""), "benefits 를 고쳐야 한다");
+        assertTrue(savedHtml().contains("데이터 20GB"));
+        assertEquals(blockOf(BASE, Block.HERO), blockOf(savedHtml(), Block.HERO), "고르지 않은 hero 가 바뀌었다");
+    }
+
+    @Test
+    @DisplayName("영역을 골랐으면 라우터가 못 읽어도 되묻지 않고 그 영역을 고친다")
+    void 고른_영역이면_되묻지_않는다() {
+        router.willNotUnderstand();
+        retry.willReturn(ok(NEW_BENEFITS));
+
+        GenerationJob job = runOn("이거 더 예쁘게", "benefits");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), "되묻지 말고 고른 영역을 고쳐야 한다: " + job.message());
+        assertEquals(2, versionNo());
+    }
+
+    @Test
+    @DisplayName("요청문의 동작은 살린다 — 고른 영역을 지워 달라면 지운다 (모델 없음)")
+    void 고른_영역의_삭제는_살린다() {
+        router.willReturn(new RawRoute("DELETE", "steps", null));
+
+        GenerationJob job = runOn("이거 지워줘", "steps");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(0, retry.calls(), "삭제는 모델을 부르지 않는다");
+        assertTrue(blockOf(savedHtml(), Block.STEPS).isBlank(), "steps 가 남았다");
+    }
+
+    @Test
+    @DisplayName("고른 영역 중 라우터가 못 짚은 것은 EDIT 으로 채워 둘 다 고친다 — 선언 순서로 돈다")
+    void 못_짚은_영역은_EDIT_으로_채운다() {
+        router.willReturn(new RawRoute("EDIT", "hero", "가을 대축제"));
+        retry.willReturn(ok(NEW_HERO),
+                ok("<section data-block=\"cta\"><button class=\"btn\">지금 참여</button></section>"));
+
+        GenerationJob job = runOn("분위기 바꿔줘", "cta", "hero");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(2, retry.calls());
+        assertTrue(retry.prompts().get(0).contains("data-block=\"hero\""), "hero 가 먼저다 (Block 선언 순서)");
+        assertTrue(savedHtml().contains("가을 대축제") && savedHtml().contains("지금 참여"));
+    }
+
+    @Test
+    @DisplayName("같은 고른 영역에 연산이 여러 개여도 거절하지 않고 첫 연산만 쓴다")
+    void 같은_영역_연산이_여럿이어도_하나만() {
+        router.willReturn(new RawRoute("EDIT", "steps", "앱 열기"), new RawRoute("EDIT", "steps", "버튼 누르기"));
+        retry.willReturn(ok(NEW_STEPS));
+
+        GenerationJob job = runOn("단계를 다듬어줘. 앱 열기, 버튼 누르기", "steps");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), "같은 부분 요청 두 개로 거절되면 안 된다: " + job.message());
+        assertEquals(1, retry.calls());
+    }
+
+    @Test
+    @DisplayName("유의사항 · 없는 영역을 고르면 400 이고 라우터도 부르지 않는다")
+    void 못_고르는_영역은_거절() {
+        for (String bad : List.of("notices", "nope")) {
+            EditService.StartResult r = service.start(new EditCommand(EVENT, "여름 이벤트", "바꿔줘", List.of(bad)));
+
+            assertInstanceOf(EditService.StartResult.Rejected.class, r, bad);
+            assertEquals(EditErrorCode.INVALID_BLOCK, ((EditService.StartResult.Rejected) r).errorCode(), bad);
+        }
+        assertEquals(0, router.calls(), "거절인데 라우터를 불렀다");
+    }
+
+    @Test
+    @DisplayName("고른 영역의 중복 · 빈 값은 접힌다")
+    void 고른_영역_정리() {
+        EditCommand c = new EditCommand(EVENT, "t", "x", java.util.Arrays.asList("hero", " hero ", "", null, "cta"));
+        assertEquals(List.of("hero", "cta"), c.blocks());
+        assertTrue(new EditCommand(EVENT, "t", "x").blocks().isEmpty());
+    }
+
+    // ── 선택 영역 수정은 페이지 전체 팔레트를 바꾸지 않는다 (리뷰 반영) ─────────
+
+    private static final String WRAPPED = "<div class=\"ev-container event-page\">" + BASE + "</div>";
+
+    /**
+     * 팔레트 <b>와 내용이 같이</b> 바뀐 응답.
+     *
+     * ★ 예전에는 BASE 의 hero 와 글자가 같고 class 만 달랐다. 그런데 선택 영역 수정은
+     *   팔레트를 떼어 내므로(withoutPalette), 떼고 나면 전후가 <b>완전히 동일</b>해진다.
+     *   "바뀐 게 없으면 저장하지 않는다" 가 그걸 조용한 실패로 보고 막는 게 맞다.
+     *   이 테스트가 보려는 것은 "팔레트가 페이지 전체로 새지 않는다" 이므로
+     *   내용은 달라도 된다. 오히려 달라야 <b>"내용은 되고 색만 막혔다"</b> 까지 보인다.
+     */
+    private static final String HERO_WITH_PALETTE =
+            "<section data-block=\"hero\" class=\"palette-summer\"><h1>시원한 여름 대방출</h1>"
+            + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>";
+
+    /** 팔레트 <b>만</b> 붙고 내용은 그대로. 떼고 나면 아무것도 안 바뀐 상태가 된다 */
+    private static final String HERO_PALETTE_ONLY =
+            "<section data-block=\"hero\" class=\"palette-summer\"><h1>여름 데이터 대방출</h1>"
+            + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>";
+
+    private static org.jsoup.nodes.Element root(String html) {
+        return org.jsoup.Jsoup.parseBodyFragment(html).selectFirst(".ev-container");
+    }
+
+    @Test
+    @DisplayName("hero 를 골라 고칠 때 — 프롬프트에 팔레트가 없고, 모델이 붙여도 떼어 내 페이지 루트 색이 그대로다")
+    void 선택_영역_수정은_팔레트를_바꾸지_않는다() {
+        setUpWith(WRAPPED);
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(HERO_WITH_PALETTE));
+
+        GenerationJob job = runOn("파란색으로 바꿔줘", "hero");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertFalse(retry.prompts().isEmpty());
+        assertFalse(savedHtml().contains("palette-summer"), "선택 영역 수정이 페이지 전체 팔레트를 바꿨습니다: " + savedHtml());
+        assertFalse(root(savedHtml()).classNames().stream().anyMatch(c -> c.startsWith("palette-")));
+    }
+
+    @Test
+    @DisplayName("영역을 고르지 않으면 지금처럼 hero 의 팔레트가 페이지 루트로 옮겨진다")
+    void 영역을_안_고르면_팔레트_적용() {
+        setUpWith(WRAPPED);
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(HERO_WITH_PALETTE));
+
+        GenerationJob job = run("전체 색감을 여름 느낌으로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertTrue(root(savedHtml()).hasClass("palette-summer"), "팔레트가 루트로 옮겨져야 합니다: " + savedHtml());
+    }
+
+    /**
+     * ★ 영역을 고른 채 색을 바꿔 달라는 요청은 <b>구조적으로 안 된다.</b>
+     *   색은 페이지 전체 값(팔레트)이라, 고른 영역만 바꿀 방법이 없어서 떼어 낸다.
+     *   그 결과 화면이 그대로인데, 관리자는 왜 안 됐는지 알 길이 없다.
+     *
+     *   예전 안내 문구는 hero 가 아닐 때만 색 얘기를 했다 —
+     *   정작 hero 를 골라 색을 요청한 경우에 그 설명이 빠졌다.
+     *
+     * ★ "안 된다" 만으로는 모자란다. <b>무엇은 되는지</b>를 같이 줘야 다음 요청이 맞는다.
+     */
+    @Test
+    @DisplayName("★ 영역을 고른 채 색을 바꿔 달라면 — 왜 안 되는지와 무엇이 되는지 알려준다")
+    void 고른_영역의_색_요청은_이유를_알려준다() {
+        setUpWith(WRAPPED);
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(HERO_PALETTE_ONLY));
+
+        GenerationJob job = runOn("파란색으로 바꿔줘", "hero");
+
+        assertEquals(GenerationJob.Phase.FAILED, job.phase(), "안 바뀌었는데 저장했다");
+        assertEquals(1, versionNo());
+        assertTrue(job.message().contains("색은 페이지 전체"),
+                "hero 를 골랐을 때도 색 얘기를 해줘야 한다: " + job.message());
+        assertTrue(job.message().contains("영역 선택을 해제"),
+                "어떻게 하면 되는지 알려줘야 한다: " + job.message());
+        assertTrue(job.message().contains("밝기나 분위기"),
+                "이 영역에서 되는 것도 알려줘야 한다: " + job.message());
+    }
+
     /** 기준 문서를 바꿔 다시 세운다 */
     private void setUpWith(String html) {
         versions = new VersionStore.InMemory();

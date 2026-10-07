@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -23,20 +24,25 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import com.newvent.auth.dto.AuthUser;
 import com.newvent.auth.jwt.JwtProvider;
 import com.newvent.common.config.SecurityConfig;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
+import com.newvent.common.response.PageResponse;
+import com.newvent.event.domain.EventProgress;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.dto.request.EventCreateRequest;
 import com.newvent.event.dto.request.EventUpdateRequest;
+import com.newvent.event.dto.response.EventCountsResponse;
 import com.newvent.event.dto.response.EventDetailResponse;
 import com.newvent.event.dto.response.EventSummaryResponse;
-import com.newvent.event.dto.response.PageResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.service.EventService;
@@ -48,6 +54,11 @@ import com.newvent.user.domain.MembershipGrade;
 @Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtProvider.class})
 @WithMockUser(roles = "ADMIN")
 class AdminEventControllerTest {
+
+    private RequestPostProcessor adminPrincipal() {
+        return authentication(new UsernamePasswordAuthenticationToken(
+                AuthUser.admin(1L), null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+    }
 
     @Autowired
     MockMvc mockMvc;
@@ -66,8 +77,8 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T10:20:00+09:00"),
-                "signup", null, MembershipGrade.NORMAL, false);
-        given(eventService.findAdminEvents(null, null, null, null, 0, 10))
+                "signup", null, MembershipGrade.NORMAL, false, 2, 3);
+        given(eventService.findAdminEvents(null, null, null, null, null, 0, 10))
                 .willReturn(PageResponse.of(List.of(row), 0, 10, 1));
 
         mockMvc.perform(get("/api/admin/events"))
@@ -75,7 +86,34 @@ class AdminEventControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.content[0].name").value("신규 가입 데이터 쿠폰 3GB"))
                 .andExpect(jsonPath("$.data.content[0].status").value("PUBLISHED"))
+                .andExpect(jsonPath("$.data.content[0].publishedVersionNo").value(2))
+                .andExpect(jsonPath("$.data.content[0].latestVersionNo").value(3))
                 .andExpect(jsonPath("$.data.totalElements").value(1));
+    }
+
+    @Test
+    @DisplayName("목록 API 는 검색어·상태·진행상태를 서비스에 넘긴다")
+    void 이벤트_목록_필터를_전달한다() throws Exception {
+        given(eventService.findAdminEvents(
+                        "42", EventStatus.PUBLISHED, EventProgress.ONGOING, null, null, 0, 10))
+                .willReturn(PageResponse.of(List.of(), 0, 10, 0));
+
+        mockMvc.perform(get("/api/admin/events")
+                        .param("name", "42")
+                        .param("status", "PUBLISHED")
+                        .param("progress", "ONGOING"))
+                .andExpect(status().isOk());
+
+        verify(eventService).findAdminEvents(
+                "42", EventStatus.PUBLISHED, EventProgress.ONGOING, null, null, 0, 10);
+    }
+
+    @Test
+    @DisplayName("없는 진행상태 값은 400 과 COMMON400-0 을 반환한다")
+    void 잘못된_진행상태는_400을_반환한다() throws Exception {
+        mockMvc.perform(get("/api/admin/events").param("progress", "LIVE"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON400-0"));
     }
 
     @Test
@@ -96,6 +134,21 @@ class AdminEventControllerTest {
                 .andExpect(jsonPath("$.data.id").value(3))
                 .andExpect(jsonPath("$.data.closingSoon").value(true))
                 .andExpect(jsonPath("$.data.completedHtml").value("<h1>지금 긁으면 바로 당첨</h1>"));
+    }
+
+    @Test
+    @DisplayName("카운트 API 는 상태별 건수를 반환한다")
+    void 이벤트_카운트_조회에_성공한다() throws Exception {
+        given(eventService.findEventCounts())
+                .willReturn(new EventCountsResponse(10, 3, 2, 5));
+
+        mockMvc.perform(get("/api/admin/events/counts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.total").value(10))
+                .andExpect(jsonPath("$.data.published").value(3))
+                .andExpect(jsonPath("$.data.draft").value(2))
+                .andExpect(jsonPath("$.data.ended").value(5));
     }
 
     @Test
@@ -146,7 +199,7 @@ class AdminEventControllerTest {
     @DisplayName("조회 시작일이 종료일보다 늦으면 400 과 EVENT400-1 을 반환한다")
     void 조회기간이_역전되면_400을_반환한다() throws Exception {
         given(eventService.findAdminEvents(
-                        any(), any(), any(OffsetDateTime.class), any(OffsetDateTime.class),
+                        any(), any(), any(), any(OffsetDateTime.class), any(OffsetDateTime.class),
                         anyInt(), anyInt()))
                 .willThrow(new EventException(EventErrorCode.INVALID_SEARCH_PERIOD));
 
@@ -183,9 +236,9 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
                 null, null, MembershipGrade.EXCELLENT,
                 null, false);
-        given(eventService.update(eq(2L), any(EventUpdateRequest.class))).willReturn(updated);
+        given(eventService.update(eq(1L), eq(2L), any(EventUpdateRequest.class))).willReturn(updated);
 
-        mockMvc.perform(patch("/api/admin/events/2")
+        mockMvc.perform(patch("/api/admin/events/2").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "이름만 변경" }
@@ -200,10 +253,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("종료된 이벤트 수정은 409 와 EVENT409-1 을 반환한다")
     void 종료된_이벤트_수정은_409를_반환한다() throws Exception {
-        given(eventService.update(eq(6L), any(EventUpdateRequest.class)))
+        given(eventService.update(eq(1L), eq(6L), any(EventUpdateRequest.class)))
                 .willThrow(new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE));
 
-        mockMvc.perform(patch("/api/admin/events/6")
+        mockMvc.perform(patch("/api/admin/events/6").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "name": "이름 변경" }
@@ -215,10 +268,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("게시 중인 이벤트의 템플릿 변경은 409 와 EVENT409-4 를 반환한다")
     void 게시중_템플릿_변경은_409를_반환한다() throws Exception {
-        given(eventService.update(eq(4L), any(EventUpdateRequest.class)))
+        given(eventService.update(eq(1L), eq(4L), any(EventUpdateRequest.class)))
                 .willThrow(new EventException(EventErrorCode.PUBLISHED_EVENT_TEMPLATE_NOT_EDITABLE));
 
-        mockMvc.perform(patch("/api/admin/events/4")
+        mockMvc.perform(patch("/api/admin/events/4").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "templateKey": "sports_cheer" }
@@ -230,10 +283,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("수정 후 기간이 역전되면 400 과 EVENT400-0 을 반환한다")
     void 수정_기간이_역전되면_400을_반환한다() throws Exception {
-        given(eventService.update(eq(2L), any(EventUpdateRequest.class)))
+        given(eventService.update(eq(1L), eq(2L), any(EventUpdateRequest.class)))
                 .willThrow(new EventException(EventErrorCode.INVALID_PERIOD));
 
-        mockMvc.perform(patch("/api/admin/events/2")
+        mockMvc.perform(patch("/api/admin/events/2").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "endAt": "2026-06-30T00:00:00+09:00" }
@@ -269,7 +322,7 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("수정 요청에 이벤트명이 없으면 검증을 통과한다")
     void 이벤트_수정_이름이_없으면_검증을_통과한다() throws Exception {
-        mockMvc.perform(patch("/api/admin/events/1")
+        mockMvc.perform(patch("/api/admin/events/1").with(adminPrincipal())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 { "endAt": "2026-10-20T23:59:59+09:00" }
@@ -349,7 +402,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-01-11T00:00:00+09:00"),
-                null, null, MembershipGrade.NORMAL, false);
+                null, null, MembershipGrade.NORMAL, false, null, null);
         given(eventService.findDeletedEvents(0, 10))
                 .willReturn(PageResponse.of(List.of(row), 0, 10, 1));
 
@@ -448,6 +501,58 @@ class AdminEventControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("EVENT400-2"));
+    }
+
+    @Test
+    @DisplayName("게시 내리기 API 는 DRAFT 로 돌아온 이벤트 상세를 ApiResponse 로 감싼다")
+    void 게시_내리기에_성공한다() throws Exception {
+        EventDetailResponse unpublished = new EventDetailResponse(
+                3L, "가을 멤버십 더블 혜택", EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-09-30T23:59:59+09:00"),
+                OffsetDateTime.parse("2026-09-20T13:00:00+09:00"),
+                "member_appreciation", null, MembershipGrade.NORMAL,
+                null, false);
+        given(eventService.unpublish(3L)).willReturn(unpublished);
+
+        mockMvc.perform(post("/api/admin/events/3/unpublish"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(3))
+                .andExpect(jsonPath("$.data.status").value("DRAFT"));
+    }
+
+    @Test
+    @DisplayName("게시 중이 아닌 이벤트의 게시 내리기는 409 와 EVENT409-7 을 반환한다")
+    void 게시중이_아닌_이벤트의_게시_내리기는_409를_반환한다() throws Exception {
+        given(eventService.unpublish(2L))
+                .willThrow(new EventException(EventErrorCode.EVENT_NOT_UNPUBLISHABLE));
+
+        mockMvc.perform(post("/api/admin/events/2/unpublish"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-7"));
+    }
+
+    @Test
+    @DisplayName("종료 시각이 지난 이벤트의 게시 내리기는 409 와 EVENT409-1 을 반환한다")
+    void 종료_시각이_지난_이벤트의_게시_내리기는_409를_반환한다() throws Exception {
+        given(eventService.unpublish(4L))
+                .willThrow(new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE));
+
+        mockMvc.perform(post("/api/admin/events/4/unpublish"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-1"));
+    }
+
+    @Test
+    @DisplayName("없는 이벤트의 게시 내리기는 404 와 EVENT404-0 을 반환한다")
+    void 없는_이벤트의_게시_내리기는_404를_반환한다() throws Exception {
+        given(eventService.unpublish(999L))
+                .willThrow(new EventException(EventErrorCode.EVENT_NOT_FOUND));
+
+        mockMvc.perform(post("/api/admin/events/999/unpublish"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("EVENT404-0"));
     }
 
     @Test

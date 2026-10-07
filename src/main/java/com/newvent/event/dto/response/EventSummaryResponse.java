@@ -16,9 +16,12 @@ public record EventSummaryResponse(
         String template,
         String thumbnailUrl,
         MembershipGrade grade,
-        boolean closingSoon
+        boolean closingSoon,
+        Integer publishedVersionNo,
+        Integer latestVersionNo
 ) {
-    public static EventSummaryResponse from(Event event, boolean closingSoon) {
+    /** latestVersionNo 는 목록 한 페이지를 한 번에 모아 온 값이다. 버전이 없으면 null. */
+    public static EventSummaryResponse from(Event event, boolean closingSoon, Integer latestVersionNo) {
         return new EventSummaryResponse(
                 event.getId(),
                 event.getTitle(),
@@ -29,6 +32,8 @@ public record EventSummaryResponse(
                 event.templateCode(),
                 event.thumbnailPath(),
                 event.getGrade(),
-                closingSoon);
+                closingSoon,
+                event.getPublishedVersion() == null ? null : event.getPublishedVersion().getVersionNo(),
+                latestVersionNo);
     }
 }

@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.newvent.common.response.ApiResponse;
-import com.newvent.event.dto.response.PageResponse;
+import com.newvent.common.response.PageResponse;
 import com.newvent.generation.dto.LlmCallLogDetailResponse;
 import com.newvent.generation.dto.LlmCallLogSummaryResponse;
 import com.newvent.generation.service.LlmCallLogService;

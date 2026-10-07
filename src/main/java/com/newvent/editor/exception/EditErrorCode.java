@@ -26,7 +26,14 @@ public enum EditErrorCode implements ErrorCode {
      * ★ 409 다. 요청은 멀쩡한데 지금은 안 될 뿐이다.
      */
     ALREADY_RUNNING(HttpStatus.CONFLICT, "EDIT409-0",
-            "이 이벤트에 진행 중인 작업이 있습니다. 끝난 뒤 다시 시도해 주세요.");
+            "이 이벤트에 진행 중인 작업이 있습니다. 끝난 뒤 다시 시도해 주세요."),
+
+    /**
+     * ★ 400 다. 고른 영역이 레지스트리에 없거나 채팅으로 못 고치는 영역(유의사항)이다.
+     *   프론트가 고를 수 있는 영역만 보내야 한다 — 여기 오면 프론트 버그다.
+     */
+    INVALID_BLOCK(HttpStatus.BAD_REQUEST, "EDIT400-0",
+            "고를 수 없는 영역입니다. 유의사항은 채팅으로 고칠 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

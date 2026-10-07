@@ -25,11 +25,11 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.newvent.auth.jwt.JwtProvider;
 import com.newvent.common.config.SecurityConfig;
+import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventProgress;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventVersion;
-import com.newvent.event.dto.response.PageResponse;
 import com.newvent.event.dto.response.PublicEventSummaryResponse;
 import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.exception.EventNotFoundException;

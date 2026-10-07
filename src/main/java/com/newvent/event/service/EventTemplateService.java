@@ -21,6 +21,7 @@ public class EventTemplateService {
 
     public List<TemplateResponse> findActiveTemplates() {
         return eventTemplateRepository.findAllActive().stream()
+                .filter(EventTemplate::isBuiltin)
                 .map(TemplateResponse::from)
                 .toList();
     }
@@ -28,6 +29,7 @@ public class EventTemplateService {
     public TemplateResponse findByKey(String templateKey) {
         return eventTemplateRepository.findByKey(templateKey)
                 .filter(EventTemplate::isActive)
+                .filter(EventTemplate::isBuiltin)
                 .map(TemplateResponse::from)
                 .orElseThrow(() -> new EventException(EventErrorCode.TEMPLATE_NOT_FOUND));
     }
