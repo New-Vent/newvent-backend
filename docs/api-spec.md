@@ -488,7 +488,6 @@ http://localhost:8080/api/admin/llm-calls/1
 
 - **자기 이벤트 제외**: 검색은 `eventId` 본인 글을 항상 뺀다. 자기 글을 예시로 가져오면 돌고 돌기 때문.
 - **최소 유사도 0.5**: `distance = 1 - similarity` 기준 `maxDistance = 0.5` 보다 멀면 결과에서 잘린다.
-- `similar-versions` (버전 비교 RAG)는 미구현. `VersionCompareService` 인터페이스만 정의됨.
 
 ## `POST /api/admin/rag/reindex`
 
@@ -671,6 +670,61 @@ http://localhost:8080/api/admin/rag/search-preview?eventId=3&query=회원%20혜�
 
 ```text
 http://localhost:8080/api/admin/rag/recommend-prompts?eventId=3&query=성과급&topK=3
+```
+
+---
+
+## `GET /api/admin/rag/similar-versions`
+
+유사 버전 탐색. 기준 버전과 비슷한 같은 이벤트 내 다른 버전을 유사도 내림차순으로 돌려준다.
+기준 버전의 색인된 청크 벡터를 그대로 쿼리로 쓰므로 임베딩을 새로 부르지 않는다.
+
+### Query
+
+| 이름 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- |
+| `eventId` | O | | 기준 버전이 속한 이벤트 |
+| `versionId` | O | | 기준 버전. 결과에서 제외된다 |
+| `topK` | X | `3` | 1~10. 반환할 버전 수 |
+
+### 200 예시
+
+`similarity` 가 클수록 기준 버전과 비슷하다 (`1` 이면 동일). `topChunks` 는 해당 버전의 대표 청크 최대 2개.
+기준 버전이 미색인이면 빈 목록이다.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "versionId": 5,
+      "versionNo": 2,
+      "similarity": 0.89,
+      "topChunks": [
+        {
+          "chunkId": 41,
+          "blockKey": "hero",
+          "chunkIndex": 0,
+          "content": "신규 가입 고객 전원에게 데이터 3GB를 드립니다",
+          "distance": 0.11
+        }
+      ]
+    }
+  ],
+  "message": null
+}
+```
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| `eventId`·`versionId` 누락 | 400 | `COMMON400-0` |
+| `versionId` 가 없거나 다른 이벤트 소속 | 404 | `EVENT404-3` |
+| `topK` 가 1 미만·10 초과 | 400 | `COMMON400-0` |
+
+```text
+http://localhost:8080/api/admin/rag/similar-versions?eventId=3&versionId=10&topK=3
 ```
 
 ---
