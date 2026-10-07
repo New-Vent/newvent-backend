@@ -729,6 +729,74 @@ http://localhost:8080/api/admin/rag/similar-versions?eventId=3&versionId=10&topK
 
 ---
 
+## `GET /api/admin/rag/quality-trend`
+
+주간 품질 추이. 호출 건수·RAG 사용 건수·청크 수를 주별로 묶어 보여준다.
+distance 평균은 저장하지 않으므로(쿼리 시점 계산값) 건수 기반으로 추이를 본다.
+
+### Query
+
+| 이름 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- |
+| `weeks` | X | `4` | 1~12. 조회할 주 수 |
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "weekStart": "2026-09-21",
+      "totalCalls": 10,
+      "ragUsedCalls": 4,
+      "chunkCount": 25
+    }
+  ],
+  "message": null
+}
+```
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| `weeks` 가 1 미만·12 초과 | 400 | `COMMON400-0` |
+
+```text
+http://localhost:8080/api/admin/rag/quality-trend?weeks=4
+```
+
+---
+
+## `POST /api/admin/rag/reindex/all`
+
+전체 재색인. 삭제된 이벤트·시드(`SEED:`) 제외, 하나가 터져도 멈추지 않고 다음으로 넘어간다.
+야간 스케줄러(매일 03:00 KST)가 같은 로직을 돌린다.
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "totalEvents": 3,
+    "succeeded": 2,
+    "failedEvents": [
+      { "eventId": 7, "error": "임베딩 호출 실패" }
+    ],
+    "totalChunks": 15
+  },
+  "message": null
+}
+```
+
+```text
+POST http://localhost:8080/api/admin/rag/reindex/all
+```
+
+---
+
 ## `POST /api/admin/events/{eventId}/generate`
 
 백지 이벤트 페이지 생성 시작. 비동기 작업으로 `202 Accepted` 반환, `jobId`로 폴링.
