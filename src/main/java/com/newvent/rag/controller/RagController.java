@@ -18,6 +18,8 @@ import com.newvent.common.response.ApiResponse;
 import com.newvent.rag.dto.request.ReindexRequest;
 import com.newvent.rag.dto.response.IndexStatusResponse;
 import com.newvent.rag.dto.response.PromptCandidate;
+import com.newvent.rag.dto.response.QualityTrendResponse;
+import com.newvent.rag.dto.response.ReindexAllResponse;
 import com.newvent.rag.dto.response.SearchPreviewResponse;
 import com.newvent.rag.dto.response.VersionSimilarityResponse;
 import com.newvent.rag.service.EmbeddingService;
@@ -83,5 +85,18 @@ public class RagController {
             @RequestParam Long versionId,
             @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK) {
         return ApiResponse.success(comparing.similarVersions(eventId, versionId, topK));
+    }
+
+    /** 주간 품질 추이. 호출 건수·RAG 사용 건수·청크 수를 주별로 묶어 보여준다. */
+    @GetMapping("/quality-trend")
+    public ApiResponse<List<QualityTrendResponse>> qualityTrend(
+            @RequestParam(defaultValue = "4") @Min(1) @Max(12) int weeks) {
+        return ApiResponse.success(embedding.getQualityTrend(weeks));
+    }
+
+    /** 전체 재색인. 삭제된 이벤트·시드 제외, 실패해도 멈추지 않고 다음으로 넘어간다. */
+    @PostMapping("/reindex/all")
+    public ApiResponse<ReindexAllResponse> reindexAll() {
+        return ApiResponse.success(embedding.indexAllEvents());
     }
 }
