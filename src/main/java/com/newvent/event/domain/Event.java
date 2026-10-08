@@ -165,7 +165,15 @@ public class Event extends BaseTimeEntity {
         if (status == EventStatus.ENDED) {
             return true;
         }
-        return status == EventStatus.PUBLISHED && endDate != null && !now.isBefore(endDate);
+        return status == EventStatus.PUBLISHED && periodEnded(now);
+    }
+
+    /**
+     * 종료일시가 지났는지. 종료 시각과 같은 순간도 지난 것으로 본다.
+     * 자동 종료 스케줄러는 endDate &lt; now 로 종료하므로, 그 직전 한 순간까지 포함해 수정과 게시를 함께 막는다.
+     */
+    public boolean periodEnded(OffsetDateTime now) {
+        return endDate != null && !now.isBefore(endDate);
     }
 
     public boolean published() {

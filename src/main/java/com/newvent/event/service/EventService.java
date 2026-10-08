@@ -167,9 +167,10 @@ public class EventService {
     // 게시 중인 이벤트는 휴지통으로 보낼 수 없다(먼저 게시를 내리거나 종료해야 함).
     // 생성 작업이 진행 중인 이벤트도 거부한다 — 안 그러면 휴지통으로 보낸 뒤에도 백그라운드 생성이 끝나면서 삭제된 이벤트에 새 버전이 저장될 수 있다.
     @Transactional
-    public void delete(Long id) {
+    public void delete(Long adminId, Long id) {
         Event event = eventRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        requireOwner(event, adminId);
         if (event.getStatus() == EventStatus.PUBLISHED) {
             throw new EventException(EventErrorCode.PUBLISHED_EVENT_DELETE_FORBIDDEN);
         }
@@ -180,29 +181,36 @@ public class EventService {
     }
 
     @Transactional
-    public EventDetailResponse restore(Long id) {
+    public EventDetailResponse restore(Long adminId, Long id) {
         Event event = eventRepository.findByIdAndDeletedAtIsNotNull(id)
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        requireOwner(event, adminId);
         event.restore();
         return EventDetailResponse.from(event, closingSoon(event));
     }
 
     // 휴지통에서 영구 삭제. 되돌릴 수 없다 — event_versions 등 하위 데이터는 DB CASCADE 로 함께 지워진다
     @Transactional
-    public void hardDelete(Long id) {
+    public void hardDelete(Long adminId, Long id) {
         Event event = eventRepository.findByIdAndDeletedAtIsNotNull(id)
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        requireOwner(event, adminId);
         eventRepository.delete(event);
     }
 
     // 게시(DRAFT→PUBLISHED) 및 재게시(PUBLISHED 상태에서 다른 버전으로 교체)
     // 선택한 버전이 체크포인트가 아니면 게시 시점에 자동으로 체크포인트 처리한다
     @Transactional
-    public EventDetailResponse publish(Long id, Long versionId) {
+    public EventDetailResponse publish(Long adminId, Long id, Long versionId) {
         Event event = eventRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        requireOwner(event, adminId);
         if (event.getStatus() == EventStatus.ENDED) {
             throw new EventException(EventErrorCode.EVENT_ENDED_PUBLISH_FORBIDDEN);
+        }
+        // 종료일시가 지난 채로 게시하면 사용자에게 한 번도 보이지 않은 채 곧 자동 종료된다. 시작일은 보지 않는다
+        if (event.periodEnded(OffsetDateTime.now(clock))) {
+            throw new EventException(EventErrorCode.EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN);
         }
         EventVersion version = eventVersionRepository.findByIdAndEventId(versionId, id)
                 .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
@@ -235,10 +243,7 @@ public class EventService {
     @Transactional
     public EventDetailResponse update(Long adminId, Long id, EventUpdateRequest request) {
         Event event = findActiveEvent(id);
-        if (event.getOwnerAdmin() == null || !adminId.equals(event.getOwnerAdmin().getId())) {
-            throw new org.springframework.security.access.AccessDeniedException(
-                    "이벤트 소유 관리자만 수정할 수 있습니다.");
-        }
+        requireOwner(event, adminId);
         if (event.editLocked(OffsetDateTime.now(clock))) {
             throw new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
         }
@@ -268,8 +273,9 @@ public class EventService {
 
     // 상태 변경 API 는 종료(PUBLISHED → ENDED)만 한다. 게시는 게시 API 로 한다
     @Transactional
-    public EventDetailResponse changeStatus(Long id, EventStatus target) {
+    public EventDetailResponse changeStatus(Long adminId, Long id, EventStatus target) {
         Event event = findActiveEvent(id);
+        requireOwner(event, adminId);
         if (target != EventStatus.ENDED) {
             throw new EventException(EventErrorCode.UNSUPPORTED_STATUS_CHANGE);
         }
@@ -284,8 +290,9 @@ public class EventService {
     // 게시 내리기(PUBLISHED → DRAFT) - 종료 전까지만 가능
     // 종료 시각이 지났는데 자동 종료가 아직 안 돈 이벤트도 막기 - 내리면 DRAFT 가 되어 수정 잠금이 풀리고, 종료된 이벤트를 수정·재게시할 수 있게 되기 때문
     @Transactional
-    public EventDetailResponse unpublish(Long id) {
+    public EventDetailResponse unpublish(Long adminId, Long id) {
         Event event = findActiveEvent(id);
+        requireOwner(event, adminId);
         if (!event.published()) {
             throw new EventException(EventErrorCode.EVENT_NOT_UNPUBLISHABLE);
         }
@@ -295,6 +302,14 @@ public class EventService {
         event.unpublish();
         eventRepository.flush();
         return EventDetailResponse.from(event, closingSoon(event));
+    }
+
+    private static void requireOwner(Event event, Long adminId) {
+        if (adminId == null || event.getOwnerAdmin() == null
+                || !adminId.equals(event.getOwnerAdmin().getId())) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "이벤트 소유 관리자만 변경할 수 있습니다.");
+        }
     }
 
     private Event findActiveEvent(Long id) {
