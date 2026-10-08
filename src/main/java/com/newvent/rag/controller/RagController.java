@@ -6,6 +6,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,7 +21,7 @@ import com.newvent.rag.dto.request.ReindexRequest;
 import com.newvent.rag.dto.response.IndexStatusResponse;
 import com.newvent.rag.dto.response.PromptCandidate;
 import com.newvent.rag.dto.response.QualityTrendResponse;
-import com.newvent.rag.dto.response.ReindexAllResponse;
+import com.newvent.rag.dto.response.ReindexAllStatus;
 import com.newvent.rag.dto.response.SearchPreviewResponse;
 import com.newvent.rag.dto.response.VersionSimilarityResponse;
 import com.newvent.rag.service.EmbeddingService;
@@ -94,9 +96,24 @@ public class RagController {
         return ApiResponse.success(embedding.getQualityTrend(weeks));
     }
 
-    /** 전체 재색인. 삭제된 이벤트·시드 제외, 실패해도 멈추지 않고 다음으로 넘어간다. */
+    /**
+     * 전체 재색인 비동기 시작. 전역 작업은 한 번에 하나 — 이미 돌고 있으면 409.
+     * 자리를 잡으면 202 + 시작 시각만 돌려주고 @Async 로 발사한다 (nginx 60초 타임아웃 회피).
+     */
     @PostMapping("/reindex/all")
-    public ApiResponse<ReindexAllResponse> reindexAll() {
-        return ApiResponse.success(embedding.indexAllEvents());
+    public ResponseEntity<ApiResponse<ReindexAllStatus>> reindexAll() {
+        if (!embedding.tryClaimReindexSlot()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiResponse.success(embedding.getReindexAllStatus()));
+        }
+        embedding.indexAllEventsAsync();
+        return ResponseEntity.accepted()
+                .body(ApiResponse.success(embedding.getReindexAllStatus()));
+    }
+
+    /** 전체 재색인 진행 상태. running·시작·종료·직전 결과. */
+    @GetMapping("/reindex/all/status")
+    public ApiResponse<ReindexAllStatus> reindexAllStatus() {
+        return ApiResponse.success(embedding.getReindexAllStatus());
     }
 }

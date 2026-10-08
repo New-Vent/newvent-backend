@@ -7,9 +7,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventVersion;
@@ -22,6 +26,7 @@ import com.newvent.rag.domain.RagChunk;
 import com.newvent.rag.dto.response.IndexStatusResponse;
 import com.newvent.rag.dto.response.QualityTrendResponse;
 import com.newvent.rag.dto.response.ReindexAllResponse;
+import com.newvent.rag.dto.response.ReindexAllStatus;
 import com.newvent.rag.repository.RagChunkRepository;
 import com.newvent.rag.service.RagChunkingService.Chunk;
 
@@ -41,16 +46,24 @@ public class EmbeddingService {
 	private final EmbeddingClient embedding;
 	private final EventRepository events;
 	private final LlmCallLogRepository logs;
+	private final TransactionTemplate txTemplate;
+
+	// 전체 재색인은 한 번에 하나만 돈다 — 야간 스케줄러와 관리자 버튼이 같은 자리를 쓴다
+	private final AtomicBoolean reindexing = new AtomicBoolean();
+	private volatile Instant reindexStartedAt;
+	private volatile Instant reindexFinishedAt;
+	private volatile ReindexAllResponse lastResult;
 
 	public EmbeddingService(EventVersionRepository versions, RagChunkRepository chunks,
 	        RagChunkingService chunking, EmbeddingClient embedding,
-	        EventRepository events, LlmCallLogRepository logs) {
+	        EventRepository events, LlmCallLogRepository logs, TransactionTemplate txTemplate) {
 		this.versions = versions;
 		this.chunks = chunks;
 		this.chunking = chunking;
 		this.embedding = embedding;
 		this.events = events;
 		this.logs = logs;
+		this.txTemplate = txTemplate;
 	}
 
 	/**
@@ -98,9 +111,51 @@ public class EmbeddingService {
 	}
 
 	/**
+	 * 전체 재색인 자리 선점. REST(요청 스레드)와 스케줄러가 같은 자리를 쓴다.
+	 * @Async 는 요청 스레드를 떠나서 실행되므로 409 판정은 발사 전에 여기서 끝낸다.
+	 * true 를 받으면 반드시 indexAllEventsAsync() 로 발사해야 한다 (해제는 finally).
+	 */
+	public boolean tryClaimReindexSlot() {
+		if (!reindexing.compareAndSet(false, true)) {
+			return false;
+		}
+		reindexStartedAt = Instant.now();
+		return true;
+	}
+
+	/** 진행 상태 조회. 실행 중 여부·시작·종료·직전 결과. */
+	public ReindexAllStatus getReindexAllStatus() {
+		return new ReindexAllStatus(reindexing.get(), reindexStartedAt,
+				reindexFinishedAt, lastResult);
+	}
+
+	/**
+	 * 전체 재색인 비동기 발사. 호출 전에 tryClaimReindexSlot() 으로 자리를 잡아야 한다.
+	 * @Async self-invocation 함정을 피하려고 컨트롤러·스케줄러가 프록시 경유로 직접 부른다.
+	 */
+	@Async
+	public CompletableFuture<ReindexAllResponse> indexAllEventsAsync() {
+		try {
+			ReindexAllResponse result = indexAllEvents();
+			lastResult = result;
+			log.info("전체 재색인 완료: {}/{} 성공, 실패 {}건, 청크={}",
+					result.succeeded(), result.totalEvents(),
+					result.failedEvents().size(), result.totalChunks());
+			return CompletableFuture.completedFuture(result);
+		} catch (RuntimeException e) {
+			log.error("전체 재색인 중단", e);
+			throw e;
+		} finally {
+			reindexFinishedAt = Instant.now();
+			reindexing.set(false);
+		}
+	}
+
+	/**
 	 * 전체 이벤트 재색인. 하나가 터져도 멈추지 않고 다음으로 넘어간다.
-	 * ★ @Transactional 을 붙이지 않는다. 붙이면 내부 reindex() 들이 같은 트랜잭션에 합류해서
-	 *   하나 실패 시 전부 롤백된다. 이벤트별 독립 트랜잭션이어야 부분 실패를 허용할 수 있다.
+	 * ★ 이벤트당 트랜잭션 경계는 TransactionTemplate 으로 명시한다. this.reindex()
+	 *   자기 호출은 Spring 프록시를 안 타서 @Transactional 이 무시되므로, 경계를 안 잡으면
+	 *   삭제는 커밋되고 저장은 안 되는 채로 남는다 (그 버전 청크 0개).
 	 * ★ 시드 데이터(SEED: ...)는 건너뛴다. 데모용 낡은 벡터가 운영 검색에 섞이는 것을 막는다.
 	 */
 	public ReindexAllResponse indexAllEvents() {
@@ -113,7 +168,8 @@ public class EmbeddingService {
 				continue;
 			}
 			try {
-				totalChunks += reindex(event.getId(), null);
+				Integer done = txTemplate.execute(status -> reindex(event.getId(), null));
+				totalChunks += done != null ? done : 0;
 				succeeded++;
 			} catch (RuntimeException e) {
 				log.error("전체 재색인 실패: eventId={}", event.getId(), e);
