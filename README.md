@@ -99,11 +99,14 @@ macOS/Linux:
 
 ## Documentation
 
-| 문서        | 경로                                                   |
-| --------- | ---------------------------------------------------- |
-| 로컬 환경 설정  | [`docs/setup.md`](docs/setup.md)                     |
-| API 공통 규약 | [`docs/api-conventions.md`](docs/api-conventions.md) |
-| API 명세    | [`docs/api-spec.md`](docs/api-spec.md)               |
-| ERD       | [`docs/erd.md`](docs/erd.md)                         |
-| 담당 영역     | [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md)             |
-| 주요 결정 기록  | [`docs/decisions/`](docs/decisions/)                 |
+**먼저 [`docs/README.md`](docs/README.md) 를 보세요.** 무엇을 찾는지에 따라 읽을 곳이 다릅니다.
+
+| 문서           | 경로                                                   |
+| ------------ | ---------------------------------------------------- |
+| **문서 지도**    | [`docs/README.md`](docs/README.md)                   |
+| API 명세       | **Swagger UI** — `http://localhost:8080/swagger-ui.html` (코드가 생성, prod 는 꺼짐) |
+| API 설계 배경    | [`docs/api-design.md`](docs/api-design.md)           |
+| API 공통 규약    | [`docs/api-conventions.md`](docs/api-conventions.md) |
+| 오류 코드        | [`docs/error-codes.md`](docs/error-codes.md)         |
+| 로컬 환경 설정     | [`docs/setup.md`](docs/setup.md)                     |
+| 주요 결정 기록     | [`docs/decisions/`](docs/decisions/)                 |
