@@ -438,6 +438,17 @@ class AdminEventControllerTest {
     }
 
     @Test
+    @DisplayName("참여 기록이 있는 이벤트 영구삭제는 409 와 EVENT409-9 를 반환한다")
+    void 참여_기록이_있는_이벤트_영구삭제는_409를_반환한다() throws Exception {
+        willThrow(new EventException(EventErrorCode.PARTICIPATED_EVENT_PERMANENT_DELETE_FORBIDDEN))
+                .given(eventService).hardDelete(1L, 1L);
+
+        mockMvc.perform(delete("/api/admin/events/1/permanent").with(adminPrincipal()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EVENT409-9"));
+    }
+
+    @Test
     @DisplayName("휴지통 목록 API 는 ApiResponse 로 감싼다")
     void 휴지통_목록_조회에_성공한다() throws Exception {
         EventSummaryResponse row = new EventSummaryResponse(
