@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -34,6 +35,17 @@ public final class PageShell {
 
     /** 래퍼를 찾는 선택자. 둘 중 하나라도 있으면 이미 래퍼가 있는 것이다. */
     private static final String ROOT_SELECTOR = ".ev-container, .event-page";
+
+
+    /** 이 요소가 래퍼인가. 이름은 ROOT_SELECTOR 한 곳에만 둔다. */
+    public static boolean isRoot(Element el) {
+        return el != null && el.is(ROOT_SELECTOR);
+    }
+
+    /** 범위 안에서 래퍼를 찾는다. 없으면 null. */
+    public static Element rootOf(Element scope) {
+        return scope == null ? null : scope.selectFirst(ROOT_SELECTOR);
+    }
 
     private static final String NOTICES_RESOURCE = "/notices/common.html";
 
@@ -91,7 +103,8 @@ public final class PageShell {
     /**
      * 저장 직전에 한 번 부른다. 래퍼 → 테마 → 유의사항 순서다.
      *
-     * @param templateCode 템플릿 코드. **백지면 null** — 그때는 테마를 붙이지 않는다.
+     * @param templateCode 템플릿 코드. **백지면 null** — 그때는 모델이 고른 테마,
+     *                     그것도 없으면 {@link Theme#DEFAULT} 가 붙는다.
      */
     public static String plant(String fragment, String templateCode) {
         return ensureNotices(ensureRoot(fragment, templateCode));
@@ -102,6 +115,7 @@ public final class PageShell {
      *
      * ★ 이미 theme-* 가 붙어 있으면 건드리지 않는다.
      *   관리자가 만든 템플릿이 자기 테마를 들고 올 수 있다.
+     * ★ 테마가 하나도 없으면 반드시 하나 박는다 — 템플릿이면 코드로, 백지면 기본 테마로.
      */
     public static String ensureRoot(String fragment, String templateCode) {
         Document doc = parse(fragment);
@@ -123,12 +137,22 @@ public final class PageShell {
         }
 
         final Element target = root;
-        boolean themed = target.classNames().stream().anyMatch(c -> c.startsWith(Theme.PREFIX));
-        if (!themed) {
-            Theme.of(templateCode).ifPresent(t -> target.addClass(t.cssClass()));
-        }
         orderBlocks(target);
+        // ★ 먼저 올린다. 모델이 hero 에 고른 테마 · 팔레트를 루트로 옮긴다.
+        //   순서를 뒤집으면 기본 테마가 먼저 박혀서 모델이 고른 테마가 밀린다.
         hoist(doc, target);
+
+        // ★ 기본 테마는 여기서만 박는다 — BlockValidator.cleanLooks 에 넣으면 안 된다.
+        //   cleanLooks 는 RetryService 를 거쳐 **수정 경로도** 지난다. 거기서 기본값을
+        //   넣으면 수정마다 블록에 theme-* 가 박혀 루트 테마가 리셋되고,
+        //   EditService 의 "안 바뀌었으면 실패" 검사도 전후가 늘 달라져 무력해진다.
+        //
+        // ★ 테마가 없으면 event.css 의 :root 기본값 = 같은 흰 카드가 세로로 쌓인 화면이다.
+        //   Theme.DEFAULT(BASIC)는 성격이 없어서 어떤 이벤트에 박혀도 틀리지 않는다.
+        boolean themed = target.classNames().stream().anyMatch(Theme::looksLike);
+        if (!themed) {
+            target.addClass(Theme.of(templateCode).orElse(Theme.DEFAULT).cssClass());
+        }
         return doc.body().html();
     }
 
@@ -199,30 +223,54 @@ public final class PageShell {
     }
 
     /**
-     * 섹션들의 palette-* 를 걷어 루트에 하나만 남긴다.
+     * 섹션들의 palette-* · theme-* 를 걷어 루트에 하나만 남긴다.
      *   새 팔레트가 없으면     루트는 그대로 (이번 수정이 색을 안 건드렸다)
      *   palette-base 면        루트의 팔레트를 지운다 (원래대로)
      *   그 밖                  루트의 팔레트를 그걸로 바꾼다
      */
     private static void hoist(Document doc, Element root) {
+        String palette = pickFromHero(doc, Palette::looksLike, c -> Palette.find(c).isPresent());
+        String theme   = pickFromHero(doc, Theme::looksLike,   c -> Theme.find(c).isPresent());
+
+        if (palette != null) {
+            for (String c : List.copyOf(root.classNames())) {
+                if (Palette.looksLike(c)) root.removeClass(c);
+            }
+            if (!palette.equals(Palette.BASE.cssClass())) root.addClass(palette);
+        }
+        // ★ 테마에는 base 가 없다. "테마 없음" 은 ensureRoot 가 기본 테마를 박아 막는다
+        if (theme != null) {
+            for (String c : List.copyOf(root.classNames())) {
+                if (Theme.looksLike(c)) root.removeClass(c);
+            }
+            root.addClass(theme);
+        }
+    }
+
+    /**
+     * hero 섹션에서 첫 유효 값을 집고, <b>모든 섹션에서 그 접두사를 지운다.</b>
+     *
+     * ★ hero 에서만 집는 이유 — 페이지 전체 값이라 자리가 하나여야 한다. 블록마다 다른 걸
+     *   고르면 "마지막에 이긴 것" 이 되어 수정할 때마다 결과가 달라진다. 프롬프트가
+     *   hero 에만 안내하므로 서버도 hero 만 믿는다.
+     * ★ hero 가 아닌 자리의 것은 집지 않고 지운다 — 남겨 두면 다음 수정에서
+     *   모델이 그걸 보고 따라 쓴다(v-* 에서 겪은 그 경로다).
+     */
+    private static String pickFromHero(Document doc,
+                                       Predicate<String> looksLike,
+                                       Predicate<String> known) {
         String picked = null;
         for (Element sec : doc.body().select("section[data-block]")) {
             for (String c : List.copyOf(sec.classNames())) {
-                if (!Palette.looksLike(c)) continue;
-                if (picked == null && Palette.find(c).isPresent()
-                        && sec.is(Block.HERO.selector())) {
+                if (!looksLike.test(c)) continue;
+                if (picked == null && known.test(c) && sec.is(Block.HERO.selector())) {
                     picked = c;
                 }
                 sec.removeClass(c);
             }
             if (sec.classNames().isEmpty()) sec.removeAttr("class");
         }
-        if (picked == null) return;
-
-        for (String c : List.copyOf(root.classNames())) {
-            if (Palette.looksLike(c)) root.removeClass(c);
-        }
-        if (!picked.equals(Palette.BASE.cssClass())) root.addClass(picked);
+        return picked;
     }
 
     /**
