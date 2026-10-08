@@ -528,7 +528,11 @@ public class EditService {
         try {
             res = retry.run(ctx,
                     // ★ 영역을 골랐으면 hero 에도 페이지 전체 색감(팔레트)을 안내하지 않는다 — 선택 밖이 바뀐다
-                    PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks()),
+                    // ★★ step.op() 을 넘긴다. 전에는 안 넘겨서 라우터가 STYLE 로 분류해도
+                    //   EDIT 과 **똑같은 프롬프트**가 나갔다 — op 은 위 로그 한 줄에만 쓰였다.
+                    //   그래서 "더 화려하게" 에 모델이 이모지만 붙이고 모양은 안 바꿨다.
+                    PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks(),
+                            step.op() == Op.STYLE),
                     userPrompt(cmd, step, before),
                     HtmlPolicy.edit(block, before, cmd.requestText()));
         } catch (RetryService.Aborted e) {
