@@ -322,6 +322,22 @@ public final class PromptBuilder {
      *   그 답을 넘겨 조건문을 **단정문**으로 바꾼다.
      */
     public static String edit(Block b, boolean templateBlock, boolean allowPalette, boolean looksRequest) {
+        return edit(b, templateBlock, allowPalette, looksRequest, false);
+    }
+
+    /**
+     * @param addItem 이번 요청이 **항목 하나를 더하는 것**인가.
+     *
+     * ★★ 왜 생겼나 — 지시가 정면으로 어긋나고 있었다.
+     *   사용자 프롬프트는 "이 목록에 항목을 하나만 더한다" 라고 하는데,
+     *   이 프롬프트는 benefits 같은 블록에 "항목을 새로 만들거나 지우지 마라" 를 넣었다.
+     *   모델은 둘 중 하나를 버리는데 **어느 쪽을 버려도 실패다** —
+     *   금지문을 따르면 원본이 그대로 와서 요청이 반영되지 않고,
+     *   사용자 쪽을 따르면 카드의 값 자리를 지어내 채워 ValueCheck 에 걸린다.
+     *   그래서 "수치를 지어내지 마라" 를 여기서 한 번 더 못 박는다.
+     */
+    public static String edit(Block b, boolean templateBlock, boolean allowPalette,
+                              boolean looksRequest, boolean addItem) {
         if (b.source() == Block.Source.SERVER) {
             throw new IllegalArgumentException(
                     b.key() + " 는 서버 소유입니다. 모델에게 수정시키면 안 됩니다.");
@@ -389,8 +405,17 @@ public final class PromptBuilder {
         //   steps 처럼 모델이 쓰는 블록에는 붙이지 않는다 — 붙이면 다듬기도 막힌다.
         //
         //   ★ if (b == Block.BENEFITS) 로 쓰지 말 것. 레지스트리를 만든 의미가 없어진다.
-        if (b.itemsAreFormValues()) {
+        if (b.itemsAreFormValues() && !addItem) {
             s.add("- 항목을 새로 만들거나 지우지 마라. 개수는 그대로 두고 문장만 다듬는다.");
+        }
+        // ★ 항목 하나를 더하는 요청이면 위 금지문 대신 이것이 나간다.
+        //   "같은 태그 · 같은 class" 가 꼭 있어야 한다 — 없으면 모델이 템플릿 카드
+        //   (.benefit-card) 를 <li> 로 만들어 붙이고 디자인이 깨진다.
+        if (addItem) {
+            s.add("- 이 목록에 항목을 **하나만** 더한다. 기존 항목은 손대지 마라.");
+            s.add("- 더한 항목은 기존 항목과 **같은 태그 · 같은 class** 로 만든다.");
+            s.add("- 더한 항목에 금액 · 수량 · 기간 같은 수치를 지어내 넣지 마라. "
+                    + "관리자가 적어 준 문구에 있는 것만 쓴다.");
         }
 
         s.add("");
@@ -402,18 +427,10 @@ public final class PromptBuilder {
                 // ★★ 단정문이다. "…일 때만" 을 쓰면 모델이 해당 여부를 스스로 판단하다가
                 //   더 쉬운 길(문구 고치기)로 샌다 — 그게 이 버그였다.
                 s.add("모양 고르기: **이번 요청이 이것이다. 반드시 하나를 골라 바꾼다.**");
-                // ★ "반드시 하나를 골라" 를 목록마다 하나씩으로 읽는다. 축을 좁혀 준다.
-                s.add("- 단, **요청한 축만** 바꾼다. 색 요청이면 색만, 배치 요청이면 배치만, "
-                        + "분위기 요청이면 분위기만. 묻지 않은 것은 그대로 둔다.");
                 s.add("- class 를 안 바꾸면 화면은 하나도 안 바뀐다. 문구만 고치고 끝내지 마라.");
                 s.add("- 지금 <section> 에 붙어 있는 이름과 **다른** 이름을 고른다.");
                 s.add("- 문장의 뜻과 숫자는 그대로 둔다. 바꾸는 것은 겉모습이다.");
-                // ★ 전에는 "문구 꾸밈도 같이 붙여 강약을 준다" 였다. 그런데 바로 아래
-                //   "문구 꾸밈으로 대신하지 마라" 와 **같은 구역에서 모순**이다.
-                //   모델은 쉬운 쪽(단어에 배지 붙이기)만 하고 끝냈다 — 제목이
-                //   "[신규] 가입 고객에게 첫 달 [50%] 할인" 처럼 토막났다(실제 화면).
-                s.add("- 문구 꾸밈(t-*)만 붙이고 끝내지 마라. 그건 단어 하나를 강조하는 자리지 "
-                        + "영역의 모양을 바꾸는 자리가 아니다.");
+                s.add("- 위 '문구 꾸밈' 의 이름도 같이 더 붙여 강약을 준다.");
             } else {
                 s.add("모양 고르기: (모양·색·분위기를 바꿔 달라는 요청일 때만. 문구는 그대로 둔다)");
             }
@@ -444,24 +461,13 @@ public final class PromptBuilder {
             }
             // ★ 생성(addLooks)과 같은 순서다 — 구조(테마)를 먼저 정하고 색(팔레트)을 얹는다
             if (themes) {
-                // ★★ 테마와 팔레트가 나란히 놓여 있을 뿐, **어느 쪽을 언제 고르는지**가
-                //   없었다. 위의 "반드시 하나를 골라 바꾼다" 와 만나면 모델은 목록마다
-                //   하나씩 고른다 — "색감만 바꿔 줘" 에 짜임새까지 통째로 바뀌었다(실측).
-                //   두 축이 다른 것이고, 요청한 축만 건드린다고 못 박는다.
-                s.add("- 페이지 전체 분위기(테마): 아래 중 하나를 <section> 의 class 에 붙인다 (하나만). 페이지 전체에 적용된다.");
-                s.add("  ★ 테마는 **짜임새**를 바꾼다 — 여백 · 카드 모양 · 소제목 꼴. 색이 아니다.");
-                s.add("  ★ **색**만 바꿔 달라는 요청이면 테마는 건드리지 마라. 아래 '색감' 만 고른다.");
+                s.add("- 페이지 전체 분위기: 아래 중 하나를 <section> 의 class 에 붙인다 (하나만). 페이지 전체에 적용된다.");
                 for (Theme t : Theme.blankThemes()) {
                     s.add("    " + t.cssClass() + " : " + t.desc());
                 }
             }
             if (palette) {
-                s.add("- 페이지 전체 색감(팔레트): 아래 중 하나 (하나만). 페이지 전체에 적용된다.");
-                // ★ "…바꿔 달라는 요청일 때만" 이라고 쓰지 마라. 그 말은 EDIT 쪽 조건문
-                //   헤더와 같은 글자라, 겉모양_요청은_단정문 테스트가 STYLE 프롬프트에서
-                //   그 문구를 금지하고 있다. 뜻은 같게, 글자는 다르게 쓴다.
-                s.add("  ★ 팔레트는 **색만** 바꾼다. 짜임새는 그대로다. "
-                        + "짜임새까지 바꾸려면 위 '분위기' 를 같이 고른다.");
+                s.add("- 페이지 전체 색감: 아래 중 하나 (하나만). 페이지 전체에 적용된다.");
                 // ★★ 이 줄이 없어서 "전체 색감을 보라색으로" 가 통째로 실패했다(실제 화면).
                 //   팔레트 **이름**은 전부 분위기다 — spring · summer · autumn · lavender.
                 //   색 이름이 붙은 팔레트는 하나도 없다. 그래서 "보라색" 요청에 모델이
@@ -559,11 +565,9 @@ public final class PromptBuilder {
         for (Variant.Group g : Variant.Group.values()) {
             List<Variant> in = vs.stream().filter(v -> v.group() == g).toList();
             if (in.isEmpty()) continue;
-            s.add("    " + (g == Variant.Group.LAYOUT ? "배치" : "배경") + ":");
-            // ★ 한 줄에 " | " 로 이어붙였더니 10개가 372자 한 줄이 됐다. 바로 위
-            //   '문구 꾸밈' 은 class 하나에 한 줄씩 23줄이라, 모델이 큰 목록만 보고
-            //   t-* 만 붙이고 끝냈다(실제 화면). 같은 꼴로 맞춘다.
-            for (Variant v : in) s.add("      " + v.cssClass() + " : " + v.desc());
+            StringJoiner line = new StringJoiner(" | ");
+            for (Variant v : in) line.add(v.cssClass() + " (" + v.desc() + ")");
+            s.add("    " + (g == Variant.Group.LAYOUT ? "배치" : "배경") + ": " + line);
         }
     }
 
