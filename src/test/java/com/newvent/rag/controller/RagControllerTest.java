@@ -27,7 +27,7 @@ import com.newvent.rag.dto.response.ChunkResponse;
 import com.newvent.rag.dto.response.IndexStatusResponse;
 import com.newvent.rag.dto.response.PromptCandidate;
 import com.newvent.rag.dto.response.QualityTrendResponse;
-import com.newvent.rag.dto.response.ReindexAllResponse;
+import com.newvent.rag.dto.response.ReindexAllStatus;
 import com.newvent.rag.dto.response.SearchPreviewResponse;
 import com.newvent.rag.service.EmbeddingService;
 import com.newvent.rag.service.SimilarityService;
@@ -70,11 +70,11 @@ class RagControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/admin/rag/reindex — eventId 없으면 400")
-    void 재색인_검증() throws Exception {
+    @DisplayName("POST /api/admin/rag/reindex — versionId 없으면 400")
+    void 재색인_versionId_필수() throws Exception {
         mockMvc.perform(post("/api/admin/rag/reindex")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"versionId\":5}"))
+                        .content("{\"eventId\":3}"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -130,14 +130,36 @@ class RagControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/admin/rag/reindex/all — 전체 재색인 합계를 돌려준다")
-    void 전체_재색인() throws Exception {
-        given(embedding.indexAllEvents()).willReturn(
-                new ReindexAllResponse(2, 2, List.of(), 15));
+    @DisplayName("POST /api/admin/rag/reindex/all — 자리 잡으면 202 + 상태")
+    void 전체_재색인_시작() throws Exception {
+        given(embedding.tryClaimReindexSlot()).willReturn(true);
+        given(embedding.getReindexAllStatus()).willReturn(
+                new ReindexAllStatus(true, Instant.parse("2026-10-07T03:00:00Z"), null, null));
 
         mockMvc.perform(post("/api/admin/rag/reindex/all"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.running").value(true));
+        verify(embedding).indexAllEventsAsync();
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/rag/reindex/all — 이미 돌고 있으면 409")
+    void 전체_재색인_중복() throws Exception {
+        given(embedding.tryClaimReindexSlot()).willReturn(false);
+        given(embedding.getReindexAllStatus()).willReturn(
+                new ReindexAllStatus(true, Instant.parse("2026-10-07T03:00:00Z"), null, null));
+
+        mockMvc.perform(post("/api/admin/rag/reindex/all"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("GET /api/admin/rag/reindex/all/status — 진행 상태를 돌려준다")
+    void 전체_재색인_상태() throws Exception {
+        given(embedding.getReindexAllStatus()).willReturn(ReindexAllStatus.idle());
+
+        mockMvc.perform(get("/api/admin/rag/reindex/all/status"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.succeeded").value(2));
-        verify(embedding).indexAllEvents();
+                .andExpect(jsonPath("$.data.running").value(false));
     }
 }

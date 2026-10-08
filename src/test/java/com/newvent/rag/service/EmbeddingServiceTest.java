@@ -14,6 +14,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
@@ -42,9 +44,13 @@ class EmbeddingServiceTest {
     @Autowired
     private TestEntityManager tem;
 
+    @Autowired
+    private PlatformTransactionManager txm;
+
     private EmbeddingService indexing() {
         return new EmbeddingService(versions, chunks,
-                new RagChunkingService(), new MockEmbeddingClient(), events, logs);
+                new RagChunkingService(), new MockEmbeddingClient(), events, logs,
+                new TransactionTemplate(txm));
     }
 
     private static final String HTML = """

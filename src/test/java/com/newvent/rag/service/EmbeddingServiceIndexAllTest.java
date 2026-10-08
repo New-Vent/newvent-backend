@@ -1,7 +1,9 @@
 package com.newvent.rag.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -9,6 +11,9 @@ import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.newvent.event.domain.Event;
 import com.newvent.rag.dto.response.ReindexAllResponse;
@@ -21,7 +26,14 @@ class EmbeddingServiceIndexAllTest {
         private final List<Long> exploding = new java.util.ArrayList<>();
 
         FakeIndexAll(com.newvent.event.repository.EventRepository events) {
-            super(null, null, null, null, events, null);
+            super(null, null, null, null, events, null, noTx());
+        }
+
+        // DB 없이 돈다 — 트랜잭션 경계만 흉내 내고 실제 커밋은 없다
+        private static TransactionTemplate noTx() {
+            PlatformTransactionManager tm = mock(PlatformTransactionManager.class);
+            when(tm.getTransaction(any())).thenAnswer(inv -> mock(TransactionStatus.class));
+            return new TransactionTemplate(tm);
         }
 
         void willReturn(Long eventId, int chunks) { results.put(eventId, chunks); }
@@ -113,5 +125,15 @@ class EmbeddingServiceIndexAllTest {
         assertEquals(1, out.totalEvents());
         assertEquals(1, out.succeeded());
         assertEquals(4, out.totalChunks());
+    }
+
+    @Test
+    @DisplayName("자리 선점은 한 번만 잡힌다 — REST·스케줄러가 같은 자리를 쓴다")
+    void claimOnce() {
+        com.newvent.event.repository.EventRepository events = mock(com.newvent.event.repository.EventRepository.class);
+        EmbeddingService service = indexing(events);
+
+        assertTrue(service.tryClaimReindexSlot());
+        assertFalse(service.tryClaimReindexSlot());
     }
 }
