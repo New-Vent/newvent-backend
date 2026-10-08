@@ -6,6 +6,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,6 +20,8 @@ import com.newvent.common.response.ApiResponse;
 import com.newvent.rag.dto.request.ReindexRequest;
 import com.newvent.rag.dto.response.IndexStatusResponse;
 import com.newvent.rag.dto.response.PromptCandidate;
+import com.newvent.rag.dto.response.QualityTrendResponse;
+import com.newvent.rag.dto.response.ReindexAllStatus;
 import com.newvent.rag.dto.response.SearchPreviewResponse;
 import com.newvent.rag.dto.response.VersionSimilarityResponse;
 import com.newvent.rag.service.EmbeddingService;
@@ -83,5 +87,33 @@ public class RagController {
             @RequestParam Long versionId,
             @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK) {
         return ApiResponse.success(comparing.similarVersions(eventId, versionId, topK));
+    }
+
+    /** 주간 품질 추이. 호출 건수·RAG 사용 건수·청크 수를 주별로 묶어 보여준다. */
+    @GetMapping("/quality-trend")
+    public ApiResponse<List<QualityTrendResponse>> qualityTrend(
+            @RequestParam(defaultValue = "4") @Min(1) @Max(12) int weeks) {
+        return ApiResponse.success(embedding.getQualityTrend(weeks));
+    }
+
+    /**
+     * 전체 재색인 비동기 시작. 전역 작업은 한 번에 하나 — 이미 돌고 있으면 409.
+     * 자리를 잡으면 202 + 시작 시각만 돌려주고 @Async 로 발사한다 (nginx 60초 타임아웃 회피).
+     */
+    @PostMapping("/reindex/all")
+    public ResponseEntity<ApiResponse<ReindexAllStatus>> reindexAll() {
+        if (!embedding.tryClaimReindexSlot()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiResponse.success(embedding.getReindexAllStatus()));
+        }
+        embedding.indexAllEventsAsync();
+        return ResponseEntity.accepted()
+                .body(ApiResponse.success(embedding.getReindexAllStatus()));
+    }
+
+    /** 전체 재색인 진행 상태. running·시작·종료·직전 결과. */
+    @GetMapping("/reindex/all/status")
+    public ApiResponse<ReindexAllStatus> reindexAllStatus() {
+        return ApiResponse.success(embedding.getReindexAllStatus());
     }
 }

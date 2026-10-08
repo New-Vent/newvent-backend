@@ -22,6 +22,9 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     Optional<Event> findByIdAndDeletedAtIsNull(Long eventId);
 
+    // 전체 재색인용. 삭제된 이벤트는 건너뛴다
+    List<Event> findAllByDeletedAtIsNull();
+
     /**
      * 버전을 덧붙이기 전에 이벤트 행을 잠근다 — {@code SELECT … FOR UPDATE}.
      *
