@@ -489,10 +489,69 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
         ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
         when(eventRepository.findByIdAndDeletedAtIsNotNull(99L)).thenReturn(Optional.of(event));
+        when(eventRepository.hasParticipations(99L)).thenReturn(false);
 
         eventService.hardDelete(1L, 99L);
 
         verify(eventRepository).delete(event);
+    }
+
+    @Test
+    @DisplayName("참여 기록이 있는 이벤트는 영구 삭제할 수 없고 이벤트는 그대로 남는다")
+    void 참여_기록이_있으면_영구_삭제할_수_없다() {
+        Event event = newEvent(99L, EventStatus.ENDED,
+                OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(99L)).thenReturn(Optional.of(event));
+        when(eventRepository.hasParticipations(99L)).thenReturn(true);
+
+        assertThatThrownBy(() -> eventService.hardDelete(1L, 99L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.PARTICIPATED_EVENT_PERMANENT_DELETE_FORBIDDEN.getCode());
+        verify(eventRepository, never()).delete(any(Event.class));
+        assertThat(event.deleted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("소유자가 아니면 참여 기록을 보기 전에 접근이 거부된다 — 검사 순서는 404 → 403 → 409")
+    void 소유자가_아니면_참여_기록을_확인하지_않는다() {
+        Event event = newEvent(99L, EventStatus.ENDED,
+                OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(99L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.hardDelete(2L, 99L))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(eventRepository, never()).hasParticipations(any());
+    }
+
+    @Test
+    @DisplayName("휴지통에 없는 이벤트는 참여 기록을 보기 전에 EVENT404-0 이다")
+    void 휴지통에_없으면_참여_기록을_확인하지_않는다() {
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventService.hardDelete(1L, 1L)).isInstanceOf(EventException.class);
+        verify(eventRepository, never()).hasParticipations(any());
+    }
+
+    @Test
+    @DisplayName("휴지통으로 보내기와 복구는 참여 기록을 확인하지 않는다 — 막는 것은 영구 삭제뿐이다")
+    void 휴지통_이동과_복구는_참여_기록과_무관하다() {
+        Event event = newEvent(2L, EventStatus.ENDED,
+                OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(event));
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(2L)).thenReturn(Optional.of(event));
+
+        eventService.delete(1L, 2L);
+        assertThat(event.deleted()).isTrue();
+        eventService.restore(1L, 2L);
+        assertThat(event.deleted()).isFalse();
+
+        verify(eventRepository, never()).hasParticipations(any());
     }
 
     @Test

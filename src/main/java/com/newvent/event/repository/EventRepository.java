@@ -22,6 +22,9 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     Optional<Event> findByIdAndDeletedAtIsNull(Long eventId);
 
+    // 전체 재색인용. 삭제된 이벤트는 건너뛴다
+    List<Event> findAllByDeletedAtIsNull();
+
     /**
      * 버전을 덧붙이기 전에 이벤트 행을 잠근다 — {@code SELECT … FOR UPDATE}.
      *
@@ -31,6 +34,11 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     Optional<Long> lockForVersionAppend(@Param("eventId") Long eventId);
 
     Optional<Event> findByIdAndDeletedAtIsNotNull(Long eventId);
+
+    // 이 이벤트에 대한 참여 기록이 하나라도 있는지 - 영구 삭제 보호용
+    // SQL 한 번(select exists(...))이고 참여 엔티티는 불러오지 않는다. EXISTS 라서 참여가 많아도 첫 행에서 멈춘다
+    @Query("SELECT EXISTS (SELECT 1 FROM EventParticipation p WHERE p.event.id = :eventId)")
+    boolean hasParticipations(@Param("eventId") Long eventId);
 
     // publishedVersion은 LAZY 연관관계이고 open-in-view: false라, 트랜잭션 안에서 fetch join으로 같이 가져온다.
     @Query("SELECT e FROM Event e LEFT JOIN FETCH e.publishedVersion "

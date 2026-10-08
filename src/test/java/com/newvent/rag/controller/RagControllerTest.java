@@ -26,6 +26,8 @@ import com.newvent.common.exception.handler.GlobalExceptionHandler;
 import com.newvent.rag.dto.response.ChunkResponse;
 import com.newvent.rag.dto.response.IndexStatusResponse;
 import com.newvent.rag.dto.response.PromptCandidate;
+import com.newvent.rag.dto.response.QualityTrendResponse;
+import com.newvent.rag.dto.response.ReindexAllStatus;
 import com.newvent.rag.dto.response.SearchPreviewResponse;
 import com.newvent.rag.service.EmbeddingService;
 import com.newvent.rag.service.SimilarityService;
@@ -68,16 +70,16 @@ class RagControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/admin/rag/reindex — eventId 없으면 400")
-    void 재색인_검증() throws Exception {
+    @DisplayName("POST /api/admin/rag/reindex — versionId 없으면 400")
+    void 재색인_versionId_필수() throws Exception {
         mockMvc.perform(post("/api/admin/rag/reindex")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"versionId\":5}"))
+                        .content("{\"eventId\":3}"))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @DisplayName("GET /api/admin/rag/index-status")
+    @DisplayName("GET /api/admin/rag/index-status — 색인 현황 수치를 돌려준다")
     void 현황() throws Exception {
         given(embedding.getStatus(3L)).willReturn(indexStatus());
 
@@ -88,7 +90,7 @@ class RagControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/admin/rag/search-preview")
+    @DisplayName("GET /api/admin/rag/search-preview — 상위 청크와 거리를 돌려준다")
     void 미리보기() throws Exception {
         given(similarity.searchPreview(3L, "쿠폰", 3)).willReturn(
                 new SearchPreviewResponse(3L, "쿠폰", 3,
@@ -102,7 +104,7 @@ class RagControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/admin/rag/recommend-prompts")
+    @DisplayName("GET /api/admin/rag/recommend-prompts — 프롬프트 초안 목록을 돌려준다")
     void 프롬프트_추천() throws Exception {
         given(similarity.recommendPrompts(3L, "쿠폰", 3)).willReturn(
                 List.of(new PromptCandidate(7L, "남의 이벤트", "benefits", "초안")));
@@ -112,5 +114,52 @@ class RagControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].eventTitle").value("남의 이벤트"));
         verify(similarity).recommendPrompts(3L, "쿠폰", 3);
+    }
+
+    @Test
+    @DisplayName("GET /api/admin/rag/quality-trend — 주간 건수 추이를 돌려준다")
+    void 품질_추이() throws Exception {
+        given(embedding.getQualityTrend(4)).willReturn(
+                List.of(new QualityTrendResponse(
+                        java.time.LocalDate.of(2026, 9, 21), 10L, 4L, 25L)));
+
+        mockMvc.perform(get("/api/admin/rag/quality-trend"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].ragUsedCalls").value(4));
+        verify(embedding).getQualityTrend(4);
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/rag/reindex/all — 자리 잡으면 202 + 상태")
+    void 전체_재색인_시작() throws Exception {
+        given(embedding.tryClaimReindexSlot()).willReturn(true);
+        given(embedding.getReindexAllStatus()).willReturn(
+                new ReindexAllStatus(true, Instant.parse("2026-10-07T03:00:00Z"), null, null));
+
+        mockMvc.perform(post("/api/admin/rag/reindex/all"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.running").value(true));
+        verify(embedding).indexAllEventsAsync();
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/rag/reindex/all — 이미 돌고 있으면 409")
+    void 전체_재색인_중복() throws Exception {
+        given(embedding.tryClaimReindexSlot()).willReturn(false);
+        given(embedding.getReindexAllStatus()).willReturn(
+                new ReindexAllStatus(true, Instant.parse("2026-10-07T03:00:00Z"), null, null));
+
+        mockMvc.perform(post("/api/admin/rag/reindex/all"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("GET /api/admin/rag/reindex/all/status — 진행 상태를 돌려준다")
+    void 전체_재색인_상태() throws Exception {
+        given(embedding.getReindexAllStatus()).willReturn(ReindexAllStatus.idle());
+
+        mockMvc.perform(get("/api/admin/rag/reindex/all/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.running").value(false));
     }
 }
