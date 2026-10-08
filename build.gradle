@@ -45,6 +45,11 @@ dependencies {
 	// 헬스체크 — Docker healthcheck · 배포 후 확인이 여기에 붙는다
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
+	// OpenAPI 자동 생성 + Swagger UI
+	//   3.x 가 Spring Boot 4 계열이다 (2.x 는 Boot 3 용).
+	//   prod 에서는 application-prod.yaml 이 끈다 — 공개 서버에 내부 구조를 열지 않는다.
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
+
 	// 블록 검증·정화·병합 (BlockValidator)
 	implementation 'org.jsoup:jsoup:1.18.1'
 	// 라우터 응답 JSON 파싱 (OllamaClient)
@@ -105,7 +110,6 @@ tasks.named('test') {
 		exceptionFormat = 'full'
 	}
 }
-
 // ── RAG 시드 ────────────────────────────────────────────────────
 //   ./gradlew seedRagData        개발·QA·시연용 시드 적재 (prod 금지 — 러너가 차단)
 //   시드 내용: RagSeedDataGenerator.definitions() (템플릿 변형 14 + 실제형 10 + 엣지 5)
