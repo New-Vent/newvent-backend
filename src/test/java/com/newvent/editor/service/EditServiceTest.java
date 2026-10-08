@@ -67,7 +67,7 @@ class EditServiceTest {
 
         FakeRetry() {
             // ★ Direct 라 reserve() 가 no-op 이다 — 상한 검사가 테스트에 끼어들지 않는다.
-            //   maxRetry = 1 → maxAttempts() = 2. run() 을 덮었으니 값 자체는 쓰이지 않는다
+            //   maxRetry = 1 → maxAttempts() = 2. runEdit() 을 덮었으니 값 자체는 쓰이지 않는다
             super(new LlmCallGateway.Direct(null),
                     new LlmProps(null, null, null, null, 0, 1, 0));
         }
@@ -83,7 +83,7 @@ class EditServiceTest {
         List<String> prompts() { return prompts; }
 
         @Override
-        public RetryService.Result run(LlmCallContext ctx, String system,
+        public RetryService.Result runEdit(LlmCallContext ctx, String system,
                                        String user, HtmlPolicy policy) {
             prompts.add(user);
             onCall.accept(prompts.size());
@@ -107,7 +107,11 @@ class EditServiceTest {
     }
 
     private static RetryService.Result ok(String html) {
-        return new RetryService.Result(true, html, List.of());
+        return ok(html, "영역 내용 수정");
+    }
+
+    private static RetryService.Result ok(String html, String changeSummary) {
+        return new RetryService.Result(true, html, List.of(), changeSummary);
     }
 
     private static RetryService.Result validationFail() {

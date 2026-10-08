@@ -14,6 +14,9 @@ import org.jsoup.nodes.Element;
 import org.jsoup.nodes.TextNode;
 import org.jsoup.select.NodeTraversor;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
  * 키도 Ollama 도 Bedrock 도 없이 도는 가짜 클라이언트. <b>기본값이다.</b>
  *
@@ -123,6 +126,8 @@ public class MockLlmClient implements LlmClient {
 
     private final long delayMs;
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     public MockLlmClient()             { this(400); }
     public MockLlmClient(long delayMs) { this.delayMs = delayMs; }
 
@@ -209,13 +214,33 @@ public class MockLlmClient implements LlmClient {
         String system = (r.system() == null) ? "" : r.system();
         String user   = (r.user()   == null) ? "" : r.user();
 
+        // 수정 프롬프트는 changeSummary를 함께 요청한다.
+        if (system.contains("changeSummary")) {
+
+            // 수정 결과를 JSON으로 반환
+            String editedHtml = user.contains("FAIL")
+                ? BROKEN
+                : editBlock(system, user);
+
+            String summary = targetKey(system) + " 영역 내용 수정";
+
+            return editResponse(editedHtml, summary);
+        }
+
         // 검증 실패 경로를 손으로 보고 싶을 때
         if (user.contains("FAIL")) return BROKEN;
 
-        // PromptBuilder.edit() 만 이 문장을 쓴다
-        if (system.contains("영역만 수정해서")) return editBlock(system, user);
-
         return OK;
+    }
+
+    private static String editResponse(String html, String changeSummary) {
+        try {
+            return MAPPER.writeValueAsString(Map.of(
+                "html", html,
+                "changeSummary", changeSummary));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Mock 수정 응답 직렬화 실패", e);
+        }
     }
 
     /**
@@ -270,7 +295,13 @@ public class MockLlmClient implements LlmClient {
         int mark = user.indexOf(CURRENT_MARK);
         if (mark < 0) return null;
         int open = user.indexOf('<', mark);
-        return (open < 0) ? null : user.substring(open).strip();
+        if (open < 0) return null;
+
+        Document doc = Jsoup.parseBodyFragment(user.substring(open));
+        doc.outputSettings().prettyPrint(false);
+
+        Element block = doc.body().selectFirst("section[data-block]");
+        return block == null ? null : block.outerHtml();
     }
 
     private static String targetKey(String system) {

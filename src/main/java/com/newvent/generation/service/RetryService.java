@@ -110,7 +110,11 @@ public class RetryService {
     }
 
     /** html 은 ok == true 일 때만 값이 있다. */
-    public record Result(boolean ok, String html, List<Trace> traces) {
+    public record Result(boolean ok, String html, List<Trace> traces, String changeSummary) {
+
+        public Result(boolean ok, String html, List<Trace> traces) {
+            this(ok, html, traces, null);
+        }
 
         public int attempts() {
             return traces.size();
@@ -173,13 +177,20 @@ public class RetryService {
         return run(LlmCallContext.anonymous(), system, user, policy);
     }
 
+    public Result run(LlmCallContext ctx, String system, String user, HtmlPolicy policy) {
+        return runInternal(ctx, system, user, policy, false);
+    }
+
+    public Result runEdit(LlmCallContext ctx, String system, String user, HtmlPolicy policy) {
+        return runInternal(ctx, system, user, policy, true);
+    }
     /**
      * 최초 1회 + 재시도 maxRetry 회. 기본값이면 최대 4회다.
      *
      * @param ctx 이 묶음의 꼬리표. attemptNo 는 여기서 시도마다 갈아 준다
      * @throws Aborted 호출이 터졌을 때 — 여태 모은 시도가 실려 있다
      */
-    public Result run(LlmCallContext ctx, String system, String user, HtmlPolicy policy) {
+    private Result runInternal(LlmCallContext ctx, String system, String user, HtmlPolicy policy, boolean editResponse) {
         List<Trace> traces = new ArrayList<>();
         String nextUser = user;
 
@@ -196,11 +207,31 @@ public class RetryService {
                 throw new Aborted(attempt, List.copyOf(traces), e);
             }
 
+            String html = null;
+            String changeSummary = null;
+            List<Failure> fails = new ArrayList<>();
+
             // ★ 순서: clean → validate
             //   정화를 검증보다 먼저 건다. 최종 산출물이 검증을 통과했음을 보장해야 하기 때문이다.
             //   반대로 하면 "검증은 통과했는데 정화가 깨뜨린 HTML" 이 나간다.
-            String html = policy.clean(res.content());
-            List<Failure> fails = new ArrayList<>(policy.validate(html));
+            if (editResponse) {
+                var parsed = EditResponseParser.parse(res.content());
+
+                if (parsed.isEmpty()) {
+                    fails.add(Failure.of(
+                        FailureCode.EDIT_RESPONSE_PARSE,
+                        "html과 changeSummary를 문자열로 갖는 JSON 객체 하나를 반환하세요. "
+                            + "changeSummary는 비어 있지 않은 한국어 한 줄, "
+                            + "100자 이내여야 합니다."));
+                } else {
+                    html = policy.clean(parsed.get().html());
+                    changeSummary = parsed.get().changeSummary();
+                    fails.addAll(policy.validate(html));
+                }
+            } else {
+                html = policy.clean(res.content());
+                fails.addAll(policy.validate(html));
+            }
 
             // ★ 잘림은 검증으로 안 잡힌다.
             //   중간에 끊겨도 Jsoup 이 태그를 자동으로 닫아버려서 검증은 통과할 수 있다.
@@ -214,9 +245,12 @@ public class RetryService {
                     res.inputTokens(), res.outputTokens(), res.wallMs(), res.truncated()));
 
             if (fails.stream().noneMatch(Failure::isBlocking)) {
-                return new Result(true, html, List.copyOf(traces));
+                return new Result(true, html, List.copyOf(traces), changeSummary);
             }
-            nextUser = retryPrompt(user, html, fails);
+
+            // 수정 경로는 직전 JSON 전체를 전달해 요약도 다시 받는다.
+            String previousOutput = editResponse ? res.content() : html;
+            nextUser = retryPrompt(user, previousOutput, fails);
         }
         return new Result(false, null, List.copyOf(traces));
     }
