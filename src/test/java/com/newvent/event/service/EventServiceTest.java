@@ -122,7 +122,7 @@ class EventServiceTest {
                 .thenReturn(page);
 
         PageResponse<EventSummaryResponse> result =
-                eventService.findAdminEvents(null, null, null, null, null, 0, 10);
+                eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10);
 
         assertThat(result.totalElements()).isEqualTo(1);
         assertThat(result.content().get(0).id()).isEqualTo(3L);
@@ -161,7 +161,7 @@ class EventServiceTest {
     void 게시_이벤트_썸네일은_게시_버전의_hero다() {
         stubAdminPage(eventWithPublishedHtml(3L, EventStatus.PUBLISHED, PAGE_HTML));
 
-        String thumb = eventService.findAdminEvents(null, null, null, null, null, 0, 10)
+        String thumb = eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10)
                 .content().get(0).thumbnailHtml();
 
         assertThat(thumb).contains("theme-sale").contains("제목").contains("2026.10.01 ~ 10.31");
@@ -176,7 +176,7 @@ class EventServiceTest {
         when(eventVersionRepository.findLatestVersionHtmls(List.of(2L)))
                 .thenReturn(List.<Object[]>of(new Object[] {2L, PAGE_HTML}));
 
-        String thumb = eventService.findAdminEvents(null, null, null, null, null, 0, 10)
+        String thumb = eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10)
                 .content().get(0).thumbnailHtml();
 
         assertThat(thumb).contains("theme-sale").contains("제목").contains("2026.10.01 ~ 10.31");
@@ -195,7 +195,7 @@ class EventServiceTest {
                 .thenReturn(List.<Object[]>of(new Object[] {2L, PAGE_HTML}, new Object[] {4L, PAGE_HTML}));
 
         List<EventSummaryResponse> content =
-                eventService.findAdminEvents(null, null, null, null, null, 0, 10).content();
+                eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10).content();
 
         assertThat(content).hasSize(4).allSatisfy(row -> assertThat(row.thumbnailHtml()).contains("제목"));
         verify(eventVersionRepository).findLatestVersionHtmls(List.of(2L, 4L));
@@ -211,7 +211,7 @@ class EventServiceTest {
         when(eventVersionRepository.findLatestVersionHtmls(List.of(2L))).thenReturn(List.of());
 
         List<EventSummaryResponse> content =
-                eventService.findAdminEvents(null, null, null, null, null, 0, 10).content();
+                eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10).content();
 
         assertThat(content.get(0).thumbnailHtml()).isNull();
         assertThat(content.get(1).thumbnailHtml()).isNull();
@@ -221,12 +221,12 @@ class EventServiceTest {
     @DisplayName("휴지통 목록에도 같은 규칙으로 썸네일이 담긴다")
     void 휴지통_목록에도_썸네일이_담긴다() {
         Event trashed = draftEvent(9L);
-        when(eventRepository.findDeletedEvents(PageRequest.of(0, 10)))
+        when(eventRepository.findDeletedEvents(1L, PageRequest.of(0, 10)))
                 .thenReturn(new PageImpl<>(List.of(trashed), PageRequest.of(0, 10), 1));
         when(eventVersionRepository.findLatestVersionHtmls(List.of(9L)))
                 .thenReturn(List.<Object[]>of(new Object[] {9L, PAGE_HTML}));
 
-        String thumb = eventService.findDeletedEvents(0, 10).content().get(0).thumbnailHtml();
+        String thumb = eventService.findDeletedEvents(1L, 0, 10).content().get(0).thumbnailHtml();
 
         assertThat(thumb).contains("제목").contains("2026.10.01 ~ 10.31");
     }
@@ -237,7 +237,7 @@ class EventServiceTest {
         when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        eventService.findAdminEvents("월드컵", null, null, null, null, 0, 10);
+        eventService.findAdminEvents(1L, "월드컵", null, null, null, null, 0, 10);
 
         verify(eventRepository).findAdminEvents(
                 eq("%월드컵%"), isNull(), isNull(), isNull(), eq(now),
@@ -250,9 +250,9 @@ class EventServiceTest {
         when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        eventService.findAdminEvents(" 42 ", null, null, null, null, 0, 10);
-        eventService.findAdminEvents("42번", null, null, null, null, 0, 10);
-        eventService.findAdminEvents("1234567890123456789", null, null, null, null, 0, 10);
+        eventService.findAdminEvents(1L, " 42 ", null, null, null, null, 0, 10);
+        eventService.findAdminEvents(1L, "42번", null, null, null, null, 0, 10);
+        eventService.findAdminEvents(1L, "1234567890123456789", null, null, null, null, 0, 10);
 
         verify(eventRepository).findAdminEvents(
                 eq("%42%"), eq(42L), isNull(), isNull(), eq(now), isNull(), isNull(), any());
@@ -270,7 +270,7 @@ class EventServiceTest {
         OffsetDateTime from = OffsetDateTime.parse("2026-09-01T00:00:00+09:00");
         OffsetDateTime to = OffsetDateTime.parse("2026-09-30T23:59:59+09:00");
 
-        eventService.findAdminEvents(null, EventStatus.PUBLISHED, EventProgress.ONGOING, from, to, 1, 20);
+        eventService.findAdminEvents(1L, null, EventStatus.PUBLISHED, EventProgress.ONGOING, from, to, 1, 20);
 
         verify(eventRepository).findAdminEvents(
                 isNull(), isNull(), eq(EventStatus.PUBLISHED), eq(EventProgress.ONGOING), eq(now),
@@ -295,7 +295,7 @@ class EventServiceTest {
                 .thenReturn(List.<Object[]>of(new Object[] {1L, 5}));
 
         List<EventSummaryResponse> content =
-                eventService.findAdminEvents(null, null, null, null, null, 0, 10).content();
+                eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10).content();
 
         assertThat(content.get(0).publishedVersionNo()).isEqualTo(2);
         assertThat(content.get(0).latestVersionNo()).isEqualTo(5);
@@ -309,7 +309,7 @@ class EventServiceTest {
         when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        eventService.findAdminEvents(null, null, null, null, null, 0, 10);
+        eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10);
 
         verifyNoInteractions(eventVersionRepository);
     }
@@ -320,7 +320,7 @@ class EventServiceTest {
         OffsetDateTime from = OffsetDateTime.parse("2026-09-30T00:00:00+09:00");
         OffsetDateTime to = OffsetDateTime.parse("2026-09-01T00:00:00+09:00");
 
-        assertThatThrownBy(() -> eventService.findAdminEvents(null, null, null, from, to, 0, 10))
+        assertThatThrownBy(() -> eventService.findAdminEvents(1L, null, null, null, from, to, 0, 10))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.INVALID_SEARCH_PERIOD.getCode());
@@ -338,7 +338,7 @@ class EventServiceTest {
                 EventVersion.htmlOnly("<h1>지금 긁으면 바로 당첨</h1>"));
         when(eventRepository.findAdminEventById(3L)).thenReturn(Optional.of(event));
 
-        EventDetailResponse detail = eventService.findAdminEvent(3L);
+        EventDetailResponse detail = eventService.findAdminEvent(1L, 3L);
 
         assertThat(detail.name()).isEqualTo("지금 긁으면 바로 당첨");
         assertThat(detail.closingSoon()).isTrue();
@@ -350,7 +350,7 @@ class EventServiceTest {
     void 없는_이벤트는_404를_던진다() {
         when(eventRepository.findAdminEventById(999L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> eventService.findAdminEvent(999L))
+        assertThatThrownBy(() -> eventService.findAdminEvent(1L, 999L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
@@ -362,7 +362,7 @@ class EventServiceTest {
         Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
         when(eventRepository.findAdminEventById(7L)).thenReturn(Optional.of(event));
 
-        EventDetailResponse detail = eventService.findAdminEvent(7L);
+        EventDetailResponse detail = eventService.findAdminEvent(1L, 7L);
 
         assertThat(detail.closingSoon()).isFalse();
     }
@@ -375,26 +375,56 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"));
         when(eventRepository.findAdminEventById(1L)).thenReturn(Optional.of(event));
 
-        EventDetailResponse detail = eventService.findAdminEvent(1L);
+        EventDetailResponse detail = eventService.findAdminEvent(1L, 1L);
 
         assertThat(detail.status()).isEqualTo(EventStatus.PUBLISHED);
         assertThat(detail.closingSoon()).isFalse();
     }
 
     @Test
-    @DisplayName("휴지통 목록 조회는 리포지토리 결과를 매핑한다")
+    @DisplayName("휴지통 목록 조회는 로그인한 관리자 ID 로 조회해 매핑한다")
     void 휴지통_목록_조회에_성공한다() {
         Event event = newEvent(99L, EventStatus.DRAFT,
                 OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
         ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
         Page<Event> page = new PageImpl<>(List.of(event), PageRequest.of(0, 10), 1);
-        when(eventRepository.findDeletedEvents(eq(PageRequest.of(0, 10)))).thenReturn(page);
+        when(eventRepository.findDeletedEvents(eq(1L), eq(PageRequest.of(0, 10)))).thenReturn(page);
 
-        PageResponse<EventSummaryResponse> result = eventService.findDeletedEvents(0, 10);
+        PageResponse<EventSummaryResponse> result = eventService.findDeletedEvents(1L, 0, 10);
 
         assertThat(result.totalElements()).isEqualTo(1);
         assertThat(result.content().get(0).id()).isEqualTo(99L);
+        assertThat(result.content().get(0).ownedByMe()).isTrue();
+    }
+
+    @Test
+    @DisplayName("목록의 ownedByMe 는 로그인한 관리자가 소유자인지에 따라 정해진다")
+    void 목록에_내_이벤트인지_담는다() {
+        Event mine = draftEvent(1L);
+        Event others = draftEvent(2L);
+        Admin otherAdmin = BeanUtils.instantiateClass(Admin.class);
+        ReflectionTestUtils.setField(otherAdmin, "id", 99L);
+        ReflectionTestUtils.setField(others, "ownerAdmin", otherAdmin);
+        stubAdminPage(mine, others);
+
+        List<EventSummaryResponse> content =
+                eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10).content();
+
+        assertThat(content.get(0).ownedByMe()).isTrue();
+        assertThat(content.get(1).ownedByMe()).isFalse();
+    }
+
+    @Test
+    @DisplayName("다른 관리자의 이벤트 상세는 조회되지만 ownedByMe 는 false 다")
+    void 다른_관리자의_이벤트_상세는_ownedByMe가_false다() {
+        Event event = newEvent(3L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        when(eventRepository.findAdminEventById(3L)).thenReturn(Optional.of(event));
+
+        assertThat(eventService.findAdminEvent(1L, 3L).ownedByMe()).isTrue();
+        assertThat(eventService.findAdminEvent(99L, 3L).ownedByMe()).isFalse();
     }
 
     @Test

@@ -69,6 +69,7 @@ public class EventService {
     /** 검색어(name)가 숫자뿐이면 이름이 맞는 것과 ID 가 같은 것을 함께 찾는다. */
     @Transactional(readOnly = true)
     public PageResponse<EventSummaryResponse> findAdminEvents(
+            Long adminId,
             String name,
             EventStatus status,
             EventProgress progress,
@@ -87,13 +88,12 @@ public class EventService {
         Page<Event> result = eventRepository.findAdminEvents(
                 namePattern, idMatch, status, progress, OffsetDateTime.now(clock),
                 periodFrom, periodTo, PageRequest.of(page, size));
-        return toSummaryPage(result, page, size);
+        return toSummaryPage(result, adminId, page, size);
     }
 
     @Transactional(readOnly = true)
-    public EventDetailResponse findAdminEvent(Long id) {
-        Event event = findActiveEvent(id);
-        return EventDetailResponse.from(event, closingSoon(event));
+    public EventDetailResponse findAdminEvent(Long adminId, Long id) {
+        return detail(findActiveEvent(id), adminId);
     }
 
     @Transactional(readOnly = true)
@@ -115,19 +115,20 @@ public class EventService {
         return new EventCountsResponse(total, published, draft, ended);
     }
 
+    // 복구·영구 삭제가 소유자만 가능하므로 휴지통도 본인이 지운 이벤트만 보여준다
     @Transactional(readOnly = true)
-    public PageResponse<EventSummaryResponse> findDeletedEvents(int page, int size) {
-        Page<Event> result = eventRepository.findDeletedEvents(PageRequest.of(page, size));
-        return toSummaryPage(result, page, size);
+    public PageResponse<EventSummaryResponse> findDeletedEvents(Long adminId, int page, int size) {
+        Page<Event> result = eventRepository.findDeletedEvents(adminId, PageRequest.of(page, size));
+        return toSummaryPage(result, adminId, page, size);
     }
 
-    private PageResponse<EventSummaryResponse> toSummaryPage(Page<Event> result, int page, int size) {
+    private PageResponse<EventSummaryResponse> toSummaryPage(Page<Event> result, Long adminId, int page, int size) {
         Map<Long, Integer> latestVersionNos = latestVersionNos(result.getContent());
         Map<Long, String> latestVersionHtmls = latestVersionHtmls(result.getContent());
         List<EventSummaryResponse> content = result.getContent().stream()
                 .map(event -> EventSummaryResponse.from(
                         event, closingSoon(event), latestVersionNos.get(event.getId()),
-                        thumbnailHtmlOf(event, latestVersionHtmls)))
+                        thumbnailHtmlOf(event, latestVersionHtmls), event.ownedBy(adminId)))
                 .toList();
         return PageResponse.of(content, page, size, result.getTotalElements());
     }
@@ -186,7 +187,7 @@ public class EventService {
                 .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
         requireOwner(event, adminId);
         event.restore();
-        return EventDetailResponse.from(event, closingSoon(event));
+        return detail(event, adminId);
     }
 
     // 휴지통에서 영구 삭제. 되돌릴 수 없다 — event_versions 등 하위 데이터는 DB CASCADE 로 함께 지워진다
@@ -217,7 +218,7 @@ public class EventService {
 
         version.markCheckpoint(OffsetDateTime.now(clock));
         event.publish(version);
-        return EventDetailResponse.from(event, closingSoon(event));
+        return detail(event, adminId);
     }
 
     @Transactional
@@ -236,7 +237,7 @@ public class EventService {
                 request.endAt(),
                 request.grade());
         Event saved = eventRepository.save(draft);
-        return EventDetailResponse.from(saved, closingSoon(saved));
+        return detail(saved, adminId);
     }
 
     /** 보낸 필드만 바꾼다. null 은 기존 값 유지, templateKey 가 빈 문자열이면 템플릿을 해제한다. */
@@ -268,7 +269,7 @@ public class EventService {
                 request.grade() != null ? request.grade() : event.getGrade());
         // updatedAt 은 flush 시점에 Auditing 이 채우므로, 응답에 새 수정일을 담으려면 먼저 flush 한다.
         eventRepository.flush();
-        return EventDetailResponse.from(event, closingSoon(event));
+        return detail(event, adminId);
     }
 
     // 상태 변경 API 는 종료(PUBLISHED → ENDED)만 한다. 게시는 게시 API 로 한다
@@ -284,7 +285,7 @@ public class EventService {
         }
         event.end();
         eventRepository.flush();
-        return EventDetailResponse.from(event, closingSoon(event));
+        return detail(event, adminId);
     }
 
     // 게시 내리기(PUBLISHED → DRAFT) - 종료 전까지만 가능
@@ -301,12 +302,15 @@ public class EventService {
         }
         event.unpublish();
         eventRepository.flush();
-        return EventDetailResponse.from(event, closingSoon(event));
+        return detail(event, adminId);
+    }
+
+    private EventDetailResponse detail(Event event, Long adminId) {
+        return EventDetailResponse.from(event, closingSoon(event), event.ownedBy(adminId));
     }
 
     private static void requireOwner(Event event, Long adminId) {
-        if (adminId == null || event.getOwnerAdmin() == null
-                || !adminId.equals(event.getOwnerAdmin().getId())) {
+        if (!event.ownedBy(adminId)) {
             throw new org.springframework.security.access.AccessDeniedException(
                     "이벤트 소유 관리자만 변경할 수 있습니다.");
         }
