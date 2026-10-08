@@ -16,9 +16,10 @@ public record EventDetailResponse(
         String template,
         MembershipGrade grade,
         String completedHtml,
-        boolean closingSoon
+        boolean closingSoon,
+        boolean ownedByMe
 ) {
-    public static EventDetailResponse from(Event event, boolean closingSoon) {
+    public static EventDetailResponse from(Event event, boolean closingSoon, boolean ownedByMe) {
         return new EventDetailResponse(
                 event.getId(),
                 event.getTitle(),
@@ -29,6 +30,7 @@ public record EventDetailResponse(
                 event.templateCode(),
                 event.getGrade(),
                 event.completedHtml(),
-                closingSoon);
+                closingSoon,
+                ownedByMe);
     }
 }
