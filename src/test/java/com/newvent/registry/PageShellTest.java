@@ -48,6 +48,12 @@ class PageShellTest {
         return Jsoup.parseBodyFragment(html).body().selectFirst(".ev-container, .event-page");
     }
 
+    /** hero 의 class 에 하나를 끼워 넣는다 — 모델이 고른 모양을 흉내 낸다 */
+    private static String heroClass(String fragment, String cssClass) {
+        return fragment.replace("<section data-block=\"hero\">",
+                                "<section data-block=\"hero\" class=\"" + cssClass + "\">");
+    }
+
     // ── 래퍼 ──────────────────────────────────────────────────────
 
     @Test
@@ -70,14 +76,90 @@ class PageShellTest {
         }
     }
 
+    // ── 테마 ──────────────────────────────────────────────────────
+
+    /**
+     * ★ 동작이 <b>뒤집혔다.</b> 예전에는 백지에 테마를 붙이지 않았다 —
+     *   그때는 백지용 테마가 없어서 붙일 게 없었고 :root 기본값에 맡길 수밖에 없었다.
+     *   지금은 {@link Theme} 에 BASIC · BLOOM · AURORA 가 있다.
+     *
+     * ★ 테마가 없으면 event.css 의 :root 기본값만 걸린다 —
+     *   같은 흰 카드가 세로로 쌓인 화면이다. 그래서 반드시 하나 박는다.
+     *
+     * ★ 기본값은 성격이 없어야 한다. BLOOM 처럼 센 테마를 기본으로 두면
+     *   "법인 요금제 비교" 에 구름이 뜬다. 조용한 기본값은 조금 안 맞아도 괜찮지만
+     *   시끄러운 기본값은 그냥 틀린다.
+     */
     @Test
-    @DisplayName("② 백지에는 테마를 붙이지 않는다 — :root 기본값을 쓴다")
-    void 백지는_테마가_없다() {
+    @DisplayName("② 백지에도 테마를 붙인다 — 모델이 안 고르면 기본 테마")
+    void 백지에_기본_테마를_붙인다() {
         Element root = rootOf(PageShell.ensureRoot(백지, null));
 
-        assertTrue(root.classNames().stream().noneMatch(c -> c.startsWith("theme-")),
-                "백지는 템플릿이 없으므로 테마를 고를 근거가 없습니다. "
-                + "event.css 의 :root 기본값이 쓰입니다. 실제 class: " + root.classNames());
+        assertTrue(root.hasClass(Theme.DEFAULT.cssClass()),
+                "백지에 기본 테마가 안 붙었습니다. 테마가 없으면 :root 기본값만 걸려 "
+                + "같은 흰 카드가 세로로 쌓입니다. 실제 class: " + root.classNames());
+    }
+
+    /**
+     * ★ 모델은 블록 하나만 출력한다. 루트를 못 만지므로 hero 의 class 에 고르게 하고
+     *   서버가 루트로 옮긴다 — 팔레트와 같은 길이다(PageShell.hoistPalette).
+     * ★ 올린 뒤에는 hero 에서 지운다. 남겨 두면 다음 수정에서 모델이 보고 따라 쓴다
+     *   (v-* 에서 겪은 그 경로다).
+     */
+    @Test
+    @DisplayName("②-b 백지 — 모델이 hero 에 고른 테마를 루트로 올린다")
+    void 모델이_고른_테마를_루트로_올린다() {
+        String out = PageShell.ensureRoot(heroClass(백지, "theme-bloom"), null);
+
+        Element root = rootOf(out);
+        assertTrue(root.hasClass("theme-bloom"),
+                "모델이 고른 테마가 루트로 안 올라왔습니다. 실제 class: " + root.classNames());
+        assertFalse(root.hasClass(Theme.DEFAULT.cssClass()),
+                "모델이 골랐는데 기본 테마까지 같이 박혔습니다. 테마는 하나여야 합니다. "
+                + "실제 class: " + root.classNames());
+
+        Element hero = Jsoup.parseBodyFragment(out).body().selectFirst(Block.HERO.selector());
+        assertFalse(hero.hasClass("theme-bloom"),
+                "hero 에 테마가 남았습니다. 루트로 올렸으면 원래 자리에서는 지워야 합니다.");
+    }
+
+    /**
+     * ★ 지어낸 이름(theme-두쫀쿠)은 CSS 가 없어 효과도 없지만, 남겨 두면
+     *   다음 수정에서 모델이 그걸 보고 따라 쓴다. {@code BlockValidator.cleanLooks} 가
+     *   들어오는 자리에서 지우고, 지운 뒤에는 기본 테마로 떨어져야 한다.
+     */
+    @Test
+    @DisplayName("②-c 백지 — 모델이 지어낸 테마는 지우고 기본 테마로 떨어진다")
+    void 지어낸_테마는_기본으로_떨어진다() {
+        String 정화됨 = BlockValidator.sanitizeGenerated(heroClass(백지, "theme-두쫀쿠"));
+        assertFalse(정화됨.contains("theme-두쫀쿠"),
+                "지어낸 테마가 안 지워졌습니다.\n─── 출력 ───\n" + 정화됨);
+
+        Element root = rootOf(PageShell.ensureRoot(정화됨, null));
+        assertTrue(root.hasClass(Theme.DEFAULT.cssClass()),
+                "지어낸 테마를 지운 뒤 기본 테마가 안 박혔습니다. 실제 class: " + root.classNames());
+    }
+
+    /**
+     * ★★ 이 테스트가 막는 사고 — 실제로 났다(SavedTemplateHtmlTest 5건).
+     *   {@code cleanLooks} 는 class 가 있는 <b>모든 요소</b>를 돈다. 루트는 section 이 아니라
+     *   "hero 가 아니다" 로 판정되어 theme-sports 가 지워졌고, 그다음 ensureRoot 가
+     *   "테마 없음" 으로 보고 기본 테마를 박아 <b>템플릿 테마가 전부 basic 이 됐다.</b>
+     *   루트의 테마는 서버가 쥔다. 정화는 모델 출력만 다룬다.
+     */
+    @Test
+    @DisplayName("②-d ★ 정화를 지나도 루트의 템플릿 테마는 살아남는다")
+    void 루트_테마는_정화에서_살아남는다() {
+        String 테마템플릿 = 템플릿.replace("\"ev-container event-page\"",
+                                        "\"ev-container event-page theme-sports\"");
+        String 정화됨 = BlockValidator.sanitizeEdited(테마템플릿);
+
+        Element root = rootOf(PageShell.ensureRoot(정화됨, null));
+        assertTrue(root.hasClass("theme-sports"),
+                "루트의 템플릿 테마가 지워졌습니다. 템플릿 5종이 전부 기본 테마가 됩니다. "
+                + "실제 class: " + root.classNames());
+        assertFalse(root.hasClass(Theme.DEFAULT.cssClass()),
+                "이미 테마가 있는데 기본 테마까지 박혔습니다. 실제 class: " + root.classNames());
     }
 
     @Test
@@ -103,6 +185,19 @@ class PageShellTest {
         String 두번 = PageShell.plant(한번, "sports_cheer");
 
         assertEquals(한번, 두번, "두 번 심었습니다.");
+    }
+
+    /**
+     * ★ 기본 테마가 박힌 뒤에 다시 걸어도 테마가 둘이 되면 안 된다.
+     *   ④ 의 멱등성을 테마 쪽에서만 따로 본다 — 실패했을 때 어디가 깨졌는지 바로 보이게.
+     */
+    @Test
+    @DisplayName("④-b 두 번 걸어도 테마는 하나다")
+    void 테마는_하나다() {
+        String 두번 = PageShell.plant(PageShell.plant(백지, null), null);
+
+        long n = rootOf(두번).classNames().stream().filter(Theme::looksLike).count();
+        assertEquals(1, n, "루트의 테마가 " + n + "개입니다. 실제 class: " + rootOf(두번).classNames());
     }
 
     // ── 유의사항 ──────────────────────────────────────────────────
