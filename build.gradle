@@ -95,7 +95,7 @@ tasks.named('test') {
 
 	environment 'JWT_SECRET', System.getenv('JWT_SECRET')
 			?: 'test-only-not-a-real-secret-0123456789abcdef'
-			
+
 	jvmArgs '-Dsun.stdout.encoding=UTF-8', '-Dsun.stderr.encoding=UTF-8'
 
 
@@ -104,4 +104,15 @@ tasks.named('test') {
 		showStandardStreams = true
 		exceptionFormat = 'full'
 	}
+}
+
+// ── RAG 시드 ────────────────────────────────────────────────────
+//   ./gradlew seedRagData        개발·QA·시연용 시드 적재 (prod 금지 — 러너가 차단)
+//   시드 내용: RagSeedDataGenerator.definitions() (템플릿 변형 14 + 실제형 10 + 엣지 5)
+tasks.register('seedRagData', JavaExec) {
+	group = 'rag'
+	description = 'RAG 시드 데이터 적재 (개발·QA·시연용, prod 금지)'
+	classpath = sourceSets.main.runtimeClasspath
+	mainClass = 'com.newvent.NewventBackendApplication'
+	args = ['--seed-rag-data']
 }

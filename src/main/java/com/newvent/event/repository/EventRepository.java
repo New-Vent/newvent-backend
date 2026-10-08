@@ -22,6 +22,9 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     Optional<Event> findByIdAndDeletedAtIsNull(Long eventId);
 
+    /** 시드 멱등 가드 — SEED: 이벤트가 이미 있으면 재실행 시 건너뛴다. */
+    boolean existsByTitleStartingWith(String prefix);
+
     /**
      * 버전을 덧붙이기 전에 이벤트 행을 잠근다 — {@code SELECT … FOR UPDATE}.
      *
