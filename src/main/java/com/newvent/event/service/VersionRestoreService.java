@@ -1,6 +1,8 @@
 package com.newvent.event.service;
 
 import java.util.Objects;
+import java.time.Clock;
+import java.time.OffsetDateTime;
 
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -24,13 +26,15 @@ public class VersionRestoreService {
     private final EventRepository eventRepository;
     private final EventVersionRepository eventVersionRepository;
     private final VersionStore versionStore;
+    private final Clock clock;
 
     public VersionRestoreService(EventRepository eventRepository,
                                  EventVersionRepository eventVersionRepository,
-                                 VersionStore versionStore) {
+                                 VersionStore versionStore, Clock clock) {
         this.eventRepository = Objects.requireNonNull(eventRepository, "eventRepository");
         this.eventVersionRepository = Objects.requireNonNull(eventVersionRepository, "eventVersionRepository");
         this.versionStore = Objects.requireNonNull(versionStore, "versionStore");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     /**
@@ -47,6 +51,10 @@ public class VersionRestoreService {
         if (adminId == null || event.getOwnerAdmin() == null
                 || !adminId.equals(event.getOwnerAdmin().getId())) {
             throw new AccessDeniedException("이벤트 소유 관리자만 버전을 되돌릴 수 있습니다.");
+        }
+
+        if (event.editLocked(OffsetDateTime.now(clock))) {
+            throw new EventException(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
         }
 
         // 2. 되돌릴 버전 — eventId 를 쿼리가 같이 본다.
