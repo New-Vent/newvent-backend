@@ -339,6 +339,9 @@ public class EditService {
      *   영역을 골랐으면 hero 라도 팔레트를 떼어 내므로(withoutPalette) hero 도 안 바뀐다 —
      *   hero 가 아닐 때만 안내하면 "hero 골라놓고 파란색으로" 가 이유를 못 듣는다.
      */
+    /** 거절 안내에 예로 드는 모양의 개수. 전부 나열하면 벽이 된다 */
+    private static final int SAMPLE_LOOKS = 3;
+
     private static String cannotDo(List<Decision.Run> plan, boolean chosen) {
         StringJoiner s = new StringJoiner(" ");
         StringJoiner names = new StringJoiner(", ");
@@ -349,13 +352,21 @@ public class EditService {
 
         boolean styled = plan.stream().anyMatch(r -> r.op() == Op.STYLE);
         if (styled) {
+            // ★★ 전에는 변형 **전부**(hero 는 10개)의 설명을 쉼표로 이어 붙였다.
+            //   설명 자체에 쉼표가 들어 있어서("가운데 정렬, 그라데이션 배경") 10개가
+            //   20개처럼 읽혔고, 관리자는 세 줄짜리 벽을 받았다 — QA 로그에 그대로 남아 있다.
+            //   안내는 **고를 수 있다는 사실**과 **말하는 법** 이면 된다. 목록은 세 개까지만.
             for (Decision.Run r : plan) {
                 List<Variant> vs = Variant.of(r.block()).stream()
                         .filter(v -> v.group() == Variant.Group.LAYOUT).toList();
                 if (vs.isEmpty()) continue;
-                StringJoiner looks = new StringJoiner(", ");
-                for (Variant v : vs) looks.add(v.desc().replaceAll("\\s*\\(.*?\\)", ""));
-                s.add("고를 수 있는 모양은 " + looks + " 입니다.");
+                StringJoiner looks = new StringJoiner(" · ");
+                for (Variant v : vs.subList(0, Math.min(SAMPLE_LOOKS, vs.size()))) {
+                    looks.add("\u0027" + v.desc().replaceAll("\\s*\\(.*?\\)", "").split(",")[0].strip() + "\u0027");
+                }
+                s.add(r.block().desc().split("[—.]")[0].strip() + " 영역은 "
+                        + looks + " 처럼 **모양**을 말씀하시면 바꿀 수 있어요"
+                        + (vs.size() > SAMPLE_LOOKS ? " (그 밖에 " + (vs.size() - SAMPLE_LOOKS) + "가지 더)." : "."));
             }
             if (chosen) {
                 s.add("색은 페이지 전체에 적용되는 값이라 영역을 고른 채로는 바꿀 수 없습니다. "
