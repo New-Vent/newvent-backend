@@ -372,7 +372,7 @@ public class BlockValidator {
     private static final Set<String> ALLOWED_CSS = Set.of(
             "color", "background-color",
             "font-size", "font-weight", "font-style", "line-height",
-            "text-align", "text-decoration",
+            "text-align", "text-decoration", "white-space",
             "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
             "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
             "border", "border-color", "border-width", "border-style", "border-radius");

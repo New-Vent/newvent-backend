@@ -272,6 +272,12 @@ Content-Type: application/json
 기준 HTML 조회와 새 버전 저장 전에 거절하므로 직접 편집 결과는 저장되지 않는다.
 `DRAFT`는 기간이 지나도 직접 편집할 수 있다. 소유자가 아닌 관리자의 요청은 기존대로 403을 반환한다.
 
+직접 편집의 `after`는 빈 문자열과 줄바꿈을 허용한다. 수정한 문구에는 서버가
+`span[id^="nv-direct-text-"]`과 `white-space: pre-line`을 붙인다.
+빈 문구도 이 요소를 남겨 다음 `editableTexts` 조회에서 문구 수와 순서를 유지한다.
+이미 직접 편집한 문구의 `before`는 줄바꿈과 공백을 포함한 응답 값을 그대로 보낸다.
+기존 버전에는 일괄 변환이나 DB 마이그레이션을 적용하지 않는다.
+
 ---
 
 ## `PATCH /api/admin/events/{id}/status`
