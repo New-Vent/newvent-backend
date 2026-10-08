@@ -1,8 +1,10 @@
 package com.newvent.participation.service;
 
 import java.math.BigDecimal;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
@@ -103,36 +105,77 @@ public class ParticipationValidator {
     }
 
     private Map<String, Object> validatePouch(
-            Map<String, Object> config,
-            ParticipationCreateRequest input
+        Map<String, Object> config,
+        ParticipationCreateRequest input
     ) {
-        int pouchCount = positiveInteger(config.get("pouchCount"));
+        Object value = config.get("pouches");
+
+        if (!(value instanceof List<?> pouches) || pouches.isEmpty()) {
+            throw invalidConfig();
+        }
+
+        Set<Integer> indexes = new HashSet<>();
+
+        for (Object item : pouches) {
+            if (!(item instanceof Map<?, ?> pouch)) {
+                throw invalidConfig();
+            }
+
+            int pouchIndex = positiveInteger(pouch.get("pouchIndex"));
+
+            // 1부터 배열 길이까지 중복 없이 구성되어야 한다.
+            if (pouchIndex > pouches.size() || !indexes.add(pouchIndex)) {
+                throw invalidConfig();
+            }
+
+            validateProbability(pouch.get("winProbability"));
+
+            Object prizeValue = pouch.get("prizeName");
+
+            if (!(prizeValue instanceof String prizeName) || prizeName.isBlank()) {
+                throw invalidConfig();
+            }
+        }
 
         if (input.pouchIndex() == null
-                || input.prediction() != null
-                || input.phoneNumber() != null
-                || input.pouchIndex() < 1
-                || input.pouchIndex() > pouchCount) {
+            || input.prediction() != null
+            || input.phoneNumber() != null
+            || !indexes.contains(input.pouchIndex())) {
             throw invalidInput();
         }
 
         return Map.of("pouchIndex", input.pouchIndex());
     }
 
-    private int positiveInteger(Object value) {
+    // 숫자를 정수로 변환하는 공통 로직
+    private int readInteger(Object value) {
         if (!(value instanceof Number number)) {
             throw invalidConfig();
         }
 
         try {
-            int result = new BigDecimal(number.toString()).intValueExact();
-
-            if (result < 1) {
-                throw invalidConfig();
-            }
-
-            return result;
+            return new BigDecimal(number.toString()).intValueExact();
         } catch (NumberFormatException | ArithmeticException exception) {
+            throw invalidConfig();
+        }
+    }
+
+    // 복주머니 번호: 1 이상
+    private int positiveInteger(Object value) {
+        int result = readInteger(value);
+
+        if (result < 1) {
+            throw invalidConfig();
+        }
+
+        return result;
+    }
+
+    // 당첨 확률: 0~100
+    private void validateProbability(Object value) {
+        int probability = readInteger(value);
+
+        if (probability < 0 || probability > 100) {
             throw invalidConfig();
         }
     }
