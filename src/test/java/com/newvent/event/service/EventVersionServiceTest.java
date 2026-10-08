@@ -28,7 +28,6 @@ import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.event.repository.EventVersionRepository;
-import com.newvent.generation.domain.ChatMessage;
 
 @ExtendWith(MockitoExtension.class)
 public class EventVersionServiceTest {
@@ -59,7 +58,6 @@ public class EventVersionServiceTest {
         Event event = mockOwnedEvent(ADMIN_ID);
         EventVersion version = org.mockito.Mockito.mock(EventVersion.class);
         EventVersion sourceVersion = org.mockito.Mockito.mock(EventVersion.class);
-        ChatMessage requestMessage = org.mockito.Mockito.mock(ChatMessage.class);
         OffsetDateTime createdAt = OffsetDateTime.parse("2026-09-21T14:20:00+09:00");
 
         when(eventRepository.findByIdAndDeletedAtIsNull(eventId)).thenReturn(Optional.of(event));
@@ -73,8 +71,7 @@ public class EventVersionServiceTest {
         when(version.getCreatedAt()).thenReturn(createdAt);
         when(version.getSourceVersion()).thenReturn(sourceVersion);
         when(sourceVersion.getVersionNo()).thenReturn(1);
-        when(version.getRequestMessage()).thenReturn(requestMessage);
-        when(requestMessage.getContent()).thenReturn("소개 문구를 친근하게 정리해 줘");
+        when(version.getChangeSummary()).thenReturn("소개 문구를 친근한 표현으로 변경");
 
         EventVersionListResponse response = eventVersionService.getVersions(eventId, ADMIN_ID);
 
@@ -87,7 +84,7 @@ public class EventVersionServiceTest {
         assertThat(summary.createdAt()).isEqualTo(createdAt);
         assertThat(summary.published()).isTrue();
         assertThat(summary.sourceVersionNo()).isEqualTo(1);
-        assertThat(summary.requestContent()).isEqualTo("소개 문구를 친근하게 정리해 줘");
+        assertThat(summary.changeSummary()).isEqualTo("소개 문구를 친근한 표현으로 변경");
         verify(eventVersionRepository).findByEventIdOrderByVersionNoDesc(eventId);
     }
 

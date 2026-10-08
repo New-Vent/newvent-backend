@@ -1,6 +1,10 @@
 package com.newvent.editor.service;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -174,7 +178,7 @@ class EditServiceTest {
         router = new FakeRouter();
         retry = new FakeRetry();
         jobs = new GenerationJobStore();
-        versions = new VersionStore.InMemory();
+        versions = spy(new VersionStore.InMemory());
         gateway = new CountingGateway();
         service = new EditService(router, retry, versions, new EventGuard.Open(), jobs,
                 LlmCallRecorder.none(), gateway);
@@ -886,5 +890,68 @@ class EditServiceTest {
         service = new EditService(router, retry, versions, new EventGuard.Open(), jobs,
                 LlmCallRecorder.none(), gateway);
         versions.save(EVENT, html, null);
+    }
+
+    @Test
+    void LLM의_변경요약을_저장_메서드에_전달한다() {
+        Long sourceVersionId = versions.latest(EVENT).orElseThrow().versionId();
+        String summary = "제목을 가을 대축제로 변경";
+
+        router.willReturn(new RawRoute("EDIT", "hero", null));
+        retry.willReturn(ok(NEW_HERO, summary));
+
+        GenerationJob job = run("제목을 가을 대축제로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+
+        verify(versions).save(
+            eq(EVENT),
+            anyString(),
+            eq(sourceVersionId),
+            eq(summary));
+    }
+
+    @Test
+    void 여러_영역의_변경요약을_합쳐서_전달한다() {
+        Long sourceVersionId = versions.latest(EVENT).orElseThrow().versionId();
+
+        router.willReturn(
+            new RawRoute("EDIT", "hero", null),
+            new RawRoute("EDIT", "steps", null));
+        retry.willReturn(
+            ok(NEW_HERO, "제목을 가을 대축제로 변경"),
+            ok(NEW_STEPS, "참여 방법에 로그인 안내 반영"));
+
+        GenerationJob job = run("제목과 참여 방법을 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+
+        verify(versions).save(
+            eq(EVENT),
+            anyString(),
+            eq(sourceVersionId),
+            eq("제목을 가을 대축제로 변경; 참여 방법에 로그인 안내 반영"));
+    }
+
+    @Test
+    void 실제로_바뀌지_않은_영역의_요약은_제외한다() {
+        Long sourceVersionId = versions.latest(EVENT).orElseThrow().versionId();
+
+        router.willReturn(
+            new RawRoute("EDIT", "hero", null),
+            new RawRoute("EDIT", "steps", null));
+        retry.willReturn(
+            ok(NEW_HERO, "제목을 가을 대축제로 변경"),
+            ok(SAME_STEPS, "참여 방법 문구 변경"));
+
+        GenerationJob job = run("제목과 참여 방법을 다듬어줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+
+        verify(versions).save(
+            eq(EVENT),
+            anyString(),
+            eq(sourceVersionId),
+            eq("제목을 가을 대축제로 변경"));
     }
 }
