@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.RestController;
 import com.newvent.event.domain.Event;
 import com.newvent.event.exception.EventNotFoundException;
 import com.newvent.event.service.PublicEventService;
-import com.newvent.registry.PageShell;
 
 @RestController
 public class PublicEventPageController {
@@ -22,10 +21,10 @@ public class PublicEventPageController {
     @GetMapping(value = "/e/{id}", produces = MediaType.TEXT_HTML_VALUE)
     public String page(@PathVariable Long id) {
         Event event = publicEventService.getPublicEvent(id);
-        String html = publicEventService.publishedHtmlOf(event);
-        if (html == null) {
+        String page = publicEventService.publishedPageOf(event);
+        if (page == null) {
             throw new EventNotFoundException();
         }
-        return PageShell.standalone(html, event.getTitle());
+        return page;
     }
 }

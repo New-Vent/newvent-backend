@@ -46,7 +46,8 @@ public class PublicEventController {
         Event event = publicEventService.getPublicEvent(eventId);
         boolean closingSoon = publicEventService.isClosingSoon(event, OffsetDateTime.now());
         // 슬롯을 채운 HTML 을 서비스에서 받아 넘긴다. 엔티티에서 직접 꺼내면 기간이 빈 채로 나간다
+        // ★ 완전한 문서로 감싸서 내보낸다 — /e/{id} 와 같은 문서다 (head · event.css · 테마 · runtime.js)
         return ApiResponse.success(PublicEventResponse.from(
-                event, closingSoon, publicEventService.publishedHtmlOf(event)));
+                event, closingSoon, publicEventService.publishedPageOf(event)));
     }
 }

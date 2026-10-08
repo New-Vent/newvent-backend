@@ -303,6 +303,7 @@ public class BlockValidator {
      * ★ 대신 이 둘은 고정이다
      *   data-slot  서버가 값을 쓰는 자리. 없어지면 그 이벤트는 영영 못 채운다
      *   id         getElementById 로 직접 찾는다 (#demoTimer · #regCount · #pouchSection)
+     *   behavior   data-behavior 이름 — runtime.js 가 이걸 보고 동작한다
      *              없어지면 타이머가 멈추고, 복제하면 id 중복으로 첫 번째만 잡힌다
      *   class      단, **이름표 붙은 요소의 것만.** 아래 diffClasses 참고
      */
@@ -318,6 +319,24 @@ public class BlockValidator {
                         + "원래 있던 id 를 그대로 두세요.",
                 FailureCode.ID_INVENTED, "id=\"%s\" 를 새로 만들었습니다. "
                         + "id 는 화면 기능이 쓰는 이름이라 임의로 추가하면 안 됩니다.");
+
+        // ★ 동작도 이름표다. 지우면 버튼이 조용히 죽고, 지어내면 서버가 심지 않은 동작이 생긴다
+        diff(Behavior.keysOf(before), Behavior.keysOf(after), f,
+                FailureCode.BEHAVIOR_LOST, "data-behavior=\"%s\" 를 지웠습니다. 버튼의 동작이 이 속성에 걸려 있습니다. "
+                        + "원래 있던 data-behavior 를 그대로 두세요.",
+                FailureCode.BEHAVIOR_INVENTED, "data-behavior=\"%s\" 를 새로 만들었습니다. "
+                        + "동작은 서버만 붙입니다. 원래 있던 것만 그대로 두세요.");
+
+        // ★ 버튼은 늘 수 없다. 수정 정화는 원래 버튼을 지키려고 <button> 을 허용하는데,
+        //   그 틈으로 동작(data-behavior) 없는 버튼이 들어오면 눌러도 아무 일이 없는 버튼이 게시된다.
+        //   줄어드는 것(카드 삭제)은 허용한다. 카드 추가는 서버가 먼저 복제하므로(duplicateCard) 개수가 같다
+        int wasButtons = Jsoup.parseBodyFragment(before == null ? "" : before).select("button").size();
+        int nowButtons = Jsoup.parseBodyFragment(after == null ? "" : after).select("button").size();
+        if (nowButtons > wasButtons) {
+            f.add(Failure.of(FailureCode.BUTTON_INVENTED,
+                    "버튼(<button>)을 새로 만들었습니다. 버튼은 동작이 붙어야 해서 서버만 만듭니다. "
+                            + "원래 있던 버튼만 그대로 두고 문구만 고치세요."));
+        }
 
         diffClasses(Slots.classMap(before), Slots.classMap(after), f);
     }
@@ -439,8 +458,9 @@ public class BlockValidator {
                          "id",             // getElementById 로 찾는 것들
                          "type",           // <button type="button">
                          "value", "placeholder",
-                         "data-href",      // <button> 일 때 서버가 넣는 링크
-                         "data-demo-msg", "data-state", "data-vote");
+                         "data-href")      // <button> 일 때 서버가 넣는 링크
+                 // ★ 동작(data-behavior)과 그것이 읽는 data-* 만. 목록은 Behavior 가 정한다
+                 .addAttributes(":all", Behavior.ATTRIBUTES.toArray(String[]::new));
         }
         String cleaned = Jsoup.clean(html, "", s, new Document.OutputSettings().prettyPrint(false));
 
@@ -453,6 +473,8 @@ public class BlockValidator {
             else el.attr("style", safe);
         }
         cleanLooks(doc);
+        // ★ 속성은 열었지만 값은 아직 안 봤다 — 목록에 없는 behavior 이름은 여기서 지운다
+        if (keepInteractive) Behavior.sanitize(doc);
         return doc.body().html();
     }
 

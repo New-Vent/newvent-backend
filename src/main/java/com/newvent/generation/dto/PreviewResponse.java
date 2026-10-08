@@ -20,8 +20,18 @@ public record PreviewResponse(String html, Long versionId, Integer versionNo,
                               List<DirectEditor.EditableText> editableTexts) {
 
     public static PreviewResponse of(GenerationService.Rendered rendered) {
+        return of(rendered, rendered.html());
+    }
+
+    /**
+     * @param document 내보낼 HTML — 완전한 문서(PublicEventService.pageOf)
+     *
+     * ★ editableTexts 는 문서가 아니라 조각에서 뽑는다. 직접 편집은 저장된 조각에 거는 것이라
+     *   index 가 조각 기준이어야 한다 (문서에는 &lt;title&gt; · 보여 줄 때 채운 글자가 더 있다)
+     */
+    public static PreviewResponse of(GenerationService.Rendered rendered, String document) {
         return new PreviewResponse(
-                rendered.html(), rendered.versionId(), rendered.versionNo(),
+                document, rendered.versionId(), rendered.versionNo(),
                 DirectEditor.editableTexts(rendered.html()));
     }
 }
