@@ -5,6 +5,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.springframework.core.env.Environment;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -47,6 +48,7 @@ public class RagSeedDataGenerator {
 	private final EventVersionRepository versions;
 	private final AdminRepository admins;
 	private final EmbeddingService embedding;
+	private final Environment environment;
 
 	/**
 	 * 시드 1건. title 앞에 SEED: 가 붙어 저장된다. html 은 data-block 섹션들로만 구성한다.
@@ -70,8 +72,22 @@ public class RagSeedDataGenerator {
 	}
 
 	public SeedResult generate() {
-		Admin owner = admins.findAll(PageRequest.of(0, 1, Sort.by("id"))).stream().findFirst()
-				.orElseThrow(() -> new IllegalStateException("시드 적재용 관리자가 없다. 먼저 관리자를 만드세요."));
+		return generate(null);
+	}
+
+	/**
+	 * 시드 적재. adminLoginId 가 있으면 그 관리자를 소유자로 쓰고, 없으면 id 첫 관리자.
+	 * prod 차단은 Runner 와 별개로 여기서도 건다 — 직접 주입 호출 실수를 막기 위해.
+	 */
+	public SeedResult generate(String adminLoginId) {
+		RagSeedDataRunner.rejectProdIfActive(environment.getActiveProfiles());
+		Admin owner = adminLoginId != null
+				? admins.findByLoginId(adminLoginId)
+						.orElseThrow(() -> new IllegalStateException(
+								"시드 적재용 관리자가 없다: " + adminLoginId))
+				: admins.findAll(PageRequest.of(0, 1, Sort.by("id"))).stream().findFirst()
+						.orElseThrow(() -> new IllegalStateException(
+								"시드 적재용 관리자가 없다. 먼저 관리자를 만드세요."));
 
 		OffsetDateTime now = OffsetDateTime.now(SEOUL);
 		OffsetDateTime start = now.minusDays(7);

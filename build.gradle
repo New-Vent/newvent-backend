@@ -119,4 +119,8 @@ tasks.register('seedRagData', JavaExec) {
 	classpath = sourceSets.main.runtimeClasspath
 	mainClass = 'com.newvent.NewventBackendApplication'
 	args = ['--seed-rag-data']
+	// ./gradlew seedRagData -PseedAdmin=admin1  (소유 관리자 지정, 없으면 id 첫 관리자)
+	if (project.hasProperty('seedAdmin')) {
+		args += "--seed-admin=${project.property('seedAdmin')}"
+	}
 }

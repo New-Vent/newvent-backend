@@ -1,5 +1,7 @@
 package com.newvent.rag.seed;
 
+import java.util.List;
+
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
@@ -34,7 +36,7 @@ public class RagSeedDataRunner implements ApplicationRunner {
 			return;
 		}
 		rejectProdIfActive(environment.getActiveProfiles());
-		SeedResult result = generator.generate();
+		SeedResult result = generator.generate(seedAdminLoginId(args));
 		if (result.skipped()) {
 			log.info("RAG 시드 완료: 이미 적재됨 — 건너뜀");
 		} else {
@@ -50,5 +52,11 @@ public class RagSeedDataRunner implements ApplicationRunner {
 				throw new IllegalStateException("RAG 시드는 prod 에서 실행할 수 없다");
 			}
 		}
+	}
+
+	/** --seed-admin=loginId 값을 읽는다. 없으면 null (id 첫 관리자 사용). */
+	static String seedAdminLoginId(ApplicationArguments args) {
+		List<String> values = args.getOptionValues("seed-admin");
+		return (values == null || values.isEmpty()) ? null : values.get(0);
 	}
 }

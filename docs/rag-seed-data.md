@@ -7,6 +7,9 @@
 
 ```bash
 ./gradlew seedRagData
+
+# 소유 관리자 지정 (없으면 id 첫 관리자)
+./gradlew seedRagData -PseedAdmin=admin1
 ```
 
 - `--seed-rag-data` 인자로 부팅 → 적재 후 종료 (서버로 띄워 두지 않음)
@@ -118,7 +121,8 @@ RAG_EVAL=1 ./gradlew test --tests "com.newvent.rag.RagEvalSmokeTest"
 ## 주의
 
 - 제목 prefix `SEED:` 필수 — 운영 데이터와 구분하기 위해
-- `prod`에서 실행 금지 (`RagSeedDataRunner`가 차단)
+- `prod`에서 실행 금지 (Runner + Generator 이중 차단)
+- 동시에 두 번 실행하지 않는다 — 멱등 검사가 통과 순간에만 유효해서 중복 적재될 수 있다 (1인 수동 실행 전제)
 - 임베딩 호출 비용: 약 101청크분 Bedrock 호출 (29건 기준)
 
 ## 관련 파일
