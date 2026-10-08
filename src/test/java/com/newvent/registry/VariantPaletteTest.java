@@ -421,4 +421,73 @@ class VariantPaletteTest {
     void 라우터_예시() {
         assertTrue(PromptBuilder.router().contains("\"op\":\"STYLE\",\"target\":\"hero\""));
     }
+
+    /**
+     * ★★ "제목·소개 참여 방법 더 화려하게" 에 모델이 이모지와 <strong> 만 붙이고
+     *   레이아웃은 오히려 v-hero-split → 기본 가운데 정렬로 밋밋해졌다(실제 화면).
+     *   원인이 네 군데였고 이 테스트가 그 네 개를 하나씩 못 박는다.
+     */
+    @Test
+    @DisplayName("★ 겉모양 요청(STYLE)은 모양 고르기를 **단정문**으로 받는다 — 조건문이면 모델이 문구로 샌다")
+    void 겉모양_요청은_단정문() {
+        String style = PromptBuilder.edit(Block.HERO, false, true, true);
+        String plain = PromptBuilder.edit(Block.HERO, false, true, false);
+
+        // ① 라우터의 op 이 실제로 프롬프트를 바꾼다. 전에는 두 글이 **완전히 같았다**
+        assertNotEquals(plain, style, "STYLE 과 EDIT 의 프롬프트가 같으면 라우터가 분류한 의미가 없습니다");
+
+        // ② 조건문이 사라지고 단정문이 온다
+        assertFalse(style.contains("바꿔 달라는 요청일 때만"),
+                "STYLE 인데 '…일 때만' 이 남아 있으면 모델이 또 스스로 판단하다 문구로 샙니다");
+        assertTrue(style.contains("반드시 하나를 골라 바꾼다"), style);
+        assertTrue(style.contains("문구만 고치고 끝내지 마라"));
+        assertTrue(style.contains("다른** 이름을 고른다"), "같은 변형을 다시 고르면 화면이 안 바뀝니다");
+
+        // ③ 앞과 뒤에 두 번 — 작은 모델은 가운데를 흘린다
+        assertTrue(style.indexOf("겉모습") < style.indexOf("모양 고르기"), "앞쪽에도 한 번 나와야 합니다");
+
+        // ④ EDIT 쪽은 건드리지 않았다 — 문구 수정이 모양까지 바꾸면 그게 또 사고다
+        assertTrue(plain.contains("바꿔 달라는 요청일 때만"));
+        assertFalse(plain.contains("반드시 하나를 골라 바꾼다"));
+    }
+
+    @Test
+    @DisplayName("★ 수정에서도 테마를 고를 수 있다 — 백지 테마 3종이 수정 프롬프트에 없었다")
+    void 수정에서_테마를_고른다() {
+        String hero = PromptBuilder.edit(Block.HERO, false, true, true);
+        for (Theme t : Theme.blankThemes()) {
+            assertTrue(hero.contains(t.cssClass()),
+                    t.cssClass() + " 가 수정 프롬프트에 없습니다. 모델이 영영 못 고릅니다");
+        }
+        // 구조를 먼저 정하고 색을 얹는다 — 생성(addLooks)과 같은 순서
+        assertTrue(hero.indexOf("페이지 전체 분위기") < hero.indexOf("페이지 전체 색감"));
+
+        // hero 가 아니면 테마는 안 나온다 — 페이지 전체 값이라 자리가 하나여야 한다
+        assertFalse(PromptBuilder.edit(Block.STEPS, false, true, true).contains("theme-bloom"));
+
+        // ★ 템플릿에는 안 나온다. 템플릿 루트에는 theme-sports 처럼 다른 벌이 붙어 있어서
+        //   blankThemes 를 고르면 hoist 가 그걸 갈아끼워 템플릿 디자인이 깨진다
+        assertFalse(PromptBuilder.edit(Block.HERO, true, true, true).contains("theme-bloom"),
+                "템플릿 hero 에 백지 테마를 안내하면 템플릿 디자인이 통째로 바뀝니다");
+
+        // ★ 영역을 골라 고칠 때도 안 나온다 — 고르지 않은 영역까지 바뀐다(팔레트와 같은 이유)
+        assertFalse(PromptBuilder.edit(Block.HERO, false, false, true).contains("theme-bloom"));
+    }
+
+    @Test
+    @DisplayName("★ 라우터에 '더 화려하게' = STYLE 예시가 있다 — 없으면 바로 위 EDIT 예시를 베낀다")
+    void 라우터가_화려하게를_STYLE_로_보낸다() {
+        String r = PromptBuilder.router();
+        assertTrue(r.contains("화려하게"), "'화려하게' 예시가 없으면 분위기 요청이 EDIT 으로 떨어집니다");
+
+        // 짝이 되는 EDIT 예시보다 **뒤**에 와야 한다. 모델은 마지막 예시를 제일 무겁게 읽는다
+        assertTrue(r.indexOf("친절하게 다듬어줘") < r.indexOf("화려하게 해줘"));
+
+        // 여러 영역을 한 번에 STYLE 로 보내는 꼴을 보여 준다
+        assertTrue(r.contains("{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null},"
+                + "{\"op\":\"STYLE\",\"target\":\"steps\",\"content\":null}"), r);
+
+        // op 설명 자체도 넓혔다
+        assertTrue(r.contains("눈에 띄게"));
+    }
 }
