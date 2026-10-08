@@ -29,6 +29,7 @@ import com.newvent.rag.dto.response.PromptCandidate;
 import com.newvent.rag.dto.response.SearchPreviewResponse;
 import com.newvent.rag.service.EmbeddingService;
 import com.newvent.rag.service.SimilarityService;
+import com.newvent.rag.service.VersionCompareService;
 
 @WebMvcTest(RagController.class)
 @Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtProvider.class})
@@ -43,6 +44,9 @@ class RagControllerTest {
 
     @MockitoBean
     SimilarityService similarity;
+
+    @MockitoBean
+    VersionCompareService comparing;
 
     private static IndexStatusResponse indexStatus() {
         return new IndexStatusResponse(3L, 2, 1, 1, 5, Instant.parse("2026-09-30T05:00:00Z"));

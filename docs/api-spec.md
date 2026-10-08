@@ -45,7 +45,7 @@
 
 멤버십 등급: `NORMAL` / `EXCELLENT` / `BEST` (화면 표시명 일반/우수/최우수)
 
-`closingSoon`: 저장 컬럼이 아니다. `PUBLISHED` 이고 지금이 기간 안이며 종료 3일 전부터면 `true`.
+`closingSoon`: 저장 컬럼이 아니다. `PUBLISHED` 이고 이미 시작했으며 종료 3일 전부터 종료 시각까지(포함)면 `true`. 종료일이 없으면 `false`.
 
 ### 이벤트 자동 종료
 
@@ -92,6 +92,7 @@
 | --- | --- |
 | `publishedVersionNo` | 게시 중인 버전 번호. 게시한 적 없으면 `null` |
 | `latestVersionNo` | 가장 최근 버전 번호. 페이지가 아직 없으면 `null`. `publishedVersionNo` 보다 크면 게시 후 새 버전이 있다는 뜻 |
+| `thumbnailHtml` | 썸네일용 HTML 조각. 버전 HTML 에서 hero 블록만 잘라 기간 슬롯을 채운 것이다. 게시 버전이 있으면 그 버전, 없으면(`DRAFT` 등) 최신 버전을 쓴다. 버전이 없거나 hero 블록이 없으면 `null`. 공개 목록의 `thumbnailHtml` 과 같은 규칙이며, 프론트는 격리된 iframe 으로 그린다 |
 
 ### 오류
 
@@ -115,11 +116,11 @@
         "endAt": "2026-10-15T23:59:59+09:00",
         "updatedAt": "2026-09-16T10:20:00+09:00",
         "template": "signup",
-        "thumbnailUrl": null,
         "grade": "NORMAL",
         "closingSoon": false,
         "publishedVersionNo": 1,
-        "latestVersionNo": 3
+        "latestVersionNo": 3,
+        "thumbnailHtml": "<div class=\"ev-container event-page theme-sale\"><section data-block=\"hero\">...</section></div>"
       }
     ],
     "page": 0,
@@ -159,7 +160,6 @@ http://localhost:8080/api/admin/events?name=3
     "endAt": "2026-09-18T23:59:59+09:00",
     "updatedAt": "2026-09-15T09:10:00+09:00",
     "template": "instant",
-    "thumbnailUrl": null,
     "grade": "NORMAL",
     "completedHtml": "<section data-block=\"hero\"><h1>지금 긁으면 바로 당첨</h1></section>",
     "closingSoon": true
@@ -209,7 +209,6 @@ http://localhost:8080/api/admin/events/3
     "endAt": "2026-10-15T23:59:59+09:00",
     "updatedAt": "2026-09-16T01:00:00+09:00",
     "template": "sports_cheer",
-    "thumbnailUrl": null,
     "grade": "BEST",
     "completedHtml": null,
     "closingSoon": false
@@ -310,7 +309,7 @@ Content-Type: application/json
 | Method | Path | 설명 | 오류 |
 | --- | --- | --- | --- |
 | `DELETE` | `/api/admin/events/{id}` | 휴지통으로 보낸다 (`deletedAt` 기록). 응답 `data` 없음 | 404 `EVENT404-0` · 게시 중 409 `EVENT409-2` · 생성 작업 중 409 `EVENT409-3` |
-| `GET` | `/api/admin/events/trash` | 휴지통 목록. `page`·`size`·응답 필드(버전 번호 포함)는 목록 API 와 같음. 삭제일 내림차순 | — |
+| `GET` | `/api/admin/events/trash` | 휴지통 목록. `page`·`size`·응답 필드(버전 번호·`thumbnailHtml` 포함)는 목록 API 와 같음. 삭제일 내림차순 | — |
 | `POST` | `/api/admin/events/{id}/restore` | 휴지통에서 복구. 복구된 `EventDetailResponse` | 휴지통에 없으면 404 `EVENT404-0` |
 | `DELETE` | `/api/admin/events/{id}/permanent` | 휴지통에서 영구 삭제. 되돌릴 수 없음 | 휴지통에 없으면 404 `EVENT404-0` |
 
@@ -318,9 +317,15 @@ Content-Type: application/json
 
 ## 게시
 
+게시·재게시·게시 내리기는 이벤트 소유 관리자만 실행할 수 있다. 다른 관리자가 요청하면
+`403 COMMON403-0`을 반환하며 이벤트 상태와 버전을 변경하지 않는다.
+
+같은 소유자 제한은 이벤트 수정·종료·휴지통 이동·복구·영구 삭제에도 적용한다.
+관리자 ID는 인증 정보에서 읽으며 요청 본문이나 쿼리로 받지 않는다.
+
 | Method | Path | 설명 | 오류 |
 | --- | --- | --- | --- |
-| `POST` | `/api/admin/events/{id}/publish` | 요청 `{ "versionId": 10 }`. 게시(`DRAFT` → `PUBLISHED`) 또는 재게시(다른 버전으로 교체). 고른 버전은 저장 지점으로 표시된다. 게시된 `EventDetailResponse` | `versionId` 누락 400 `COMMON400-0` · 없는 이벤트 404 `EVENT404-0` · 없는 버전 404 `EVENT404-3` · 종료된 이벤트 409 `EVENT409-5` |
+| `POST` | `/api/admin/events/{id}/publish` | 요청 `{ "versionId": 10 }`. 게시(`DRAFT` → `PUBLISHED`) 또는 재게시(다른 버전으로 교체). 고른 버전은 저장 지점으로 표시된다. 게시 시각에 종료일시가 지났으면(종료 시각과 같은 순간 포함) 게시할 수 없다 — 기간을 고친 뒤 다시 게시한다. 시작일은 검사하지 않는다(진행 중 이벤트의 게시·재게시, 시작 전 이벤트의 예약 게시 모두 가능). 게시된 `EventDetailResponse` | `versionId` 누락 400 `COMMON400-0` · 없는 이벤트 404 `EVENT404-0` · 없는 버전 404 `EVENT404-3` · 종료된 이벤트 409 `EVENT409-5` · 종료일시가 지난 이벤트 409 `EVENT409-8` |
 | `POST` | `/api/admin/events/{id}/unpublish` | 게시 내리기(`PUBLISHED` → `DRAFT`). 요청 본문 없음. 게시 버전(`publishedVersion`)을 해제해 사용자 화면에서 내리고, 저장된 버전·참여 기록·알림 표시는 그대로 둔다. 내린 뒤에는 `POST /{id}/publish` 로 다시 게시할 수 있다. 내려진 `EventDetailResponse` (`status` 는 `DRAFT`, `closingSoon` 은 `false`) | 없거나 삭제된 이벤트 404 `EVENT404-0` · 게시 중(`PUBLISHED`)이 아닌 이벤트(`DRAFT`·`ENDED`) 409 `EVENT409-7` · 종료 시각이 지났지만 아직 `ENDED` 로 바뀌기 전인 이벤트 409 `EVENT409-1` |
 
 ---
@@ -489,7 +494,6 @@ http://localhost:8080/api/admin/llm-calls/1
 
 - **자기 이벤트 제외**: 검색은 `eventId` 본인 글을 항상 뺀다. 자기 글을 예시로 가져오면 돌고 돌기 때문.
 - **최소 유사도 0.5**: `distance = 1 - similarity` 기준 `maxDistance = 0.5` 보다 멀면 결과에서 잘린다.
-- `similar-versions` (버전 비교 RAG)는 미구현. `VersionCompareService` 인터페이스만 정의됨.
 
 ## `POST /api/admin/rag/reindex`
 
@@ -672,6 +676,61 @@ http://localhost:8080/api/admin/rag/search-preview?eventId=3&query=회원%20혜�
 
 ```text
 http://localhost:8080/api/admin/rag/recommend-prompts?eventId=3&query=성과급&topK=3
+```
+
+---
+
+## `GET /api/admin/rag/similar-versions`
+
+유사 버전 탐색. 기준 버전과 비슷한 같은 이벤트 내 다른 버전을 유사도 내림차순으로 돌려준다.
+기준 버전의 색인된 청크 벡터를 그대로 쿼리로 쓰므로 임베딩을 새로 부르지 않는다.
+
+### Query
+
+| 이름 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- |
+| `eventId` | O | | 기준 버전이 속한 이벤트 |
+| `versionId` | O | | 기준 버전. 결과에서 제외된다 |
+| `topK` | X | `3` | 1~10. 반환할 버전 수 |
+
+### 200 예시
+
+`similarity` 가 클수록 기준 버전과 비슷하다 (`1` 이면 동일). `topChunks` 는 해당 버전의 대표 청크 최대 2개.
+기준 버전이 미색인이면 빈 목록이다.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "versionId": 5,
+      "versionNo": 2,
+      "similarity": 0.89,
+      "topChunks": [
+        {
+          "chunkId": 41,
+          "blockKey": "hero",
+          "chunkIndex": 0,
+          "content": "신규 가입 고객 전원에게 데이터 3GB를 드립니다",
+          "distance": 0.11
+        }
+      ]
+    }
+  ],
+  "message": null
+}
+```
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| `eventId`·`versionId` 누락 | 400 | `COMMON400-0` |
+| `versionId` 가 없거나 다른 이벤트 소속 | 404 | `EVENT404-3` |
+| `topK` 가 1 미만·10 초과 | 400 | `COMMON400-0` |
+
+```text
+http://localhost:8080/api/admin/rag/similar-versions?eventId=3&versionId=10&topK=3
 ```
 
 ---
