@@ -77,4 +77,23 @@ public interface LlmCallLogRepository extends JpaRepository<LlmCallLog, Long>, J
 
 		return findAll(spec, pageable);
 	}
+
+	// 주간 RAG 사용 집계 (품질 추이 대시보드용). sumTokensByWeek 와 같은 주 경계(KST 월요일)다
+	@Query(value = """
+			select		date_trunc('week', created_at at time zone 'Asia/Seoul')::date as "weekStart",
+						count(*) as "totalCalls",
+						coalesce(sum(case when rag_used then 1 else 0 end), 0) as "ragUsedCalls"
+			  from		llm_call_logs
+			 where		created_at >= :from
+			 group by	1
+			 order by	1 desc
+			""", nativeQuery = true)
+	List<WeeklyRagUsageRow> sumRagUsageByWeek(@Param("from") Instant from);
+
+	// 주간 집계 1행. record 가 아니라 읽기 전용 투영 (테이블 X)
+	interface WeeklyRagUsageRow {
+		LocalDate getWeekStart();
+		long getTotalCalls();
+		long getRagUsedCalls();
+	}
 }

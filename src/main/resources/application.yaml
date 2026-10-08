@@ -9,6 +9,18 @@ spring:
   jackson:
     time-zone: Asia/Seoul
 
+  # 스케줄러·@Async 풀. SchedulingConfig 는 스위치만 켠다 (빈 직접 등록 금지)
+  task:
+    scheduling:
+      pool-size: 4
+      thread-name-prefix: scheduled-
+    execution:
+      pool:
+        core-size: 2
+        max-size: 4
+        queue-capacity: 100
+      thread-name-prefix: async-
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/newvent}
     username: ${DB_USERNAME:newvent}
@@ -55,6 +67,27 @@ llm:
   # provider 별 설정
   model: ${LLM_MODEL:}
   region: ${BEDROCK_REGION:}
+
+# OpenAPI 문서 (springdoc)
+#
+#   /v3/api-docs      OpenAPI 3 JSON — 기계가 읽는다 (프론트 타입 생성·목 서버)
+#   /swagger-ui.html  사람이 보는 화면. Try it out 으로 바로 호출된다
+#
+#   prod 에서는 application-prod.yaml 이 끈다. 공개 서버에 내부 구조를 통째로 열지 않는다.
+#   이 문서가 "무엇을 받고 무엇을 주나" 를 맡는다.
+#   "왜 이렇게 설계했나" 는 docs/api-design.md · docs/decisions/ 가 맡는다. 섞지 않는다.
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    # 태그·경로를 알파벳순으로 — 컨트롤러 추가 순서에 따라 목차가 흔들리지 않게
+    tags-sorter: alpha
+    operations-sorter: alpha
+    # 기본값은 모든 태그를 펼친 상태라 58개가 한 화면에 쏟아진다
+    doc-expansion: none
 
 # Docker 헬스체크
 management:
