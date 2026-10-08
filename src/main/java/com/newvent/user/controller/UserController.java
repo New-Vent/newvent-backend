@@ -20,6 +20,8 @@ import com.newvent.user.dto.request.UpdateUserRequest;
 import com.newvent.user.dto.response.UserResponse;
 import com.newvent.user.service.UserService;
 
+import io.swagger.v3.oas.annotations.Operation;
+
 /**
  *   POST  /api/public/users/signup   회원가입 (공개)
  *   GET   /api/users/me              내 정보       (USER)
@@ -51,6 +53,10 @@ public class UserController {
         return ApiResponse.success(UserResponse.from(userService.getById(principal.id())));
     }
 
+    @Operation(
+            summary = "내 정보 수정",
+            description = "보낸 필드만 바꾼다(생략하면 그대로). 이메일이 다른 회원과 대소문자만 달라도 중복이라 409 (USER409-1). "
+                    + "본인 이메일의 대소문자만 바꾸는 것은 허용한다.")
     @PatchMapping("/api/users/me")
     public ApiResponse<UserResponse> updateMe(
             @AuthenticationPrincipal AuthUser principal, @Valid @RequestBody UpdateUserRequest request) {
