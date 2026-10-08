@@ -497,8 +497,8 @@ http://localhost:8080/api/admin/llm-calls/1
 
 ## `POST /api/admin/rag/reindex`
 
-수동 재색인. `versionId` 가 있으면 그 버전 1개, 없으면 이벤트 전체 버전을 오래된 것부터 순차로 돌린다.
-색인은 버전별로 (묵은 청크 삭제 + 신규 저장) 한 트랜잭션이고, 재색인 전체도 같은 트랜잭션에 묶인다.
+수동 재색인. 한 버전만 돌린다. 이벤트 전체 버전을 돌리려면 `/reindex/all` 로 보낸다.
+색인은 (묵은 청크 삭제 + 신규 저장) 한 트랜잭션이다.
 돌린 뒤의 색인 현황을 돌려준다.
 
 ### Request body
@@ -506,10 +506,10 @@ http://localhost:8080/api/admin/llm-calls/1
 | 필드 | 필수 | 설명 |
 | --- | --- | --- |
 | `eventId` | O | 색인할 이벤트 |
-| `versionId` | X | 없으면 이벤트 전체 버전 |
+| `versionId` | O | 색인할 버전 (한 버전만) |
 
 ```json
-{ "eventId": 3 }
+{ "eventId": 3, "versionId": 5 }
 ```
 
 ### 200 예시
@@ -535,7 +535,7 @@ http://localhost:8080/api/admin/llm-calls/1
 
 | 상황 | HTTP | code |
 | --- | --- | --- |
-| `eventId` 누락 | 400 | `COMMON400-0` |
+| `eventId`·`versionId` 누락 | 400 | `COMMON400-0` |
 | `versionId` 가 없거나 다른 이벤트 소속 | 404 | `EVENT404-3` |
 
 ```text
@@ -777,28 +777,42 @@ http://localhost:8080/api/admin/rag/quality-trend?weeks=4
 
 ## `POST /api/admin/rag/reindex/all`
 
-전체 재색인. 삭제된 이벤트·시드(`SEED:`) 제외, 하나가 터져도 멈추지 않고 다음으로 넘어간다.
-야간 스케줄러(매일 03:00 KST)가 같은 로직을 돌린다.
+전체 재색인 비동기 시작. 삭제된 이벤트·시드(`SEED:`) 제외, 하나가 터져도 멈추지 않고 다음으로 넘어간다.
+이벤트당 (삭제 + 저장) 한 트랜잭션이라 중간 실패 시 그 이벤트는 손대기 전 상태로 남는다.
+전역 작업은 한 번에 하나 — 이미 돌고 있으면 `409`, 자리를 잡으면 `202` + 시작 시각만 돌려주고
+서버에서 `@Async` 로 계속 돈다 (nginx 60초 타임아웃 회피). 야간 스케줄러(매일 03:00 KST)가 같은 자리를 쓴다.
 
-### 200 예시
+### 202 예시
 
 ```json
 {
   "success": true,
   "data": {
-    "totalEvents": 3,
-    "succeeded": 2,
-    "failedEvents": [
-      { "eventId": 7, "error": "임베딩 호출 실패" }
-    ],
-    "totalChunks": 15
+    "running": true,
+    "startedAt": "2026-10-07T03:00:00Z",
+    "finishedAt": null,
+    "lastResult": null
   },
   "message": null
 }
 ```
 
+### 오류
+
+| 상황 | HTTP |
+| --- | --- |
+| 이미 전체 재색인이 돌고 있음 | 409 |
+
 ```text
 POST http://localhost:8080/api/admin/rag/reindex/all
+```
+
+## `GET /api/admin/rag/reindex/all/status`
+
+전체 재색인 진행 상태. `running`·시작·종료·직전 결과(`ReindexAllResponse` 모양 그대로).
+
+```text
+GET http://localhost:8080/api/admin/rag/reindex/all/status
 ```
 
 ---
