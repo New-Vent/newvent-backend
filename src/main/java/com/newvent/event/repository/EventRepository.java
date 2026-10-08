@@ -113,13 +113,14 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             @Param("periodTo") OffsetDateTime periodTo,
             Pageable pageable);
 
-    // 휴지통 목록 - 최근에 삭제된 순서로 보여준다(동률이면 id 내림차순)
+    // 휴지통 목록 - 소유 관리자의 것만, 최근에 삭제된 순서로 보여준다(동률이면 id 내림차순)
     @Query(
             value = "SELECT e FROM Event e LEFT JOIN FETCH e.template LEFT JOIN FETCH e.publishedVersion "
-                    + "WHERE e.deletedAt IS NOT NULL "
+                    + "WHERE e.deletedAt IS NOT NULL AND e.ownerAdmin.id = :adminId "
                     + "ORDER BY e.deletedAt DESC, e.id DESC",
-            countQuery = "SELECT COUNT(e) FROM Event e WHERE e.deletedAt IS NOT NULL")
-    Page<Event> findDeletedEvents(Pageable pageable);
+            countQuery = "SELECT COUNT(e) FROM Event e "
+                    + "WHERE e.deletedAt IS NOT NULL AND e.ownerAdmin.id = :adminId")
+    Page<Event> findDeletedEvents(@Param("adminId") Long adminId, Pageable pageable);
 
     // 카테고리(templateCode)/키워드(이벤트명)/진행상태(progress)는 전달되지 않으면(null) 조건에서 제외한다.
     // progress는 EventProgress.name() 문자열("UPCOMING"/"ONGOING"/"ENDED")을 그대로 받는다.
