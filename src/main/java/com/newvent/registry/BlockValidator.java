@@ -513,7 +513,7 @@ public class BlockValidator {
             //   **수정 경로도** 지난다. 수정마다 블록에 theme-* 가 박히면 루트 테마가
             //   매번 리셋되고, EditService 의 "안 바뀌었으면 실패" 검사도 전후가 늘
             //   달라져 무력해진다. 기본값은 PageShell.ensureRoot 한 곳에서만 박는다.
-            boolean isRoot = el.hasClass("ev-container") || el.hasClass("event-page");
+            boolean isRoot = PageShell.isRoot(el);
             boolean themeKept = false;
             for (String c : List.copyOf(el.classNames())) {
                 if (isRoot || !Theme.looksLike(c)) continue;
