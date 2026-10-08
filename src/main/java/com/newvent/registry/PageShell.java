@@ -36,6 +36,17 @@ public final class PageShell {
     /** 래퍼를 찾는 선택자. 둘 중 하나라도 있으면 이미 래퍼가 있는 것이다. */
     private static final String ROOT_SELECTOR = ".ev-container, .event-page";
 
+
+    /** 이 요소가 래퍼인가. 이름은 ROOT_SELECTOR 한 곳에만 둔다. */
+    public static boolean isRoot(Element el) {
+        return el != null && el.is(ROOT_SELECTOR);
+    }
+
+    /** 범위 안에서 래퍼를 찾는다. 없으면 null. */
+    public static Element rootOf(Element scope) {
+        return scope == null ? null : scope.selectFirst(ROOT_SELECTOR);
+    }
+
     private static final String NOTICES_RESOURCE = "/notices/common.html";
 
     /**
