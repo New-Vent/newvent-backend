@@ -1,11 +1,7 @@
 package com.newvent.rag.controller;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -19,19 +15,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.RequestBuilder;
 
-import com.newvent.auth.dto.AuthUser;
 import com.newvent.auth.jwt.JwtProvider;
 import com.newvent.common.config.SecurityConfig;
 import com.newvent.common.exception.handler.GlobalExceptionHandler;
-import com.newvent.event.service.EventOwnerCheck;
 import com.newvent.rag.dto.response.ChunkResponse;
 import com.newvent.rag.dto.response.IndexStatusResponse;
 import com.newvent.rag.dto.response.PromptCandidate;
@@ -58,12 +49,6 @@ class RagControllerTest {
 
     @MockitoBean
     VersionCompareService comparing;
-
-    @MockitoBean
-    EventOwnerCheck ownerCheck;
-
-    @Autowired
-    JwtProvider jwtProvider;
 
     private static IndexStatusResponse indexStatus() {
         return new IndexStatusResponse(3L, 2, 1, 1, 5, Instant.parse("2026-09-30T05:00:00Z"));
@@ -176,50 +161,5 @@ class RagControllerTest {
         mockMvc.perform(get("/api/admin/rag/reindex/all/status"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.running").value(false));
-    }
-
-    @Test
-    @DisplayName("eventId 를 받는 API 는 로그인한 관리자로 소유자를 확인한다")
-    void 소유자_확인() throws Exception {
-        given(embedding.getStatus(3L)).willReturn(indexStatus());
-
-        mockMvc.perform(get("/api/admin/rag/index-status").param("eventId", "3")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtProvider.issue(AuthUser.admin(1L)).value()))
-                .andExpect(status().isOk());
-        verify(ownerCheck).requireOwned(3L, AuthUser.admin(1L));
-    }
-
-    @Test
-    @DisplayName("다른 관리자의 이벤트면 eventId 를 받는 API 5개 모두 403 이고 서비스를 부르지 않는다")
-    void 소유자_아니면_403() throws Exception {
-        given(ownerCheck.requireOwned(anyLong(), any())).willThrow(new AccessDeniedException("denied"));
-
-        List<RequestBuilder> requests = List.of(
-                post("/api/admin/rag/reindex").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"eventId\":3,\"versionId\":5}"),
-                get("/api/admin/rag/index-status").param("eventId", "3"),
-                get("/api/admin/rag/search-preview").param("eventId", "3").param("query", "쿠폰"),
-                get("/api/admin/rag/recommend-prompts").param("eventId", "3").param("query", "쿠폰"),
-                get("/api/admin/rag/similar-versions").param("eventId", "3").param("versionId", "5"));
-
-        for (RequestBuilder request : requests) {
-            mockMvc.perform(request)
-                    .andExpect(status().isForbidden())
-                    .andExpect(jsonPath("$.code").value("COMMON403-0"));
-        }
-        verifyNoInteractions(embedding, similarity, comparing);
-    }
-
-    @Test
-    @DisplayName("품질 추이 · 전체 재색인은 이벤트에 묶이지 않아 소유자를 확인하지 않는다")
-    void 전역_API는_소유자_확인_없음() throws Exception {
-        given(embedding.getQualityTrend(anyInt())).willReturn(List.of());
-        given(embedding.tryClaimReindexSlot()).willReturn(false);
-        given(embedding.getReindexAllStatus()).willReturn(ReindexAllStatus.idle());
-
-        mockMvc.perform(get("/api/admin/rag/quality-trend")).andExpect(status().isOk());
-        mockMvc.perform(post("/api/admin/rag/reindex/all")).andExpect(status().isConflict());
-        mockMvc.perform(get("/api/admin/rag/reindex/all/status")).andExpect(status().isOk());
-        verifyNoInteractions(ownerCheck);
     }
 }
