@@ -209,13 +209,27 @@ public class MockLlmClient implements LlmClient {
         String system = (r.system() == null) ? "" : r.system();
         String user   = (r.user()   == null) ? "" : r.user();
 
+        // 수정 프롬프트는 changeSummary를 함께 요청한다.
+        if (system.contains("changeSummary")) {
+
+            // 수정 결과를 HTML과 변경 요약 주석으로 반환
+            String editedHtml = user.contains("FAIL")
+                ? BROKEN
+                : editBlock(system, user);
+
+            String summary = targetKey(system) + " 영역 내용 수정";
+
+            return editResponse(editedHtml, summary);
+        }
+
         // 검증 실패 경로를 손으로 보고 싶을 때
         if (user.contains("FAIL")) return BROKEN;
 
-        // PromptBuilder.edit() 만 이 문장을 쓴다
-        if (system.contains("영역만 수정해서")) return editBlock(system, user);
-
         return OK;
+    }
+
+    private static String editResponse(String html, String changeSummary) {
+        return html + "\n<!-- changeSummary: " + changeSummary + " -->";
     }
 
     /**
@@ -270,7 +284,13 @@ public class MockLlmClient implements LlmClient {
         int mark = user.indexOf(CURRENT_MARK);
         if (mark < 0) return null;
         int open = user.indexOf('<', mark);
-        return (open < 0) ? null : user.substring(open).strip();
+        if (open < 0) return null;
+
+        Document doc = Jsoup.parseBodyFragment(user.substring(open));
+        doc.outputSettings().prettyPrint(false);
+
+        Element block = doc.body().selectFirst("section[data-block]");
+        return block == null ? null : block.outerHtml();
     }
 
     private static String targetKey(String system) {

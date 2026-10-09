@@ -236,7 +236,7 @@ class JpaVersionStoreTest {
         // version_no 를 직접 1 로 박아 넣는다 — max+1 을 우회한 경합 상황
         EventVersion clash = EventVersion.create(
                 tem.getEntityManager().getReference(Event.class, eventId),
-                1, "<section>충돌</section>", null);
+                1, "<section>충돌</section>", null, null);
 
         assertThrows(DataIntegrityViolationException.class, () -> {
             versions.save(clash);
@@ -260,5 +260,42 @@ class JpaVersionStoreTest {
         // ★ 거부만 보면 부족하다. 행이 안 생겼는지도 본다
         assertTrue(versions.findTopByEventIdOrderByVersionNoDesc(b).isEmpty(),
                 "거부된 저장이 행을 남기면 안 된다");
+    }
+
+    @Test
+    void HTML과_변경요약을_DB에_함께_저장한다() {
+        Long eventId = seedEvent("변경 요약 저장 테스트");
+
+        VersionStore.Saved original = store.save(eventId, "<section>원본</section>", null);
+
+        String html = "<section>수정된 내용</section>";
+        String summary = "안내 문구 변경";
+
+        VersionStore.Saved saved = store.save(eventId, html, original.versionId(), summary);
+
+        tem.flush();
+        tem.clear();
+
+        EventVersion version = versions.findById(saved.versionId()).orElseThrow();
+
+        assertEquals(html, version.getHtmlContent());
+        assertEquals(summary, version.getChangeSummary());
+        assertEquals(original.versionId(), version.getSourceVersion().getId());
+        assertEquals(2, version.getVersionNo());
+    }
+
+    @Test
+    void 요약_없이_저장하는_기존_호출도_유지된다() {
+        Long eventId = seedEvent("요약 없는 저장 테스트");
+
+        VersionStore.Saved saved = store.save(eventId, "<section>생성된 내용</section>", null);
+
+        tem.flush();
+        tem.clear();
+
+        EventVersion version = versions.findById(saved.versionId()).orElseThrow();
+
+        assertEquals("<section>생성된 내용</section>", version.getHtmlContent());
+        assertNull(version.getChangeSummary());
     }
 }

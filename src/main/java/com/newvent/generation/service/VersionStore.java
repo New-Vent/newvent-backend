@@ -59,6 +59,8 @@ public interface VersionStore {
      */
     Saved save(Long eventId, String html, Long sourceVersionId);
 
+    Saved save(Long eventId, String html, Long sourceVersionId, String changeSummary);
+
     /** 마지막 버전. 없으면 빈 값 */
     Optional<Snapshot> latest(Long eventId);
 
@@ -94,6 +96,11 @@ public interface VersionStore {
 
         @Override
         public Saved save(Long eventId, String html, Long sourceVersionId) {
+            return save(eventId, html, sourceVersionId, null);
+        }
+
+        @Override
+        public Saved save(Long eventId, String html, Long sourceVersionId, String changeSummary) {
             Snapshot prev = lastSaved.get(eventId);
             Snapshot now = new Snapshot(ids.incrementAndGet(),
                     prev == null ? 1 : prev.versionNo() + 1, html);

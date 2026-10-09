@@ -45,6 +45,12 @@ public class JpaVersionStore implements VersionStore {
     @Override
     @Transactional
     public Saved save(Long eventId, String html, Long sourceVersionId) {
+        return save(eventId, html, sourceVersionId, null);
+    }
+
+    @Override
+    @Transactional
+    public Saved save(Long eventId, String html, Long sourceVersionId, String changeSummary) {
         // ★ 이 클래스 주석의 "이벤트당 직렬화에 의존한다" 를 여기서 실제로 만든다.
         //   아래 max+1 과 insert 사이에 다른 트랜잭션이 끼어들면
         //   uk_event_versions_event_version_no 로 500 이 난다.
@@ -66,7 +72,7 @@ public class JpaVersionStore implements VersionStore {
                         .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
 
         EventVersion saved = versions.save(EventVersion.create(
-                events.getReferenceById(eventId), nextNo, html, source));
+                events.getReferenceById(eventId), nextNo, html, source, changeSummary));
 
         return new Saved(saved.getId(), saved.getVersionNo());
     }
