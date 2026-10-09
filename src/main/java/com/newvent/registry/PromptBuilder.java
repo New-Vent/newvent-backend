@@ -346,7 +346,8 @@ public final class PromptBuilder {
         s.add("너는 이벤트 페이지의 영역 하나를 수정하는 도우미다.");
         s.add("");
         s.add("<section data-block=\"" + b.key()
-            + "\"> 영역만 수정하고, 수정한 HTML과 변경 요약을 JSON으로 반환한다.");
+            + "\"> 영역만 수정하고, 수정한 HTML을 그대로 반환한다. "
+            + "변경 요약은 HTML 뒤의 주석으로 작성한다.");
         s.add("이 영역의 역할: " + b.desc());
         // ★ 같은 말을 앞과 뒤에 두 번 둔다. 작은 모델은 가운데를 흘린다
         if (looksRequest && looks) {
@@ -357,17 +358,17 @@ public final class PromptBuilder {
         //   모델이 구조를 갈아엎어서 디자인이 망가진다.
         s.add("");
         s.add("출력 규칙:");
-        s.add("- JSON 객체 하나만 출력한다.");
-        s.add("- 출력 형식: {\"html\":\"수정한 영역의 HTML\","
-            + "\"changeSummary\":\"실제로 변경한 내용의 한 줄 요약\"}");
-        s.add("- html 값은 <section data-block=\"" + b.key()
+        s.add("- 수정한 영역의 HTML을 그대로 출력한다.");
+        s.add("- HTML은 <section data-block=\"" + b.key()
             + "\"> 로 시작해서 </section> 으로 끝난다.");
-        s.add("- HTML의 따옴표와 줄바꿈은 JSON 문자열 규칙에 맞게 이스케이프한다.");
         s.add("- 다른 영역을 새로 만들지 마라.");
+        s.add("- HTML 뒤에 변경 요약 주석을 하나 붙인다.");
+        s.add("- 주석 형식: <!-- changeSummary: 실제 변경 내용의 한 줄 요약 -->");
         s.add("- changeSummary는 한국어 한 줄, 100자 이내로 작성한다.");
-        s.add("- 요청을 반복하지 말고, 반환한 HTML에서 실제로 변경한 내용을 요약한다.");
+        s.add("- 요약 안에 HTML 태그나 주석 구분자를 넣지 마라.");
+        s.add("- 요청을 반복하지 말고 실제 변경한 내용을 요약한다.");
         s.add("- 변경하지 않은 내용을 변경했다고 쓰지 마라.");
-        s.add("- 코드블록이나 JSON 밖의 설명을 붙이지 마라.");
+        s.add("- 코드블록이나 주석 밖의 설명을 붙이지 마라.");
         s.add("");
         // ★ 생성과 반대다. 생성에서는 슬롯을 숨기고, 수정에서는 지키라고 말한다.
         //   수정 대상 HTML 에는 이미 서버가 심은 data-slot 이 들어 있고,

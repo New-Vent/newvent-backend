@@ -573,7 +573,16 @@ public class EditService {
             ? insertBlock(doc, block, html.strip())
             : BlockMerge.merge(doc, block, html);
 
-        return new Applied(merged, res.changeSummary());
+        String summary = res.changeSummary();
+
+        if (summary == null || summary.isBlank()) {
+            String blockName = block.desc().split("[—.]")[0].strip();
+            summary = blockName + (step.op() == Op.ADD
+                ? " 영역 추가"
+                : " 영역 수정");
+        }
+
+        return new Applied(merged, summary);
     }
 
     /** 섹션들의 palette-* class 를 걷어 낸다 — 선택 영역 수정용. 다른 class 는 그대로 */
@@ -660,13 +669,14 @@ public class EditService {
             s.add("[현재 상태]");
             s.add("이 영역이 아직 없습니다. 새로 만드세요.");
         } else {
-            s.add("[현재 내용 — 이 영역을 수정하여 JSON의 html 필드에 넣는다]");
+            s.add("[현재 내용 — 이 영역을 수정한다]");
             s.add(before);
         }
 
         s.add("");
-        s.add("수정한 영역의 HTML과 실제 변경 내용을 요약한 changeSummary를 "
-            + "JSON 객체 하나로 반환하세요.");
+        s.add("수정한 영역의 HTML을 그대로 반환하고, 마지막에 "
+            + "<!-- changeSummary: 실제 변경 내용의 한 줄 요약 --> "
+            + "형식의 주석을 붙이세요.");
 
         return s.toString();
     }

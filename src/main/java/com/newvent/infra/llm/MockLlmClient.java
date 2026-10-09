@@ -14,9 +14,6 @@ import org.jsoup.nodes.Element;
 import org.jsoup.nodes.TextNode;
 import org.jsoup.select.NodeTraversor;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 /**
  * 키도 Ollama 도 Bedrock 도 없이 도는 가짜 클라이언트. <b>기본값이다.</b>
  *
@@ -126,8 +123,6 @@ public class MockLlmClient implements LlmClient {
 
     private final long delayMs;
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
     public MockLlmClient()             { this(400); }
     public MockLlmClient(long delayMs) { this.delayMs = delayMs; }
 
@@ -217,7 +212,7 @@ public class MockLlmClient implements LlmClient {
         // 수정 프롬프트는 changeSummary를 함께 요청한다.
         if (system.contains("changeSummary")) {
 
-            // 수정 결과를 JSON으로 반환
+            // 수정 결과를 HTML과 변경 요약 주석으로 반환
             String editedHtml = user.contains("FAIL")
                 ? BROKEN
                 : editBlock(system, user);
@@ -234,13 +229,7 @@ public class MockLlmClient implements LlmClient {
     }
 
     private static String editResponse(String html, String changeSummary) {
-        try {
-            return MAPPER.writeValueAsString(Map.of(
-                "html", html,
-                "changeSummary", changeSummary));
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Mock 수정 응답 직렬화 실패", e);
-        }
+        return html + "\n<!-- changeSummary: " + changeSummary + " -->";
     }
 
     /**

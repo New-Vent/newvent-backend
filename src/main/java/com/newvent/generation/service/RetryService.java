@@ -220,9 +220,8 @@ public class RetryService {
                 if (parsed.isEmpty()) {
                     fails.add(Failure.of(
                         FailureCode.EDIT_RESPONSE_PARSE,
-                        "html과 changeSummary를 문자열로 갖는 JSON 객체 하나를 반환하세요. "
-                            + "changeSummary는 비어 있지 않은 한국어 한 줄, "
-                            + "100자 이내여야 합니다."));
+                        "수정한 영역의 HTML이 없습니다. "
+                            + "수정한 section HTML을 그대로 반환하세요."));
                 } else {
                     html = policy.clean(parsed.get().html());
                     changeSummary = parsed.get().changeSummary();
@@ -248,7 +247,7 @@ public class RetryService {
                 return new Result(true, html, List.copyOf(traces), changeSummary);
             }
 
-            // 수정 경로는 직전 JSON 전체를 전달해 요약도 다시 받는다.
+            // 수정 경로는 직전 원문을 전달한다.
             String previousOutput = editResponse ? res.content() : html;
             nextUser = retryPrompt(user, previousOutput, fails);
         }
