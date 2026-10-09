@@ -4,7 +4,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
+import java.util.StringJoiner;
 import java.util.function.Predicate;
 
 import org.jsoup.Jsoup;
@@ -35,6 +38,9 @@ public final class PageShell {
 
     /** 래퍼를 찾는 선택자. 둘 중 하나라도 있으면 이미 래퍼가 있는 것이다. */
     private static final String ROOT_SELECTOR = ".ev-container, .event-page";
+
+    /** 관리자가 정한 블록 순서. 래퍼에 붙는다 — 자세한 건 {@link #readOrder} 주석에 있다. */
+    private static final String ORDER_ATTR = "data-block-order";
 
 
     /** 이 요소가 래퍼인가. 이름은 ROOT_SELECTOR 한 곳에만 둔다. */
@@ -190,8 +196,10 @@ public final class PageShell {
                 slots.add(child);
             }
         }
+        List<Block> wanted = readOrder(root);
         List<Element> sorted = new ArrayList<>(slots);
-        sorted.sort(java.util.Comparator.comparingInt(e -> Block.of(e.attr("data-block")).ordinal()));
+        sorted.sort(java.util.Comparator.comparingInt(
+                e -> rank(wanted, Block.of(e.attr("data-block")))));
         if (sorted.equals(slots)) return;
 
         List<Element> markers = new ArrayList<>(slots.size());
@@ -202,6 +210,83 @@ public final class PageShell {
         }
         for (Element s : slots) s.remove();
         for (int i = 0; i < markers.size(); i++) markers.get(i).replaceWith(sorted.get(i));
+    }
+
+    /**
+     * 관리자가 정한 순서를 읽는다. 없으면 빈 목록 — 그러면 레지스트리 순서가 된다.
+     *
+     * ★ 왜 DB 컬럼이 아니라 HTML 속성인가
+     *   - 모델은 이 속성을 심을 수 없다. BlockValidator.sanitizeEdited 의 Safelist 가
+     *     data-block 만 허용해서 모델 출력의 data-block-order 는 지워진다.
+     *     즉 **서버만 쓸 수 있는 자리**다.
+     *   - HTML 안에 있으니 버전을 복원하면 순서도 같이 복원된다. 컬럼이면 따로 맞춰야 한다.
+     *   - 마이그레이션이 필요 없다.
+     *
+     * ★ 모르는 이름과 중복은 조용히 버린다. 프론트가 블록 하나를 빼먹어도
+     *   그 블록이 사라지면 안 된다 — rank() 가 레지스트리 순서로 뒤에 붙인다.
+     */
+    private static List<Block> readOrder(Element root) {
+        String raw = root.attr(ORDER_ATTR);
+        if (raw.isBlank()) return List.of();
+
+        List<Block> out = new ArrayList<>();
+        for (String key : raw.split(",")) {
+            Block.find(key.trim()).filter(b -> !out.contains(b)).ifPresent(out::add);
+        }
+        return out;
+    }
+
+    /**
+     * 정렬 기준. 작을수록 앞이다.
+     *
+     *   0 ~  99 : 관리자가 정한 순서 (목록에 적힌 자리)
+     * 100 ~ 199 : 목록에 없는 블록 — 레지스트리 순서로 그 뒤에
+     * 200 ~     : 고정 블록(canMove()==false) — 목록과 무관하게 맨 끝, 레지스트리 순서로
+     *
+     * ★ 목록이 비면 모든 블록이 100번대·200번대로 가고, 둘 다 레지스트리 순서다.
+     *   = 지금까지의 동작과 **글자 하나 다르지 않다.** 템플릿 5종의 바이트 왕복도 그대로다.
+     */
+    private static int rank(List<Block> wanted, Block b) {
+        if (!b.canMove()) return 200 + b.ordinal();
+        int at = wanted.indexOf(b);
+        return at >= 0 ? at : 100 + b.ordinal();
+    }
+
+    /**
+     * 관리자가 정한 순서를 적고 그대로 세운다. **순서 변경 API 가 부르는 입구다.**
+     *
+     * ★ 모델을 부르지 않는다. 삭제와 같다 — 순서를 바꾸는 데 모델이 필요 없다.
+     * ★ 고정 블록을 목록에 넣어도 무시된다(rank 참고). 프론트를 믿지 않는다.
+     * ★ 루트가 없으면 그대로 돌려준다. 래퍼를 만드는 건 ensureRoot 의 몫이다.
+     */
+    public static String applyOrder(String fragment, List<Block> order) {
+        Document doc = parse(fragment);
+        Element root = doc.body().selectFirst(ROOT_SELECTOR);
+        if (root == null) return fragment;
+
+        // ★ 중복과 고정 블록은 여기서 버린다. 프론트를 믿지 않는다 —
+        //   읽을 때(readOrder)도 한 번 더 거르지만, 저장되는 값부터 깨끗한 게 맞다
+        StringJoiner keys = new StringJoiner(",");
+        Set<Block> seen = EnumSet.noneOf(Block.class);
+        for (Block b : order) {
+            if (b.canMove() && seen.add(b)) keys.add(b.key());
+        }
+        // ★ 빈 속성은 남기지 않는다. 옮길 게 하나도 없으면 레지스트리 순서로 되돌린다는 뜻이다
+        if (keys.length() == 0) root.removeAttr(ORDER_ATTR);
+        else root.attr(ORDER_ATTR, keys.toString());
+        orderBlocks(root);
+        return doc.body().html();
+    }
+
+    /**
+     * 지금 문서에 있는 블록을 보이는 순서대로. **순서 변경 화면이 목록을 그릴 때 쓴다.**
+     */
+    public static List<Block> blocksOf(String fragment) {
+        List<Block> out = new ArrayList<>();
+        for (Element el : parse(fragment).body().select("section[data-block]")) {
+            Block.find(el.attr("data-block")).filter(b -> !out.contains(b)).ifPresent(out::add);
+        }
+        return out;
     }
 
     /**

@@ -253,4 +253,98 @@ class PageShellTest {
                 "hero 안쪽 들여쓰기가 바뀌었습니다 — pretty-print 가 켜져 있습니다.\n"
                 + "─── 출력 ───\n" + out);
     }
+
+
+    // ── ⑨ 블록 순서 ───────────────────────────────────────────────
+    //
+    // ★ 지금까지 순서는 레지스트리 선언 순서로 고정이었다. benefits 가 steps 보다
+    //   앞이라 "참여 방법을 위로" 는 할 방법이 없었다 — 채팅으로 시켜도 저장 직전에
+    //   서버가 원위치시킨다. 그 정렬의 **기준**만 관리자가 정할 수 있게 했다.
+
+    private static String 페이지(String... keys) {
+        StringBuilder b = new StringBuilder("<div class=\"ev-container event-page theme-basic\">");
+        for (String k : keys) {
+            b.append("<section data-block=\"").append(k).append("\"><p>").append(k).append("</p></section>");
+        }
+        return b.append("</div>").toString();
+    }
+
+    private static String 순서(String html) {
+        StringBuilder b = new StringBuilder();
+        for (Element e : Jsoup.parseBodyFragment(html).select("section[data-block]")) {
+            if (b.length() > 0) b.append(" ");
+            b.append(e.attr("data-block"));
+        }
+        return b.toString();
+    }
+
+    private static final String 여섯 = 페이지("hero", "benefits", "steps", "faq", "notices", "cta");
+
+    @Test
+    @DisplayName("⑨-1 순서를 정하지 않으면 전과 같다 - 레지스트리 순서")
+    void 순서를_정하지_않으면_전과_같다() {
+        assertEquals("hero benefits steps faq notices cta", 순서(PageShell.settle(여섯)));
+    }
+
+    @Test
+    @DisplayName("⑨-2 관리자가 정한 순서대로 세운다")
+    void 정한_순서대로_세운다() {
+        String moved = PageShell.applyOrder(여섯,
+                java.util.List.of(Block.HERO, Block.STEPS, Block.BENEFITS, Block.FAQ));
+
+        assertEquals("hero steps benefits faq notices cta", 순서(moved));
+    }
+
+    // ★ 이게 깨지면 기능 전체가 무의미하다. settle 은 수정이 저장될 때마다 돈다
+    @Test
+    @DisplayName("⑨-3 ★ 수정이 들어와도 순서가 되돌아가지 않는다")
+    void 수정해도_되돌아가지_않는다() {
+        String moved = PageShell.applyOrder(여섯,
+                java.util.List.of(Block.HERO, Block.STEPS, Block.BENEFITS, Block.FAQ));
+
+        String again = PageShell.settle(PageShell.settle(moved));
+
+        assertEquals("hero steps benefits faq notices cta", 순서(again));
+    }
+
+    @Test
+    @DisplayName("⑨-4 유의사항·참여버튼은 맨 앞으로 보내도 맨 끝에 남는다")
+    void 고정_블록은_안_움직인다() {
+        String out = PageShell.applyOrder(여섯,
+                java.util.List.of(Block.CTA, Block.NOTICES, Block.HERO, Block.STEPS));
+
+        assertEquals("hero steps benefits faq notices cta", 순서(out));
+        assertFalse(Block.NOTICES.canMove());
+        assertFalse(Block.CTA.canMove());
+    }
+
+    // ★ 프론트가 블록 하나를 빼먹어도 그 블록이 사라지면 안 된다
+    @Test
+    @DisplayName("⑨-5 목록에 없는 블록은 레지스트리 순서로 뒤에 붙는다")
+    void 빠진_블록은_뒤에_붙는다() {
+        String out = PageShell.applyOrder(여섯, java.util.List.of(Block.STEPS));
+
+        assertEquals("steps hero benefits faq notices cta", 순서(out));
+    }
+
+    @Test
+    @DisplayName("⑨-6 중복과 고정 블록은 저장되는 순서 목록에서 빠진다")
+    void 목록을_믿지_않는다() {
+        String out = PageShell.applyOrder(여섯,
+                java.util.List.of(Block.STEPS, Block.STEPS, Block.CTA, Block.HERO));
+
+        assertEquals("steps,hero",
+                Jsoup.parseBodyFragment(out).selectFirst(".ev-container").attr("data-block-order"));
+    }
+
+    @Test
+    @DisplayName("⑨-7 보이는 순서를 그대로 읽어 준다 - 순서 변경 화면이 쓴다")
+    void 보이는_순서를_읽는다() {
+        String moved = PageShell.applyOrder(여섯,
+                java.util.List.of(Block.HERO, Block.STEPS, Block.BENEFITS, Block.FAQ));
+
+        assertEquals(java.util.List.of(Block.HERO, Block.STEPS, Block.BENEFITS,
+                        Block.FAQ, Block.NOTICES, Block.CTA),
+                PageShell.blocksOf(moved));
+    }
 }
