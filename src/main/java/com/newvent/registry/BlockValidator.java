@@ -314,7 +314,7 @@ public class BlockValidator {
                 FailureCode.SLOT_INVENTED, "data-slot=\"%s\" 를 새로 만들었습니다. "
                         + "data-slot 은 서버만 심습니다. 원래 있던 것만 그대로 두세요.");
 
-        // Text holders may disappear with a deliberately deleted card. Functional IDs stay required.
+        // 카드 삭제 시 직접 편집용 문구 ID는 없어져도 되지만, 기능용 ID는 반드시 보존한다.
         Set<String> beforeIds = new LinkedHashSet<>(Slots.idsOf(before));
         Set<String> afterIds = new LinkedHashSet<>(Slots.idsOf(after));
         for (Element holder : Jsoup.parseBodyFragment(before).select("span[id^=nv-direct-text-]")) {
