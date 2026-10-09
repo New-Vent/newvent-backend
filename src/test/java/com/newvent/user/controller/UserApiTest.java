@@ -232,6 +232,44 @@ class UserApiTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    @DisplayName("아이디에 영문 대소문자·숫자·밑줄만 있고 4~50자면 가입 요청이 통과한다")
+    void 회원가입_아이디_허용문자() throws Exception {
+        User user = new User("User_01", "hash", "이름", "u@test.com", null, 50000, MembershipGrade.NORMAL);
+        when(userService.signUp(anyString(), anyString(), anyString(), anyString(), any(), anyInt()))
+                .thenReturn(user);
+
+        for (String loginId : new String[] {"User_01", "abcd", "A".repeat(50), "boundary_fee_light_max"}) {
+            mockMvc.perform(post("/api/public/users/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(signUpBody(loginId)))
+                    .andExpect(status().isCreated());
+        }
+    }
+
+    @Test
+    @DisplayName("아이디에 <script>·공백·특수문자·한글이 있거나 4자 미만, 50자 초과면 400이고 서비스까지 가지 않는다")
+    void 회원가입_아이디_허용되지않는문자() throws Exception {
+        String[] invalid = {
+            "<script>x</script>", "user 01", "user-01", "user.01", "user@01", "홍길동아이디", "abc", "a".repeat(51)
+        };
+        for (String loginId : invalid) {
+            mockMvc.perform(post("/api/public/users/signup")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(signUpBody(loginId)))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(userService);
+    }
+
+    private String signUpBody(String loginId) {
+        return """
+                {"loginId":"%s","password":"password123","name":"이름",
+                 "email":"u@test.com","plan":50000}
+                """
+                .formatted(loginId);
+    }
+
     private String bearer(AuthUser principal) {
         return "Bearer " + jwtProvider.issue(principal).value();
     }

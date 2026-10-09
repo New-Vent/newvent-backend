@@ -26,10 +26,10 @@ public class UserService {
 
     @Transactional
     public User signUp(String loginId, String rawPassword, String name, String email, String phone, int plan) {
-        if (userRepository.existsByLoginId(loginId)) {
+        if (userRepository.existsByLoginIdIgnoreCase(loginId)) {
             throw new DuplicateUserException(UserErrorCode.DUPLICATE_LOGIN_ID);
         }
-        if (userRepository.existsByEmail(email)) {
+        if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new DuplicateUserException(UserErrorCode.DUPLICATE_EMAIL);
         }
 
@@ -48,7 +48,8 @@ public class UserService {
     @Transactional
     public User updateProfile(Long id, String name, String email, String phone) {
         User user = findByIdOrThrow(id);
-        if (email != null && !email.equals(user.getEmail()) && userRepository.existsByEmail(email)) {
+        // 본인 이메일의 대소문자만 바꾸는 경우(a@x.com → A@x.com)는 자기 자신과 겹치는 것이라 중복으로 보지 않는다
+        if (email != null && !email.equalsIgnoreCase(user.getEmail()) && userRepository.existsByEmailIgnoreCase(email)) {
             throw new DuplicateUserException(UserErrorCode.DUPLICATE_EMAIL);
         }
         user.updateProfile(name, email, phone);
