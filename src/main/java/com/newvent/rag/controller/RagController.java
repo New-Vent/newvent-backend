@@ -8,7 +8,6 @@ import jakarta.validation.constraints.Min;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,9 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
-import com.newvent.event.service.EventOwnerCheck;
 import com.newvent.rag.dto.request.ReindexRequest;
 import com.newvent.rag.dto.response.IndexStatusResponse;
 import com.newvent.rag.dto.response.PromptCandidate;
@@ -35,9 +32,6 @@ import com.newvent.rag.service.VersionCompareService;
  * RAG 관리자 API. /api/admin/** 이라 ADMIN 권한이 자동으로 걸림 (SecurityConfig)
  *
  * - GET /api/admin/rag/similar-versions (VersionCompareService)
- *
- * ★ eventId 를 받는 API 는 이벤트 소유 관리자만 부를 수 있다 (EventOwnerCheck).
- *   품질 추이 · 전체 재색인은 이벤트 하나에 묶이지 않아 관리자면 누구나 부른다.
  */
 @Validated
 @RestController
@@ -47,30 +41,24 @@ public class RagController {
 	private final EmbeddingService embedding;
 	private final SimilarityService similarity;
 	private final VersionCompareService comparing;
-	private final EventOwnerCheck ownerCheck;
 
 	public RagController(EmbeddingService embedding, SimilarityService similarity,
-			VersionCompareService comparing, EventOwnerCheck ownerCheck) {
+			VersionCompareService comparing) {
 		this.embedding = embedding;
 		this.similarity = similarity;
 		this.comparing = comparing;
-		this.ownerCheck = ownerCheck;
 	}
 
     /** 수동 재색인. versionId가 없으면 이벤트 전체. 돌리고 나서 현황을 돌려준다. */
     @PostMapping("/reindex")
-    public ApiResponse<IndexStatusResponse> reindex(@Valid @RequestBody ReindexRequest request,
-                                                    @AuthenticationPrincipal AuthUser admin) {
-        ownerCheck.requireOwned(request.eventId(), admin);
+    public ApiResponse<IndexStatusResponse> reindex(@Valid @RequestBody ReindexRequest request) {
         embedding.reindex(request.eventId(), request.versionId());
         return ApiResponse.success(embedding.getStatus(request.eventId()));
     }
 
     /** 색인 현황. 전체 버전 중 몇 개가 들어갔는지. */
     @GetMapping("/index-status")
-    public ApiResponse<IndexStatusResponse> indexStatus(@RequestParam Long eventId,
-                                                        @AuthenticationPrincipal AuthUser admin) {
-        ownerCheck.requireOwned(eventId, admin);
+    public ApiResponse<IndexStatusResponse> indexStatus(@RequestParam Long eventId) {
         return ApiResponse.success(embedding.getStatus(eventId));
     }
 
@@ -79,9 +67,7 @@ public class RagController {
     public ApiResponse<SearchPreviewResponse> searchPreview(
             @RequestParam Long eventId,
             @RequestParam String query,
-            @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK,
-            @AuthenticationPrincipal AuthUser admin) {
-        ownerCheck.requireOwned(eventId, admin);
+            @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK) {
         return ApiResponse.success(similarity.searchPreview(eventId, query, topK));
     }
 
@@ -90,9 +76,7 @@ public class RagController {
     public ApiResponse<List<PromptCandidate>> recommendPrompts(
             @RequestParam Long eventId,
             @RequestParam String query,
-            @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK,
-            @AuthenticationPrincipal AuthUser admin) {
-        ownerCheck.requireOwned(eventId, admin);
+            @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK) {
         return ApiResponse.success(similarity.recommendPrompts(eventId, query, topK));
     }
 
@@ -101,9 +85,7 @@ public class RagController {
     public ApiResponse<List<VersionSimilarityResponse>> similarVersions(
             @RequestParam Long eventId,
             @RequestParam Long versionId,
-            @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK,
-            @AuthenticationPrincipal AuthUser admin) {
-        ownerCheck.requireOwned(eventId, admin);
+            @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK) {
         return ApiResponse.success(comparing.similarVersions(eventId, versionId, topK));
     }
 
