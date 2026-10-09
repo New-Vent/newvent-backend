@@ -1,6 +1,7 @@
 package com.newvent.registry;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -313,7 +314,14 @@ public class BlockValidator {
                 FailureCode.SLOT_INVENTED, "data-slot=\"%s\" 를 새로 만들었습니다. "
                         + "data-slot 은 서버만 심습니다. 원래 있던 것만 그대로 두세요.");
 
-        diff(Slots.idsOf(before), Slots.idsOf(after), f,
+        // Text holders may disappear with a deliberately deleted card. Functional IDs stay required.
+        Set<String> beforeIds = new LinkedHashSet<>(Slots.idsOf(before));
+        Set<String> afterIds = new LinkedHashSet<>(Slots.idsOf(after));
+        for (Element holder : Jsoup.parseBodyFragment(before).select("span[id^=nv-direct-text-]")) {
+            beforeIds.remove(holder.id());
+            afterIds.remove(holder.id());
+        }
+        diff(beforeIds, afterIds, f,
                 FailureCode.ID_LOST, "id=\"%s\" 를 지웠습니다. 화면 기능이 그 id 로 요소를 찾습니다. "
                         + "원래 있던 id 를 그대로 두세요.",
                 FailureCode.ID_INVENTED, "id=\"%s\" 를 새로 만들었습니다. "

@@ -9,9 +9,37 @@ import org.junit.jupiter.api.Test;
 
 import com.newvent.event.dto.request.TextEdit;
 import com.newvent.generation.service.ResourceTemplateLoader;
+import com.newvent.registry.Block;
 import com.newvent.registry.BlockValidator;
+import com.newvent.registry.FailureCode;
 
 class DirectEditorEmptyTextTest {
+    @Test
+    void deletingDirectlyEditedCardPassesButFunctionalIdsStayRequired() {
+        String base = "<section data-block=\"benefits\"><div class=\"benefits-list\">"
+                + "<div class=\"benefit-card\">First</div>"
+                + "<div class=\"benefit-card\"><span id=\"prize-counter\">Second</span></div>"
+                + "<div class=\"benefit-card\">Third</div>"
+                + "</div></section>";
+        String edited = DirectEditor.applyTextEdits(base, List.of(new TextEdit(0, "First", "Edited")));
+        var doc = Jsoup.parseBodyFragment(edited);
+        doc.select(".benefit-card").first().remove();
+        String deleted = BlockValidator.sanitizeEdited(doc.body().html());
+        assertTrue(BlockValidator.validateEdited(Block.BENEFITS, edited, deleted).isEmpty());
+        doc.getElementById("prize-counter").removeAttr("id");
+        assertTrue(BlockValidator.validateEdited(Block.BENEFITS, edited, doc.body().html()).stream()
+                .anyMatch(f -> f.kind() == FailureCode.ID_LOST));
+    }
+
+    @Test
+    void inventedDirectTextIdStillFailsValidation() {
+        String base = "<section data-block=\"hero\"><h1>Title</h1></section>";
+        String edited = DirectEditor.applyTextEdits(base, List.of(new TextEdit(0, "Title", "Edited")));
+        String invented = edited.replace("nv-direct-text-0", "nv-direct-text-999");
+        assertTrue(BlockValidator.validateEdited(Block.HERO, edited, invented).stream()
+                .anyMatch(f -> f.kind() == FailureCode.ID_INVENTED));
+    }
+
     @Test
     void emptyTextRetainsEveryIndexAndCanBeRefilled() {
         for (var template : new ResourceTemplateLoader().all()) {
