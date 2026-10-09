@@ -342,21 +342,45 @@ class GenerationServiceTest {
     // ── 경로 ② 백지 ──────────────────────────────────────────────
 
     @Test
-    @DisplayName("★ 백지 결과에 기간 슬롯이 심어진다 — 안 하면 기간이 안 나온다")
-    void 백지에_기간슬롯을_심는다() {
+    @DisplayName("★ 백지 결과에 기간 · 참여링크 슬롯이 심어진다 — 안 하면 서버가 채울 자리가 없다")
+    void 백지에_슬롯을_심는다() {
         retry.willReturn(ok(BlockValidator.sanitizeGenerated(GENERATED)));
 
         GenerationJob job = await(started(service.start(blank(1L, "여름 데이터 이벤트"))));
         assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
 
         String saved = savedHtml(1L);
-        assertEquals(java.util.Set.of("period"), Slots.keysOf(saved),
-                "기간 슬롯이 없습니다. 백지로 만든 페이지에는 기간이 영영 안 나옵니다.");
+        // ★★ cta-link 가 늘었다. 전에는 period 만 심었고, 그래서 AI 생성 페이지에는
+        //   참여 링크를 넣을 자리도, 관리자 화면의 "참여 버튼 디자인" 칸도 없었다
+        //   (server-editor.js 의 hasCta 가 이 슬롯으로 그 칸 전체를 가린다).
+        //   집합 비교라 슬롯이 늘면 여기서 걸린다 — 그게 이 단정의 일이다.
+        assertEquals(java.util.Set.of("period", "cta-link"), Slots.keysOf(saved),
+                "기간 · 참여링크 슬롯이 없습니다. 서버가 값을 채울 자리가 영영 안 생깁니다.");
 
         var hero = Jsoup.parseBodyFragment(saved).body().selectFirst(Block.HERO.selector());
         assertNotNull(hero);
         assertFalse(hero.select(Slot.PERIOD.selector()).isEmpty(),
                 "기간 슬롯이 hero 밖에 붙었습니다. 템플릿 5종과 같은 자리여야 합니다.");
+    }
+
+    @Test
+    @DisplayName("★ cta-link 는 기존 버튼에 속성만 붙인다 — 문구와 태그는 그대로")
+    void cta링크는_속성만_붙인다() {
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(GENERATED)));
+        await(started(service.start(blank(1L, "여름 데이터 이벤트"))));
+
+        var cta = Jsoup.parseBodyFragment(savedHtml(1L)).body()
+                .selectFirst(Block.CTA.selector());
+        assertNotNull(cta, "cta 영역이 없습니다.");
+
+        // ★ 새 태그를 만들면 문구가 빈 버튼이 하나 더 생긴다. 그건 화면에서 바로 보인다
+        assertEquals(1, cta.select("a, button").size(),
+                "버튼이 하나 더 생겼습니다. 속성만 붙여야 하는데 태그를 만들었습니다.");
+
+        var btn = cta.selectFirst(Slot.CTA_LINK.selector());
+        assertNotNull(btn, "참여 버튼에 cta-link 슬롯이 안 붙었습니다.");
+        assertFalse(btn.text().isBlank(),
+                "버튼 문구가 비었습니다. Slot.Kind.LINK 는 속성만 건드려야 합니다.");
     }
 
     @Test

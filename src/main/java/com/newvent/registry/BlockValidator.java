@@ -210,6 +210,21 @@ public class BlockValidator {
      * @param html   모델이 돌려준 것 (sanitizeEdited 를 먼저 거친 것)
      */
     public static List<Failure> validateEdited(Block target, String before, String html) {
+        return validateEdited(target, before, html, false);
+    }
+
+    /**
+     * @param allowOneMore 항목을 **하나** 더하는 요청인가.
+     *
+     * ★★ 전에는 이 구분이 없어서 항목 추가가 어느 블록에서도 불가능했다.
+     *   혜택 · 경품은 관문(Gate)이 거절했고, 그 밖의 목록 블록(참여 방법 · FAQ ·
+     *   일정 …)은 checkItemCount 가 ITEM_ADDED 로 막았다. 관리자가 "참여 방법에
+     *   선착순 3,000명 추가해줘" 를 하면 길이 아예 없었다 — 실측.
+     *
+     * ★ 하나만 허용한다. 열어 두면 모델이 한 번에 다섯 개를 지어낸다.
+     */
+    public static List<Failure> validateEdited(Block target, String before, String html,
+                                               boolean allowOneMore) {
         List<Failure> f = new ArrayList<>();
         Document doc = Jsoup.parseBodyFragment(html == null ? "" : html);
 
@@ -225,7 +240,7 @@ public class BlockValidator {
             }
         }
         checkShape(target, el, f, true);
-        checkItemCount(target, before, el, f);
+        checkItemCount(target, before, el, f, allowOneMore);
         checkPreserved(before, html, f);
         return f;
     }
@@ -269,7 +284,8 @@ public class BlockValidator {
      *
      *  ★ container() 가 null 인 블록(hero·notices·cta)은 검사하지 않는다.
      */
-    private static void checkItemCount(Block target, String before, Element el, List<Failure> f) {
+    private static void checkItemCount(Block target, String before, Element el, List<Failure> f,
+                                       boolean allowOneMore) {
     	if (target.container() == null) return;
 
     	Document beforeDoc = Jsoup.parseBodyFragment(before == null ? "" : before);
@@ -282,11 +298,13 @@ public class BlockValidator {
     	int wasKids = beforeBox.children().size();
     	int nowKids = afterBox.children().size();
     	// ★ 둘 다 늘지 않았으면 통과 (삭제 허용 — "복주머니 2개" 유지)
-    	if (nowMust <= wasMust && nowKids <= wasKids) return;
+    	// ★ 관리자가 항목 하나를 더해 달라고 했으면 한 칸까지 봐준다
+    	int slack = allowOneMore ? 1 : 0;
+    	if (nowMust <= wasMust + slack && nowKids <= wasKids + slack) return;
 
     	f.add(Failure.of(FailureCode.ITEM_ADDED, target.key(),
-    	        target.key() + " 항목이 늘었습니다. " +
-    	        "항목 추가는 서버만 합니다. 문구만 고치세요."));
+    	        target.key() + " 항목이 " + (allowOneMore ? "둘 이상 " : "") + "늘었습니다. " +
+    	        (allowOneMore ? "한 번에 하나만 더합니다." : "항목 추가는 서버만 합니다. 문구만 고치세요.")));
     }
 
     // ── 보존 검사 ──────────────────────────────────────────────────

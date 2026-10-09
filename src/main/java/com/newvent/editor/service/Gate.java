@@ -71,20 +71,24 @@ public class Gate {
 					why != null ? why : block.key() + " 영역은 지울 수 없습니다.");
 		}
 
-		// 5. ★ 항목이 폼 값인 영역에 ADD → 거절한다. **되묻기보다 먼저다.**
-		if (op == Op.ADD && block.itemsAreFormValues()) {
-			return new Decision.Reject(RouterErrorCode.NOT_ALLOWED,
-					"혜택 항목은 채팅으로 늘리거나 줄일 수 없습니다. "
-					+ "이미 있는 항목의 문구를 다듬는 것만 됩니다.");
-		}
+		// 5. ★★ 전에는 항목이 폼 값인 영역(혜택 · 경품)의 ADD 를 **무조건 거절**했다.
+		//    막으려던 건 "모델이 지어낸 혜택이 게시되는 것" 이지, **관리자가 적어 준 것**이
+		//    아니다. "혜택에 커피쿠폰 추가해" 는 관리자가 지급을 결정한 것이다.
+		//    내용이 없는 경우는 바로 아래 6번이 되묻는다 — 거절보다 그쪽이 맞다.
 
 		// 6. 항목 추가인데 내용이 없다 → 되묻는다. 교정보다 먼저.
         if (op == Op.ADD && (raw.content() == null || raw.content().isBlank())) {
             return new Decision.AskBack(askBackQuestion(block));
         }
 
-		// 7. 필수 영역에 ADD 하면 EDIT 으로 교정
-		if (op == Op.ADD && !block.canCreate()) {
+		// 7. 필수 영역에 ADD 하면 EDIT 으로 교정 — 필수 영역은 늘 있으니 "새로 넣기" 가 성립 안 한다.
+		//    ★★ 단, 항목을 나열하는 영역(container)은 빼야 한다.
+		//    benefits 는 required=true → canCreate()=false 라서 여기서 ADD 가 EDIT 으로 바뀌었고,
+		//    그러면 "항목 하나 더" 라는 의도가 op 에서 사라진다. 뒤에서 그 깃발로 검증기와
+		//    프롬프트를 여는데 깃발이 영원히 꺼져 있어서, 5번을 풀어도 혜택 추가는 여전히
+		//    ITEM_ADDED 로 4회 전부 터졌다(실측 — "혜택 4번째에 커피쿠폰 추가해줘").
+		//    container 가 없는 필수 영역(hero · cta)은 그대로 교정한다.
+		if (op == Op.ADD && !block.canCreate() && block.container() == null) {
 			return new Decision.Run(block, Op.EDIT, raw.content());
 		}
 
