@@ -25,8 +25,8 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     // 전체 재색인용. 삭제된 이벤트는 건너뛴다
     List<Event> findAllByDeletedAtIsNull();
 
-    /** 시드 멱등 가드 — SEED: 이벤트가 이미 있으면 재실행 시 건너뛴다. */
-    boolean existsByTitleStartingWith(String prefix);
+    /** 시드 멱등 가드 — 삭제되지 않은 SEED: 이벤트가 이미 있으면 재실행 시 건너뛴다. */
+    boolean existsByTitleStartingWithAndDeletedAtIsNull(String prefix);
 
     /**
      * 버전을 덧붙이기 전에 이벤트 행을 잠근다 — {@code SELECT … FOR UPDATE}.

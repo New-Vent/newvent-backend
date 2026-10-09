@@ -32,6 +32,7 @@ import com.newvent.event.domain.Event;
 import com.newvent.rag.domain.RagChunk;
 import com.newvent.rag.domain.Vectors;
 import com.newvent.rag.repository.RagChunkRepository;
+import com.newvent.rag.seed.RagSeedDataGenerator;
 import com.newvent.rag.service.BedrockEmbeddingClient;
 import com.newvent.rag.service.EmbeddingClient;
 import com.newvent.rag.service.OllamaEmbeddingClient;
@@ -108,23 +109,37 @@ class RagEvalSmokeTest {
         return em.getReference(Event.class, eventId);
     }
 
-    /** 템플릿 5종 → 블록 통째로 임베딩 (청킹 없음 — 비교용이라 형식을 맞춘다) */
+    /** HTML 한 건 → 섹션별 임베딩. 템플릿·시드 공통 진입점 (청킹 없음 — 비교용이라 형식을 맞춘다) */
+    private void indexHtml(EmbeddingClient embedding, Event event, String html) {
+        Document doc = Jsoup.parseBodyFragment(html);
+        int i = 0;
+        for (Element section : doc.select("section[data-block]")) {
+            String key = section.attr("data-block");
+            // ★ notices 는 색인하지 않는다. 서버 소유 문구라 예시가 될 이유가 없다.
+            //   Q8(유의사항 → 없음)이 이 결정을 고정한다.
+            if ("notices".equals(key)) continue;
+            String content = section.text();
+            repo.save(RagChunk.create(event, null, key, i++,
+                    content, embedding.modelName(),
+                    embedding.embed(content), Instant.now()));
+        }
+    }
+
+    /** 템플릿 5종 → 블록 통째로 임베딩 */
     private void indexTemplates(EmbeddingClient embedding, Event event) throws Exception {
         JsonNode index = new ObjectMapper().readTree(text("templates/templates.json"));
         for (JsonNode n : index) {
-            String html = text("templates/" + n.path("code").asText() + ".html");
-            Document doc = Jsoup.parseBodyFragment(html);
-            int i = 0;
-            for (Element section : doc.select("section[data-block]")) {
-                String key = section.attr("data-block");
-                // ★ notices 는 색인하지 않는다. 서버 소유 문구라 예시가 될 이유가 없다.
-                //   Q8(유의사항 → 없음)이 이 결정을 고정한다.
-                if ("notices".equals(key)) continue;
-                String content = section.text();
-                repo.save(RagChunk.create(event, null, key, i++,
-                        content, embedding.modelName(),
-                        embedding.embed(content), Instant.now()));
-            }
+            indexHtml(embedding, event, text("templates/" + n.path("code").asText() + ".html"));
+        }
+    }
+
+    /**
+     * 시드 29건도 평가용으로 색인한다. 모델마다 따로 임베딩해야
+     * 시드 문항의 검색 대상이 그 모델 벡터로 존재한다.
+     */
+    private void indexSeeds(EmbeddingClient embedding, Event event) {
+        for (RagSeedDataGenerator.SeedDefinition def : RagSeedDataGenerator.definitions()) {
+            indexHtml(embedding, event, def.html());
         }
     }
 
@@ -133,6 +148,7 @@ class RagEvalSmokeTest {
         int score = 0;
         try {
             indexTemplates(embedding, event);
+            indexSeeds(embedding, event);
         } catch (Exception e) {
             note("== %s: SKIP (색인 실패: %s)".formatted(model, e.getMessage()));
             return;

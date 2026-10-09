@@ -35,8 +35,12 @@ public class RagSeedDataRunner implements ApplicationRunner {
 		if (!args.containsOption("seed-rag-data")) {
 			return;
 		}
-		rejectProdIfActive(environment.getActiveProfiles());
-		SeedResult result = generator.generate(seedAdminLoginId(args));
+		rejectProdIfActive(environment.getActiveProfiles(), args.containsOption("seed-allow-prod"));
+		if (args.containsOption("seed-allow-prod")) {
+			log.warn("경고: prod 에서 시드 실행이 명시적으로 허용됨. 시연 후 SEED: 데이터를 반드시 삭제할 것");
+		}
+		SeedResult result = generator.generate(seedAdminLoginId(args),
+				args.containsOption("seed-allow-prod"));
 		if (result.skipped()) {
 			log.info("RAG 시드 완료: 이미 적재됨 — 건너뜀");
 		} else {
@@ -47,9 +51,16 @@ public class RagSeedDataRunner implements ApplicationRunner {
 	}
 
 	static void rejectProdIfActive(String[] activeProfiles) {
+		rejectProdIfActive(activeProfiles, false);
+	}
+
+	static void rejectProdIfActive(String[] activeProfiles, boolean allowProd) {
 		for (String profile : activeProfiles) {
-			if ("prod".equalsIgnoreCase(profile)) {
-				throw new IllegalStateException("RAG 시드는 prod 에서 실행할 수 없다");
+			if ("prod".equalsIgnoreCase(profile) && !allowProd) {
+				throw new IllegalStateException(
+						"RAG 시드는 prod 에서 실행할 수 없다. dev/local 프로파일로 실행하세요"
+								+ " (예: SPRING_PROFILES_ACTIVE=dev ./gradlew seedRagData)."
+								+ " prod에 꼭 넣어야 하면 --seed-allow-prod 를 붙이되 시연 후 SEED: 데이터를 삭제할 것");
 			}
 		}
 	}

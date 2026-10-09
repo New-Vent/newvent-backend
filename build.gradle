@@ -123,4 +123,9 @@ tasks.register('seedRagData', JavaExec) {
 	if (project.hasProperty('seedAdmin')) {
 		args += "--seed-admin=${project.property('seedAdmin')}"
 	}
+	// prod 예외 허용 (시연 등 시간 제한 용도. 시연 후 SEED: 삭제 필수)
+	// ./gradlew seedRagData -PseedAllowProd
+	if (project.hasProperty('seedAllowProd')) {
+		args += '--seed-allow-prod'
+	}
 }

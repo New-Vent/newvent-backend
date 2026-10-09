@@ -29,6 +29,14 @@ class RagSeedDataRunnerTest {
     }
 
     @Test
+    @DisplayName("prod + 허용 플래그면 통과한다 (시연 등 시간 제한 예외용)")
+    void allowsProdWithFlag() {
+        assertDoesNotThrow(() -> RagSeedDataRunner.rejectProdIfActive(new String[] { "prod" }, true));
+        assertThrows(IllegalStateException.class,
+                () -> RagSeedDataRunner.rejectProdIfActive(new String[] { "prod" }, false));
+    }
+
+    @Test
     @DisplayName("--seed-admin 값을 읽는다. 없으면 null")
     void seedAdminOption() {
         assertNull(RagSeedDataRunner.seedAdminLoginId(new DefaultApplicationArguments()));

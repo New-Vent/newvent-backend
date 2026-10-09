@@ -30,7 +30,8 @@ import lombok.extern.slf4j.Slf4j;
  * 시드임을 표시한다 (운영 데이터와 눈으로 구분하기 위해).
  * prod 실행 금지는 RagSeedDataRunner 가 맡는다.
  *
- * 멱등: 시드 단위로 판단한다. 이미 있는 제목은 건너뛰고 없는 것만 적재한다.
+ * 멱등: 시드 단위로 판단한다. 삭제되지 않은 같은 제목이 있으면 건너뛰고 없는 것만 적재한다.
+ * 휴지통(soft delete)에 있는 것은 없는 것으로 보고 다시 만든다.
  * 적재 중 하나라도 실패하면(예: 임베딩 호출 실패) 그 시드의 이벤트·버전을 지워서
  * 청크 없는 반쪽짜리 시드가 남지 않게 하고, 다음 실행 때 다시 시도된다.
  */
@@ -72,15 +73,20 @@ public class RagSeedDataGenerator {
 	}
 
 	public SeedResult generate() {
-		return generate(null);
+		return generate(null, false);
+	}
+
+	public SeedResult generate(String adminLoginId) {
+		return generate(adminLoginId, false);
 	}
 
 	/**
 	 * 시드 적재. adminLoginId 가 있으면 그 관리자를 소유자로 쓰고, 없으면 id 첫 관리자.
 	 * prod 차단은 Runner 와 별개로 여기서도 건다 — 직접 주입 호출 실수를 막기 위해.
+	 * allowProd=true 는 시연 등 시간 제한 예외용. 남용 금지.
 	 */
-	public SeedResult generate(String adminLoginId) {
-		RagSeedDataRunner.rejectProdIfActive(environment.getActiveProfiles());
+	public SeedResult generate(String adminLoginId, boolean allowProd) {
+		RagSeedDataRunner.rejectProdIfActive(environment.getActiveProfiles(), allowProd);
 		Admin owner = adminLoginId != null
 				? admins.findByLoginId(adminLoginId)
 						.orElseThrow(() -> new IllegalStateException(
@@ -100,7 +106,7 @@ public class RagSeedDataGenerator {
 
 		for (SeedDefinition def : definitions()) {
 			String title = SEED_PREFIX + def.title();
-			if (events.existsByTitleStartingWith(title)) {
+			if (events.existsByTitleStartingWithAndDeletedAtIsNull(title)) {
 				existing++;
 				continue;
 			}
