@@ -289,38 +289,51 @@ class ParticipationServiceTest  {
         EventGameConfig config = mock(EventGameConfig.class);
         when(config.getGame()).thenReturn(game);
         when(config.getConfig()).thenReturn(
+            Map.of("pouches", List.of(
                 Map.of(
-                        "pouchCount", 3,
-                        "winProbability", 100,
-                        "prizeName", "커피 쿠폰"));
+                    "pouchIndex", 1,
+                    "winProbability", 0,
+                    "prizeName", "커피 쿠폰"),
+                Map.of(
+                    "pouchIndex", 2,
+                    "winProbability", 100,
+                    "prizeName", "치킨 쿠폰"),
+                Map.of(
+                    "pouchIndex", 3,
+                    "winProbability", 50,
+                    "prizeName", "편의점 상품권"))));
 
-        when(eventGameConfigRepository.findAllByEventId(1L))
-                .thenReturn(List.of(config));
+        when(eventGameConfigRepository.findAllByEventId(1L)).thenReturn(List.of(config));
 
         when(participationRepository.saveAndFlush(any(EventParticipation.class)))
-                .thenAnswer(invocation -> {
-                    EventParticipation participation = invocation.getArgument(0);
-                    ReflectionTestUtils.setField(participation, "id", 30L);
-                    return participation;
-                });
+            .thenAnswer(invocation -> {
+                EventParticipation participation = invocation.getArgument(0);
+                ReflectionTestUtils.setField(participation, "id", 30L);
+                return participation;
+            });
 
+        // 2번 주머니를 선택한다.
         ParticipationCreateResponse response = service.participate(
-                1L,
-                7L,
-                new ParticipationCreateRequest(null, null, 2));
+            1L,
+            7L,
+            new ParticipationCreateRequest(null, null, 2));
 
         ArgumentCaptor<EventParticipation> captor =
-                ArgumentCaptor.forClass(EventParticipation.class);
+            ArgumentCaptor.forClass(EventParticipation.class);
 
         verify(participationRepository).saveAndFlush(captor.capture());
 
         EventParticipation saved = captor.getValue();
 
+        // 선택 번호가 저장됐는지 확인한다.
         assertEquals(Map.of("pouchIndex", 2), saved.getSubmittedData());
-        assertEquals(
-                Map.of("status", "WON", "prizeName", "커피 쿠폰"),
-                saved.getResultData());
 
+        // 2번은 확률 100%이므로 치킨 쿠폰에 당첨되어야 한다.
+        assertEquals(
+            Map.of("status", "WON", "prizeName", "치킨 쿠폰"),
+            saved.getResultData());
+
+        // 저장한 결과와 응답 결과가 같은지 확인한다.
         assertEquals(saved.getResultData(), response.resultData());
         assertEquals(30L, response.participationId());
         assertEquals(1L, response.eventId());
