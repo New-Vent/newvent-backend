@@ -1,8 +1,10 @@
 package com.newvent.registry;
 
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -317,9 +319,25 @@ public enum Block {
         return source != Source.SERVER && !required;
     }
 
-    /** 순서를 옮길 수 있나 — 서버 소유라도 위치는 옮겨도 된다 */
+    /**
+     * 자리가 고정된 블록 — 관리자가 순서를 바꿔도 맨 끝에 남는다.
+     *
+     * ★ 유의사항은 법적 고지고 참여 버튼은 전환 동선이다. 둘이 중간으로 가면
+     *   페이지가 망가진다. 프론트가 틀린 순서를 보내도 서버가 바로잡는다.
+     *
+     * ★ 생성자 인자로 넣지 않은 이유 — 14개 상수에 전부 플래그가 붙는다.
+     *   고정은 둘뿐이고 앞으로도 늘 둘뿐이라, 여기 한 줄이 읽기 쉽다.
+     */
+    private static final Set<Block> PINNED = EnumSet.of(NOTICES, CTA);
+
+    /**
+     * 순서를 옮길 수 있나.
+     *
+     * ★ PageShell.orderBlocks 가 이걸 읽는다. false 면 관리자가 보낸 순서를 무시하고
+     *   레지스트리 순서대로 맨 끝에 붙인다.
+     */
     public boolean canMove() {
-        return true;
+        return !PINNED.contains(this);
     }
 
     /** 거부 사유 — 사용자에게 그대로 보여줄 문장 */

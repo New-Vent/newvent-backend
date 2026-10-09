@@ -239,4 +239,68 @@ class DirectEditServiceTest {
         when(owner.getId()).thenReturn(1L);
         return event;
     }
+
+
+    // ── 블록 순서 ─────────────────────────────────────────────────
+    //
+    // ★ 새 엔드포인트를 만들지 않고 여기로 받는 이유 — 소유자 확인 · 종료 잠금 ·
+    //   기준 버전 검증이 이미 위에 다 있다. 길을 하나 더 내면 두 벌로 유지해야 한다.
+    //   위의 거부 테스트들이 순서 변경에도 그대로 적용된다는 뜻이기도 하다.
+
+    private static final String 두_블록 =
+            "<div class=\"ev-container event-page\">"
+            + "<section data-block=\"benefits\"><ul><li>혜택</li></ul></section>"
+            + "<section data-block=\"steps\"><ol><li>참여</li></ol></section></div>";
+
+    @Test
+    @DisplayName("블록 순서만 보내도 새 버전으로 저장된다 - 문구 수정이 없어도 된다")
+    void directEdit_순서만_보내도_저장() {
+        Event event = realOwnedEvent(NOW.plusDays(1));
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(versionStore.htmlOf(1L, 12L)).thenReturn(Optional.of(두_블록));
+        when(versionStore.save(eq(1L), any(String.class), eq(12L)))
+                .thenReturn(new VersionStore.Saved(13L, 2));
+
+        var response = directEditService.directEdit(1L,
+                new DirectEditRequest(12L, null, null, List.of("steps", "benefits")), 1L);
+
+        assertThat(response.versionId()).isEqualTo(13L);
+    }
+
+    @Test
+    @DisplayName("보낸 순서대로 세워서 저장한다 - 참여 방법이 혜택보다 앞으로")
+    void directEdit_보낸_순서대로_저장() {
+        Event event = realOwnedEvent(NOW.plusDays(1));
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(versionStore.htmlOf(1L, 12L)).thenReturn(Optional.of(두_블록));
+        when(versionStore.save(eq(1L), any(String.class), eq(12L)))
+                .thenReturn(new VersionStore.Saved(13L, 2));
+
+        directEditService.directEdit(1L,
+                new DirectEditRequest(12L, null, null, List.of("steps", "benefits")), 1L);
+
+        verify(versionStore).save(eq(1L), argThat(html ->
+                html.indexOf("data-block=\"steps\"") < html.indexOf("data-block=\"benefits\"")
+                        && html.contains("data-block-order=\"steps,benefits\"")), eq(12L));
+    }
+
+    // ★ 조용히 무시하면 프론트는 오타를 낸 줄 모르고 관리자는 왜 안 움직이는지 모른다
+    @Test
+    @DisplayName("모르는 블록 이름이면 INVALID_BLOCK_ORDER(400) - 저장 전에 거절한다")
+    void directEdit_모르는_블록이름_400() {
+        assertThatThrownBy(() -> new DirectEditRequest(12L, null, null, List.of("steps", "없는블록")))
+                .isInstanceOf(DirectEditException.class)
+                .extracting(ex -> ((DirectEditException) ex).getErrorCode())
+                .isEqualTo(DirectEditErrorCode.INVALID_BLOCK_ORDER);
+        verifyNoInteractions(versionStore);
+    }
+
+    @Test
+    @DisplayName("빈 순서 목록은 수정 내용으로 치지 않는다 - EMPTY_EDIT_REQUEST(400)")
+    void directEdit_빈_순서목록_400() {
+        assertThatThrownBy(() -> new DirectEditRequest(12L, null, null, List.of()))
+                .isInstanceOf(DirectEditException.class)
+                .extracting(ex -> ((DirectEditException) ex).getErrorCode())
+                .isEqualTo(DirectEditErrorCode.EMPTY_EDIT_REQUEST);
+    }
 }

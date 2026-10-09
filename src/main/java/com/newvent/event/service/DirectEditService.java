@@ -15,11 +15,12 @@ import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.generation.service.VersionStore;
+import com.newvent.registry.PageShell;
 
 /**
  * 에디터 직접 편집 서비스.
  * <p>
- * 관리자가 요청한 텍스트 및 버튼 스타일 수정을 기준 버전에 반영하고
+ * 관리자가 요청한 텍스트 · 버튼 스타일 · 블록 순서 수정을 기준 버전에 반영하고
  * {@code event_versions}에 새로운 버전으로 저장한다.
  */
 @Service
@@ -66,6 +67,14 @@ public class DirectEditService {
 
         // 3. 순수 함수 적용기로 변경된 HTML 생성 (불일치 시 409, 인덱스/스타일 오류 시 400 발생)
         String updatedHtml = DirectEditor.apply(baseHtml, request.edits(), request.buttonStyle());
+
+        // 3-2. 블록 순서. ★ 문구·버튼을 고친 **뒤**다 —
+        //      TextEdit 은 문서 전체를 훑은 텍스트 노드 번호로 자리를 가리키므로,
+        //      순서를 먼저 바꾸면 그 번호가 전부 밀려 엉뚱한 문구가 바뀐다.
+        //      거르는 규칙(중복 · 고정 블록)은 PageShell.applyOrder 가 갖는다.
+        if (!request.blocks().isEmpty()) {
+            updatedHtml = PageShell.applyOrder(updatedHtml, request.blocks());
+        }
 
         // 4. 새 버전으로 저장 (source_version_id 지정)
         VersionStore.Saved saved = versionStore.save(eventId, updatedHtml, request.sourceVersionId());
