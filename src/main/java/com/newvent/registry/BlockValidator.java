@@ -1,6 +1,7 @@
 package com.newvent.registry;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -313,7 +314,14 @@ public class BlockValidator {
                 FailureCode.SLOT_INVENTED, "data-slot=\"%s\" 를 새로 만들었습니다. "
                         + "data-slot 은 서버만 심습니다. 원래 있던 것만 그대로 두세요.");
 
-        diff(Slots.idsOf(before), Slots.idsOf(after), f,
+        // 카드 삭제 시 직접 편집용 문구 ID는 없어져도 되지만, 기능용 ID는 반드시 보존한다.
+        Set<String> beforeIds = new LinkedHashSet<>(Slots.idsOf(before));
+        Set<String> afterIds = new LinkedHashSet<>(Slots.idsOf(after));
+        for (Element holder : Jsoup.parseBodyFragment(before).select("span[id^=nv-direct-text-]")) {
+            beforeIds.remove(holder.id());
+            afterIds.remove(holder.id());
+        }
+        diff(beforeIds, afterIds, f,
                 FailureCode.ID_LOST, "id=\"%s\" 를 지웠습니다. 화면 기능이 그 id 로 요소를 찾습니다. "
                         + "원래 있던 id 를 그대로 두세요.",
                 FailureCode.ID_INVENTED, "id=\"%s\" 를 새로 만들었습니다. "
@@ -372,7 +380,7 @@ public class BlockValidator {
     private static final Set<String> ALLOWED_CSS = Set.of(
             "color", "background-color",
             "font-size", "font-weight", "font-style", "line-height",
-            "text-align", "text-decoration",
+            "text-align", "text-decoration", "white-space",
             "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
             "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
             "border", "border-color", "border-width", "border-style", "border-radius");
