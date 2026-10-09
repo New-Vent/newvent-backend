@@ -14,11 +14,14 @@ import com.newvent.generation.exception.GenerationException;
 import com.newvent.generation.service.GenerateCommand;
 import com.newvent.generation.service.GenerationService;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * 만들어진 페이지를 본다. **editor 가 준비될 때까지 쓰는 임시 엔드포인트다.**
  *
  */
+@Tag(name = "생성 페이지 미리보기", description = "에디터가 준비될 때까지 쓰는 임시 API")
 @RestController
 @RequestMapping("/api/admin/events/{eventId}/preview")
 public class GenerationPreviewController {
@@ -36,6 +39,10 @@ public class GenerationPreviewController {
      *
      * ★ 응답에 versionId 가 같이 나간다. 프론트가 이후 수정의 기준으로 쓴다.
      */
+    @Operation(
+            summary = "마지막 버전 미리보기",
+            description = "가장 최근 버전에 이벤트 제목·기간 등을 채운 HTML 을 준다. 함께 오는 versionId 를 이후 수정의 기준으로 쓴다. "
+                    + "이벤트가 없으면 404 (EVENT404-0), 아직 만든 페이지가 없으면 404 (GEN404-1)")
     @GetMapping
     @Transactional(readOnly = true)
     public ApiResponse<PreviewResponse> preview(@PathVariable Long eventId) {
