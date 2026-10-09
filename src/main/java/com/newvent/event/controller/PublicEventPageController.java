@@ -13,7 +13,7 @@ import com.newvent.registry.PageShell;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
-@Tag(name = "공개 이벤트", description = "사용자 화면용. 로그인 없이 볼 수 있다.")
+@Tag(name = "공개 이벤트 페이지", description = "공유 링크로 바로 여는 이벤트 HTML 페이지. JSON API 가 아니다. 로그인 없이 볼 수 있다.")
 @RestController
 public class PublicEventPageController {
 
@@ -25,7 +25,7 @@ public class PublicEventPageController {
 
     @Operation(
             summary = "이벤트 단독 페이지",
-            description = "공유 링크용. JSON 이 아니라 게시 HTML 을 완성된 HTML 문서로 감싸 text/html 로 준다. "
+            description = "게시 HTML 을 완성된 HTML 문서로 감싸 text/html 로 준다. "
                     + "열 수 있는 조건은 공개 이벤트 상세와 같다 (404 EVENT404-0 · EVENT404-2)")
     @GetMapping(value = "/e/{id}", produces = MediaType.TEXT_HTML_VALUE)
     public String page(@PathVariable Long id) {
