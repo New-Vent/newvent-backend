@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +26,7 @@ import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.exception.EventNotAccessibleException;
+import com.newvent.event.repository.EventRepository;
 import com.newvent.event.service.PublicEventService;
 import com.newvent.participation.domain.EventGameConfig;
 import com.newvent.participation.domain.EventParticipation;
@@ -45,6 +47,7 @@ class ParticipationServiceTest  {
     private final UserService userService = mock(UserService.class);
     private final EventParticipationRepository participationRepository = mock(EventParticipationRepository.class);
     private final EventGameConfigRepository eventGameConfigRepository = mock(EventGameConfigRepository.class);
+    private final EventRepository eventRepository = mock(EventRepository.class);
 
     private final ParticipationService service = new ParticipationService(
             publicEventService,
@@ -52,11 +55,15 @@ class ParticipationServiceTest  {
             participationRepository,
             eventGameConfigRepository,
             new ParticipationValidator(),
-            new ParticipationResultProcessor()
+            new ParticipationResultProcessor(),
+            eventRepository
     );
 
     @BeforeEach
     void setUpBasicConfig() {
+        when(eventRepository.findByIdForDraw(1L))
+            .thenReturn(Optional.of(event(EventStatus.PUBLISHED, MembershipGrade.NORMAL)));
+
         Game game = mock(Game.class);
         when(game.getCode()).thenReturn("BASIC");
         when(game.isActive()).thenReturn(true);
