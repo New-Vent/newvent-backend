@@ -65,7 +65,7 @@ public class ParticipationService {
         EventGameConfig config = configs.getFirst();
 
         Map<String, Object> submittedData = participationValidator.validate(config, request);
-        Map<String, Object> resultData = participationResultProcessor.process(config);
+        Map<String, Object> resultData = participationResultProcessor.process(config, submittedData);
         try {
             EventParticipation participation = participationRepository.saveAndFlush(EventParticipation.create(event, user, submittedData, resultData));
             return ParticipationCreateResponse.builder()
