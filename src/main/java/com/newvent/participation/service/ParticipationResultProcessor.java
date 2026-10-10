@@ -127,21 +127,12 @@ public class ParticipationResultProcessor {
     }
 
     private int readPouchIndex(Object value) {
-        if (!(value instanceof Number number)) {
-            throw invalidConfig();
-        }
-
-        try {
-            int index = new BigDecimal(number.toString()).intValueExact();
-
-            if (index < 1) {
-                throw invalidConfig();
-            }
-
-            return index;
-        } catch (NumberFormatException | ArithmeticException exception) {
-            throw invalidConfig();
-        }
+        return ParticipationConfigReader.readInteger(
+            value,
+            1,
+            Integer.MAX_VALUE,
+            this::invalidConfig
+        );
     }
 
     private int readProbability(Object value) {
