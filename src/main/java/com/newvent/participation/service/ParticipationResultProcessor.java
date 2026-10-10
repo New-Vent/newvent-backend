@@ -1,6 +1,5 @@
 package com.newvent.participation.service;
 
-import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.util.Map;
 
@@ -56,53 +55,37 @@ public class ParticipationResultProcessor {
     }
 
     private Map<String, Object> guaranteed(Map<String, Object> config) {
-        Object value = config.get("prizeName");
-
-        if (!(value instanceof String prizeName) || prizeName.isBlank()) {
-            throw invalidConfig();
-        }
+        String prizeName = ParticipationConfigReader.readPrizeName(config.get("prizeName"), this::invalidConfig);
 
         return Map.of(
-                "status", "WON",
-                "prizeName", prizeName.trim());
+            "status", "WON",
+            "prizeName", prizeName
+        );
     }
 
     private Map<String, Object> draw(Map<String, Object> config) {
         int winProbability = readProbability(config.get("winProbability"));
 
-        Object value = config.get("prizeName");
-        if (!(value instanceof String prizeName) || prizeName.isBlank()) {
-            throw invalidConfig();
-        }
+        String prizeName = ParticipationConfigReader.readPrizeName(
+            config.get("prizeName"),
+            this::invalidConfig
+        );
 
         // 0~99 중 하나를 뽑는다. 확률이 30이면 0~29가 당첨이다.
         boolean won = random.nextInt(100) < winProbability;
 
         if (won) {
             return Map.of(
-                    "status", "WON",
-                    "prizeName", prizeName.trim());
+                "status", "WON",
+                "prizeName", prizeName
+            );
         }
 
         return Map.of("status", "LOST");
     }
 
     private int readProbability(Object value) {
-        if (!(value instanceof Number number)) {
-            throw invalidConfig();
-        }
-
-        try {
-            int probability = new BigDecimal(number.toString()).intValueExact();
-
-            if (probability < 0 || probability > 100) {
-                throw invalidConfig();
-            }
-
-            return probability;
-        } catch (NumberFormatException | ArithmeticException exception) {
-            throw invalidConfig();
-        }
+        return ParticipationConfigReader.readInteger(value, 0, 100, this::invalidConfig);
     }
 
     private ParticipationException invalidConfig() {

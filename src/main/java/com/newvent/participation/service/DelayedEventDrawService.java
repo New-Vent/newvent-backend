@@ -1,6 +1,5 @@
 package com.newvent.participation.service;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -135,23 +134,15 @@ public class DelayedEventDrawService {
     }
 
     private int readWinnerCount(Long eventId, Object value) {
-        if (!(value instanceof Number number)) {
-            throw invalidConfig(eventId, "당첨 인원은 정수여야 합니다.");
-        }
-
-        int winnerCount;
-
-        try {
-            winnerCount = new BigDecimal(number.toString()).intValueExact();
-        } catch (NumberFormatException | ArithmeticException exception) {
-            throw invalidConfig(eventId, "당첨 인원은 정수 범위 내 값이어야 합니다.");
-        }
-
-        if (winnerCount < 1) {
-            throw invalidConfig(eventId, "당첨 인원은 1 이상이어야 합니다.");
-        }
-
-        return winnerCount;
+        return ParticipationConfigReader.readInteger(
+            value,
+            1,
+            Integer.MAX_VALUE,
+            () -> invalidConfig(
+                eventId,
+                "당첨 인원은 1 이상의 정수 범위 내 값이어야 합니다."
+            )
+        );
     }
 
     private OffsetDateTime readAnnouncementAt(Long eventId, Object value) {
@@ -167,11 +158,10 @@ public class DelayedEventDrawService {
     }
 
     private String readPrizeName(Long eventId, Object value) {
-        if (!(value instanceof String text) || text.isBlank()) {
-            throw invalidConfig(eventId, "경품명이 필요합니다.");
-        }
-
-        return text.trim();
+        return ParticipationConfigReader.readPrizeName(
+            value,
+            () -> invalidConfig(eventId, "경품명이 필요합니다.")
+        );
     }
 
     private ParticipationException invalidConfig(Long eventId, String message) {

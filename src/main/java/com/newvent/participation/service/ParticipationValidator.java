@@ -1,6 +1,5 @@
 package com.newvent.participation.service;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -120,21 +119,12 @@ public class ParticipationValidator {
     }
 
     private int positiveInteger(Object value) {
-        if (!(value instanceof Number number)) {
-            throw invalidConfig();
-        }
-
-        try {
-            int result = new BigDecimal(number.toString()).intValueExact();
-
-            if (result < 1) {
-                throw invalidConfig();
-            }
-
-            return result;
-        } catch (NumberFormatException | ArithmeticException exception) {
-            throw invalidConfig();
-        }
+        return ParticipationConfigReader.readInteger(
+            value,
+            1,
+            Integer.MAX_VALUE,
+            this::invalidConfig
+        );
     }
 
     private ParticipationException invalidInput() {
