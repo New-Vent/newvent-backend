@@ -1,7 +1,9 @@
 package com.newvent.participation.service;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
@@ -102,22 +104,48 @@ public class ParticipationValidator {
     }
 
     private Map<String, Object> validatePouch(
-            Map<String, Object> config,
-            ParticipationCreateRequest input
+        Map<String, Object> config,
+        ParticipationCreateRequest input
     ) {
-        int pouchCount = positiveInteger(config.get("pouchCount"));
+        Object value = config.get("pouches");
+
+        if (!(value instanceof List<?> pouches) || pouches.isEmpty()) {
+            throw invalidConfig();
+        }
+
+        Set<Integer> indexes = new HashSet<>();
+
+        for (Object item : pouches) {
+            if (!(item instanceof Map<?, ?> pouch)) {
+                throw invalidConfig();
+            }
+
+            int pouchIndex = positiveInteger(pouch.get("pouchIndex"));
+
+            // 1부터 배열 길이까지 중복 없이 구성되어야 한다.
+            if (pouchIndex > pouches.size() || !indexes.add(pouchIndex)) {
+                throw invalidConfig();
+            }
+
+            validateProbability(pouch.get("winProbability"));
+
+            ParticipationConfigReader.readPrizeName(
+                pouch.get("prizeName"),
+                this::invalidConfig
+            );
+        }
 
         if (input.pouchIndex() == null
-                || input.prediction() != null
-                || input.phoneNumber() != null
-                || input.pouchIndex() < 1
-                || input.pouchIndex() > pouchCount) {
+            || input.prediction() != null
+            || input.phoneNumber() != null
+            || !indexes.contains(input.pouchIndex())) {
             throw invalidInput();
         }
 
         return Map.of("pouchIndex", input.pouchIndex());
     }
 
+    // 복주머니 번호: 1 이상
     private int positiveInteger(Object value) {
         return ParticipationConfigReader.readInteger(
             value,
@@ -127,13 +155,21 @@ public class ParticipationValidator {
         );
     }
 
+    // 당첨 확률: 0~100
+    private void validateProbability(Object value) {
+        ParticipationConfigReader.readInteger(
+            value,
+            0,
+            100,
+            this::invalidConfig
+        );
+    }
+
     private ParticipationException invalidInput() {
-        return new ParticipationException(
-                ParticipationErrorCode.INVALID_SUBMITTED_DATA);
+        return new ParticipationException(ParticipationErrorCode.INVALID_SUBMITTED_DATA);
     }
 
     private ParticipationException invalidConfig() {
-        return new ParticipationException(
-                ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED);
+        return new ParticipationException(ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED);
     }
 }

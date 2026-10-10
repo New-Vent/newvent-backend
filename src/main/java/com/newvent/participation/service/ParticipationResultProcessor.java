@@ -1,6 +1,7 @@
 package com.newvent.participation.service;
 
 import java.security.SecureRandom;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
@@ -23,7 +24,7 @@ public class ParticipationResultProcessor {
         this.random = random;
     }
 
-    public Map<String, Object> process(EventGameConfig eventGameConfig) {
+    public Map<String, Object> process(EventGameConfig eventGameConfig, Map<String, Object> submittedData) {
         Map<String, Object> config = eventGameConfig.getConfig();
 
         if (config == null) {
@@ -32,7 +33,7 @@ public class ParticipationResultProcessor {
 
         return switch (eventGameConfig.getGame().getCode()) {
             case "BASIC" -> processBasic(config);
-            case "LUCKY_POUCH" -> draw(config);
+            case "LUCKY_POUCH" -> drawPouch(config, submittedData);
             case "SPORTS_PREDICTION" -> Map.of("status", "PENDING");
             case "PRE_REGISTRATION" -> Map.of();
             default -> throw new ParticipationException(ParticipationErrorCode.UNSUPPORTED_PARTICIPATION_TYPE);
@@ -63,7 +64,7 @@ public class ParticipationResultProcessor {
         );
     }
 
-    private Map<String, Object> draw(Map<String, Object> config) {
+    private Map<String, Object> draw(Map<?, ?> config) {
         int winProbability = readProbability(config.get("winProbability"));
 
         String prizeName = ParticipationConfigReader.readPrizeName(
@@ -82,6 +83,65 @@ public class ParticipationResultProcessor {
         }
 
         return Map.of("status", "LOST");
+    }
+
+    private Map<String, Object> drawPouch(
+        Map<String, Object> config,
+        Map<String, Object> submittedData
+    ) {
+        Object value = config.get("pouches");
+
+        if (!(value instanceof List<?> pouches) || pouches.isEmpty()) {
+            throw invalidConfig();
+        }
+
+        // Validator가 검증해 저장한 번호를 사용한다.
+        if (submittedData == null
+            || !(submittedData.get("pouchIndex") instanceof Integer selectedIndex)) {
+            throw new ParticipationException(ParticipationErrorCode.INVALID_SUBMITTED_DATA);
+        }
+
+        Map<?, ?> selectedPouch = null;
+
+        for (Object item : pouches) {
+            if (!(item instanceof Map<?, ?> pouch)) {
+                throw invalidConfig();
+            }
+
+            int pouchIndex = readPouchIndex(pouch.get("pouchIndex"));
+
+            if (pouchIndex == selectedIndex) {
+                if (selectedPouch != null) {
+                    throw invalidConfig();
+                }
+
+                selectedPouch = pouch;
+            }
+        }
+
+        if (selectedPouch == null) {
+            throw invalidConfig();
+        }
+
+        return draw(selectedPouch);
+    }
+
+    private int readPouchIndex(Object value) {
+        if (!(value instanceof Number number)) {
+            throw invalidConfig();
+        }
+
+        try {
+            int index = new BigDecimal(number.toString()).intValueExact();
+
+            if (index < 1) {
+                throw invalidConfig();
+            }
+
+            return index;
+        } catch (NumberFormatException | ArithmeticException exception) {
+            throw invalidConfig();
+        }
     }
 
     private int readProbability(Object value) {

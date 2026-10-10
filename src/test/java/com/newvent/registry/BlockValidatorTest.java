@@ -202,4 +202,37 @@ public class BlockValidatorTest {
         assertTrue(last.select("button").size() > 0);          // 버튼은 유지
         assertTrue(last.select("[data-demo-msg]").isEmpty());  // 문구는 제거
     }
+
+    // ---------- 10. 항목 하나 더하기 (allowOneMore) ------------
+    //
+    // ★ 한 칸만 열린다. 열어 두면 모델이 한 번에 다섯 개를 지어낸다.
+
+    private static String plus(int n) {
+        StringBuilder more = new StringBuilder();
+        for (int i = 0; i < n; i++) more.append("<div class=\"benefit-card\">새").append(i).append("</div>");
+        return BEFORE_3.replace("</div></section>", more + "</div></section>");
+    }
+
+    @Test
+    @DisplayName("항목 추가 요청이 아니면 하나 늘어도 막는다 - 기존 동작 그대로")
+    void 항목_추가_요청이_아니면_막는다() {
+        assertTrue(hasCode(
+                BlockValidator.validateEdited(Block.BENEFITS, BEFORE_3, plus(1), false),
+                "item_added_benefits"));
+    }
+
+    @Test
+    @DisplayName("항목 추가 요청이면 하나까지 통과한다")
+    void 항목_추가_요청이면_하나는_통과() {
+        assertEquals(List.of(),
+                BlockValidator.validateEdited(Block.BENEFITS, BEFORE_3, plus(1), true));
+    }
+
+    @Test
+    @DisplayName("항목 추가 요청이어도 둘은 막는다 - 한 번에 하나만")
+    void 항목_추가_요청이어도_둘은_막는다() {
+        assertTrue(hasCode(
+                BlockValidator.validateEdited(Block.BENEFITS, BEFORE_3, plus(2), true),
+                "item_added_benefits"));
+    }
 }

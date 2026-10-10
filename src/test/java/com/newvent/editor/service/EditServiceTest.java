@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.IntConsumer;
 
+import org.jsoup.Jsoup;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -157,6 +158,11 @@ class EditServiceTest {
 
     private static final String NEW_BENEFITS =
             "<section data-block=\"benefits\"><ul><li>데이터 20GB</li><li>쿠폰</li></ul></section>";
+
+    /** 항목이 하나 늘어난 응답. BASE 의 benefits 는 2개다 */
+    private static final String PLUS_BENEFIT =
+            "<section data-block=\"benefits\"><ul><li>데이터 10GB</li><li>쿠폰</li>"
+            + "<li>커피쿠폰</li></ul></section>";
 
     private CountingGateway gateway;
     private FakeRouter router;
@@ -628,16 +634,47 @@ class EditServiceTest {
         assertEquals(1, savedHtml().split("data-block=\"steps\"", -1).length - 1);
     }
 
+    // ★★ 전에는 "혜택 항목 추가는 모델을 부르기 전에 거절한다" 였다.
+    //    막으려던 건 모델이 **지어낸** 혜택이지 관리자가 **적어 준** 혜택이 아니다.
+    //    내용이 비어 있으면 아래 테스트처럼 되묻는다 — 그때는 여전히 모델을 안 부른다.
     @Test
-    @DisplayName("혜택 항목 추가는 모델을 부르기 전에 거절한다")
-    void 혜택_항목_추가는_거절한다() {
-        router.willReturn(new RawRoute("ADD", "benefits", "데이터 20GB 증정"));
+    @DisplayName("혜택 항목 추가는 관리자 문구가 있으면 하나를 더한다")
+    void 혜택_항목_추가는_하나를_더한다() {
+        router.willReturn(new RawRoute("ADD", "benefits", "커피쿠폰"));
+        retry.willReturn(ok(PLUS_BENEFIT));
 
-        GenerationJob job = run("혜택에 데이터 20GB 증정을 추가해줘");
+        GenerationJob job = run("혜택에 커피쿠폰 추가해줘");
 
-        assertEquals(GenerationJob.Phase.FAILED, job.phase());
-        assertTrue(job.message().contains("늘리거나 줄일 수 없습니다"));
-        assertEquals(0, retry.calls(), "거절인데 모델을 불렀다");
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertEquals(2, versionNo());
+        assertTrue(blockOf(savedHtml(), Block.BENEFITS).contains("커피쿠폰"));
+        assertEquals(3, Jsoup.parseBodyFragment(blockOf(savedHtml(), Block.BENEFITS))
+                .select("li").size(), "하나만 늘어야 한다");
+    }
+
+    // ★ 세 곳(시스템 프롬프트 · 사용자 프롬프트 · 검증기)이 같은 답을 써야 한다.
+    //   사용자 프롬프트가 빠지면 모델은 "문구만 고쳐라" 를 따라 아무것도 안 한다 — 실측.
+    @Test
+    @DisplayName("항목 추가라는 걸 모델에게 말해 준다")
+    void 항목_추가는_프롬프트에_적는다() {
+        router.willReturn(new RawRoute("ADD", "benefits", "커피쿠폰"));
+        retry.willReturn(ok(PLUS_BENEFIT));
+
+        run("혜택에 커피쿠폰 추가해줘");
+
+        assertTrue(retry.prompts().get(0).contains("항목을 **하나만** 더한다"),
+                "항목을 더하는 요청이라고 말하지 않았다");
+    }
+
+    @Test
+    @DisplayName("내용 없는 혜택 항목 추가는 되묻고 모델을 안 부른다")
+    void 내용_없는_혜택_추가는_되묻는다() {
+        router.willReturn(new RawRoute("ADD", "benefits", null));
+
+        GenerationJob job = run("혜택 하나 더 추가해줘");
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertEquals(0, retry.calls(), "되묻는데 모델을 불렀다 — 돈이 나간다");
         assertEquals(1, versionNo());
     }
 

@@ -118,12 +118,14 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T10:20:00+09:00"),
-                "signup", "<section data-block=\"hero\"><h1>쿠폰</h1></section>", MembershipGrade.NORMAL, false, 2, 3);
-        given(eventService.findAdminEvents(null, null, null, null, null, 0, 10))
+                "signup", "<section data-block=\"hero\"><h1>쿠폰</h1></section>", MembershipGrade.NORMAL, false, 2, 3,
+                true);
+        given(eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10))
                 .willReturn(PageResponse.of(List.of(row), 0, 10, 1));
 
-        mockMvc.perform(get("/api/admin/events"))
+        mockMvc.perform(get("/api/admin/events").with(adminPrincipal()))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].ownedByMe").value(true))
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.content[0].name").value("신규 가입 데이터 쿠폰 3GB"))
                 .andExpect(jsonPath("$.data.content[0].status").value("PUBLISHED"))
@@ -138,17 +140,17 @@ class AdminEventControllerTest {
     @DisplayName("목록 API 는 검색어·상태·진행상태를 서비스에 넘긴다")
     void 이벤트_목록_필터를_전달한다() throws Exception {
         given(eventService.findAdminEvents(
-                        "42", EventStatus.PUBLISHED, EventProgress.ONGOING, null, null, 0, 10))
+                        1L, "42", EventStatus.PUBLISHED, EventProgress.ONGOING, null, null, 0, 10))
                 .willReturn(PageResponse.of(List.of(), 0, 10, 0));
 
-        mockMvc.perform(get("/api/admin/events")
+        mockMvc.perform(get("/api/admin/events").with(adminPrincipal())
                         .param("name", "42")
                         .param("status", "PUBLISHED")
                         .param("progress", "ONGOING"))
                 .andExpect(status().isOk());
 
         verify(eventService).findAdminEvents(
-                "42", EventStatus.PUBLISHED, EventProgress.ONGOING, null, null, 0, 10);
+                1L, "42", EventStatus.PUBLISHED, EventProgress.ONGOING, null, null, 0, 10);
     }
 
     @Test
@@ -168,14 +170,15 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-18T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-15T09:10:00+09:00"),
                 "instant", MembershipGrade.NORMAL,
-                "<h1>지금 긁으면 바로 당첨</h1>", true);
-        given(eventService.findAdminEvent(3L)).willReturn(detail);
+                "<h1>지금 긁으면 바로 당첨</h1>", true, false);
+        given(eventService.findAdminEvent(1L, 3L)).willReturn(detail);
 
-        mockMvc.perform(get("/api/admin/events/3"))
+        mockMvc.perform(get("/api/admin/events/3").with(adminPrincipal()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(3))
                 .andExpect(jsonPath("$.data.closingSoon").value(true))
+                .andExpect(jsonPath("$.data.ownedByMe").value(false))
                 .andExpect(jsonPath("$.data.completedHtml").value("<h1>지금 긁으면 바로 당첨</h1>"));
     }
 
@@ -197,10 +200,10 @@ class AdminEventControllerTest {
     @Test
     @DisplayName("없는 이벤트는 404 와 EVENT404-0 을 반환한다")
     void 존재하지_않는_이벤트_조회시_404를_반환한다() throws Exception {
-        given(eventService.findAdminEvent(999L))
+        given(eventService.findAdminEvent(1L, 999L))
                 .willThrow(new EventException(EventErrorCode.EVENT_NOT_FOUND));
 
-        mockMvc.perform(get("/api/admin/events/999"))
+        mockMvc.perform(get("/api/admin/events/999").with(adminPrincipal()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("EVENT404-0"))
                 .andExpect(jsonPath("$.message").value("이벤트를 찾을 수 없습니다."));
@@ -215,7 +218,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
                 "sports_cheer", MembershipGrade.BEST,
-                null, false);
+                null, false, true);
         given(eventService.create(eq(1L), any(EventCreateRequest.class))).willReturn(created);
 
         mockMvc.perform(post("/api/admin/events")
@@ -242,11 +245,11 @@ class AdminEventControllerTest {
     @DisplayName("조회 시작일이 종료일보다 늦으면 400 과 EVENT400-1 을 반환한다")
     void 조회기간이_역전되면_400을_반환한다() throws Exception {
         given(eventService.findAdminEvents(
-                        any(), any(), any(), any(OffsetDateTime.class), any(OffsetDateTime.class),
+                        any(), any(), any(), any(), any(OffsetDateTime.class), any(OffsetDateTime.class),
                         anyInt(), anyInt()))
                 .willThrow(new EventException(EventErrorCode.INVALID_SEARCH_PERIOD));
 
-        mockMvc.perform(get("/api/admin/events")
+        mockMvc.perform(get("/api/admin/events").with(adminPrincipal())
                         .param("periodFrom", "2026-09-30T00:00:00+09:00")
                         .param("periodTo", "2026-09-01T00:00:00+09:00"))
                 .andExpect(status().isBadRequest())
@@ -278,7 +281,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-07-31T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
                 null, MembershipGrade.EXCELLENT,
-                null, false);
+                null, false, true);
         given(eventService.update(eq(1L), eq(2L), any(EventUpdateRequest.class))).willReturn(updated);
 
         mockMvc.perform(patch("/api/admin/events/2").with(adminPrincipal())
@@ -456,11 +459,12 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-01-11T00:00:00+09:00"),
-                null, "<section data-block=\"hero\"><h1>쿠폰</h1></section>", MembershipGrade.NORMAL, false, null, null);
-        given(eventService.findDeletedEvents(0, 10))
+                null, "<section data-block=\"hero\"><h1>쿠폰</h1></section>", MembershipGrade.NORMAL, false, null, null,
+                true);
+        given(eventService.findDeletedEvents(1L, 0, 10))
                 .willReturn(PageResponse.of(List.of(row), 0, 10, 1));
 
-        mockMvc.perform(get("/api/admin/events/trash"))
+        mockMvc.perform(get("/api/admin/events/trash").with(adminPrincipal()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.content[0].id").value(99))
@@ -476,7 +480,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-01-11T00:00:00+09:00"),
-                null, MembershipGrade.NORMAL, null, false);
+                null, MembershipGrade.NORMAL, null, false, true);
         given(eventService.restore(1L, 99L)).willReturn(restored);
 
         mockMvc.perform(post("/api/admin/events/99/restore").with(adminPrincipal()))
@@ -504,7 +508,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-30T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-30T13:00:00+09:00"),
                 "member_appreciation", MembershipGrade.NORMAL,
-                "<h1>가을 멤버십 더블 혜택</h1>", false);
+                "<h1>가을 멤버십 더블 혜택</h1>", false, true);
         given(eventService.changeStatus(1L, 3L, EventStatus.ENDED)).willReturn(ended);
 
         mockMvc.perform(patch("/api/admin/events/3/status").with(adminPrincipal())
@@ -567,7 +571,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-30T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-20T13:00:00+09:00"),
                 "member_appreciation", MembershipGrade.NORMAL,
-                null, false);
+                null, false, true);
         given(eventService.unpublish(1L, 3L)).willReturn(unpublished);
 
         mockMvc.perform(post("/api/admin/events/3/unpublish").with(adminPrincipal()))
@@ -619,7 +623,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
                 null, MembershipGrade.NORMAL,
-                "<h1>게시된 버전</h1>", false);
+                "<h1>게시된 버전</h1>", false, true);
         given(eventService.publish(1L, 1L, 10L)).willReturn(published);
 
         mockMvc.perform(post("/api/admin/events/1/publish").with(adminPrincipal())

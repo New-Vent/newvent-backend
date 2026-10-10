@@ -321,7 +321,7 @@ public class GenerationService {
         // ★ 저장 직전에 껍데기를 보장한다 — 래퍼 · 유의사항.
         //   백지는 템플릿이 없으므로 테마를 고를 근거가 없다 → null.
         //   event.css 의 :root 기본값이 쓰인다. 무스타일이 아니다.
-        return PageShell.plant(plantPeriodSlot(res.html()), null);    }
+        return PageShell.plant(plantSlots(res.html()), null);    }
 
     /**
      * 이벤트 값과 어긋나는지 본다.
@@ -341,9 +341,21 @@ public class GenerationService {
     }
 
     /**
-     * 백지 결과에 기간 슬롯을 심는다.
+     * 백지 결과에 서버가 채울 슬롯을 심는다 — 기간과 참여 링크.
+     *
+     * ★★ 전에는 기간만 심었다. 그런데 cta-link 슬롯은 **심는 코드가 저장소 어디에도
+     *   없었다** — Slot 에 선언만 있고 Slots.fill 이 채우는 쪽만 있었다.
+     *   그래서 백지 페이지에는 서버가 참여 링크를 넣을 자리가 영영 없었고,
+     *   DirectEditErrorCode.CTA_NOT_FOUND 가 항상 났다.
+     *
+     * ★ 더 눈에 띄는 증상은 따로 있었다. 관리자 화면의 "참여 버튼 디자인"(배경색 ·
+     *   글자색 · 크기 · 모양)이 `hasCta = /data-slot="cta-link"/.test(preview.html)`
+     *   로 걸려 있어서, 슬롯이 없는 **AI 생성 페이지에서는 그 칸이 통째로 안 떴다.**
+     *   템플릿 5종에는 슬롯이 있어 보이고 백지에는 안 보이는 이유가 이것이다.
+     *   수정으로는 못 고친다 — 프롬프트가 "data-slot 을 새로 만들지 마라" 로 막고
+     *   checkPreserved 가 slot_invented 로 하드 실패시킨다. 심는 건 서버 일이다.
      */
-    private String plantPeriodSlot(String html) {
+    private String plantSlots(String html) {
         Document doc = Jsoup.parseBodyFragment(html);
         doc.outputSettings().prettyPrint(false);
 
@@ -355,9 +367,33 @@ public class GenerationService {
         Element host = (hero != null) ? hero : doc.body();
 
         // ★ 내용은 비워 둔다. 값은 보여줄 때 Slots.fill() 이 채운다
-        host.appendElement("p").attr("data-slot", Slot.PERIOD.key());
+        if (doc.body().select(Slot.PERIOD.selector()).isEmpty()) {
+            host.appendElement("p").attr("data-slot", Slot.PERIOD.key());
+        }
 
+        plantCtaLink(doc);
         return doc.body().html();
+    }
+
+    /**
+     * 참여 버튼에 cta-link 슬롯을 붙인다.
+     *
+     * ★ 새 태그를 만들지 않는다. 모델이 이미 만든 cta 영역의 <a>·<button> 에
+     *   **속성만** 붙인다. 만들면 문구가 빈 버튼이 하나 더 생긴다.
+     * ★ Slot.Kind.LINK 라 Slots.fill 은 href·data-href 만 건드린다 —
+     *   버튼 문구("지금 참여하기")는 그대로 남는다.
+     */
+    private void plantCtaLink(Document doc) {
+        if (!doc.body().select(Slot.CTA_LINK.selector()).isEmpty()) {
+            return;                        // 이미 있으면 두 번 심지 않는다
+        }
+        Element cta = doc.body().selectFirst(Block.CTA.selector());
+        if (cta == null) return;
+
+        Element btn = cta.selectFirst("a, button");
+        if (btn == null) return;
+
+        btn.attr("data-slot", Slot.CTA_LINK.key());
     }
 
     /**
