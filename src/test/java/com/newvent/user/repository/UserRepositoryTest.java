@@ -78,6 +78,54 @@ class UserRepositoryTest {
         assertThrows(DataIntegrityViolationException.class, () -> userRepository.saveAndFlush(duplicate));
     }
 
+    @Test
+    @DisplayName("existsBy...IgnoreCase 는 대소문자가 달라도 저장된 아이디·이메일을 찾는다")
+    void existsBy_대소문자무시() {
+        userRepository.saveAndFlush(
+                new User("CaseUser", "hash", "이름", "CaseUser@Test.com", null, 50000, MembershipGrade.NORMAL));
+
+        assertTrue(userRepository.existsByLoginIdIgnoreCase("caseuser"));
+        assertTrue(userRepository.existsByLoginIdIgnoreCase("CASEUSER"));
+        assertTrue(userRepository.existsByEmailIgnoreCase("caseuser@test.com"));
+        assertFalse(userRepository.existsByLoginIdIgnoreCase("caseuser2"));
+        // 로그인용 조회는 지금처럼 대소문자를 구분한다
+        assertFalse(userRepository.findByLoginId("caseuser").isPresent());
+        assertTrue(userRepository.findByLoginId("CaseUser").isPresent());
+    }
+
+    @Test
+    @DisplayName("login_id 가 대소문자만 달라도 DB 의 lower(login_id) 유니크 인덱스가 저장을 막는다")
+    void 로그인ID_대소문자_유니크인덱스() {
+        userRepository.saveAndFlush(
+                new User("casedb01", "hash", "이름", "casedb01a@test.com", null, 50000, MembershipGrade.NORMAL));
+
+        User variant =
+                new User("CASEDB01", "hash", "이름2", "casedb01b@test.com", null, 50000, MembershipGrade.NORMAL);
+
+        assertThrows(DataIntegrityViolationException.class, () -> userRepository.saveAndFlush(variant));
+    }
+
+    @Test
+    @DisplayName("email 이 대소문자만 달라도 DB 의 lower(email) 유니크 인덱스가 저장을 막는다")
+    void 이메일_대소문자_유니크인덱스() {
+        userRepository.saveAndFlush(
+                new User("casedb02a", "hash", "이름", "casedb02@test.com", null, 50000, MembershipGrade.NORMAL));
+
+        User variant =
+                new User("casedb02b", "hash", "이름2", "CASEDB02@Test.com", null, 50000, MembershipGrade.NORMAL);
+
+        assertThrows(DataIntegrityViolationException.class, () -> userRepository.saveAndFlush(variant));
+    }
+
+    @Test
+    @DisplayName("시드 회원(user01)과 대소문자만 다른 USER01 도 DB 가 막는다")
+    void 시드회원과_대소문자_중복() {
+        User variant =
+                new User("USER01", "hash", "이름", "other-user01@test.com", null, 50000, MembershipGrade.NORMAL);
+
+        assertThrows(DataIntegrityViolationException.class, () -> userRepository.saveAndFlush(variant));
+    }
+
     // 시드 회원(V3)이 DB 에 이미 있으므로, 검색 테스트는 다른 데이터와 겹치지 않는 고유한 글자를 쓴다.
     private User saved(String loginId, String name, String email, MembershipGrade grade) {
         return userRepository.saveAndFlush(new User(loginId, "hash", name, email, null, 50000, grade));

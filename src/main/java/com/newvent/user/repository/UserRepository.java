@@ -26,6 +26,12 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
 
     boolean existsByEmail(String email);
 
+    // 가입·이메일 변경의 중복 검사용 — 대소문자만 다른 아이디·이메일(USER01 / user01)도 같은 것으로 본다.
+    // DB 에서도 lower(login_id), lower(email) 유니크 인덱스(V17)가 마지막으로 막는다.
+    boolean existsByLoginIdIgnoreCase(String loginId);
+
+    boolean existsByEmailIgnoreCase(String email);
+
     // 관리자 목록 - 검색어(아이디/이름/이메일 부분 일치)와 등급은 값이 있을 때만 조건에 넣는다
     default Page<User> searchUsers(String keywordPattern, MembershipGrade grade, int page, int size) {
         return findAll((root, query, cb) -> {
