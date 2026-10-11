@@ -8,6 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.BeanUtils;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -15,8 +19,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.newvent.event.domain.Event;
 import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.service.PublicEventService;
+import com.newvent.participation.domain.EventGameConfig;
+import com.newvent.participation.domain.Game;
 import com.newvent.participation.domain.ParticipationUnavailableReason;
 import com.newvent.participation.dto.response.ParticipationStatusResponse;
+import com.newvent.participation.repository.EventGameConfigRepository;
 import com.newvent.participation.repository.EventParticipationRepository;
 import com.newvent.user.domain.MembershipGrade;
 import com.newvent.user.domain.User;
@@ -28,9 +35,23 @@ class ParticipationStatusServiceTest {
     private final UserService userService = mock(UserService.class);
     private final EventParticipationRepository participationRepository =
             mock(EventParticipationRepository.class);
+    private final EventGameConfigRepository eventGameConfigRepository =
+            mock(EventGameConfigRepository.class);
 
     private final ParticipationStatusService service = new ParticipationStatusService(
-            publicEventService, userService, participationRepository);
+            publicEventService, userService, participationRepository, eventGameConfigRepository);
+
+    /**
+     * 설정이 하나 있는 상태가 기본이다.
+     *
+     * ★ 이걸 안 깔면 아래 "참여 가능" 테스트가 NOT_CONFIGURED 로 떨어진다.
+     *   실제로 그게 이번에 고친 버그다 — 설정을 안 보던 때는 설정이 없어도 가능이었다.
+     */
+    @BeforeEach
+    void 기본은_설정이하나() {
+        List<EventGameConfig> one = List.of(config("BASIC"));
+        when(eventGameConfigRepository.findAllByEventId(1L)).thenReturn(one);
+    }
 
     @Test
     void 참여이력이없고_등급이충분하면_참여가능하다() {
@@ -44,6 +65,7 @@ class ParticipationStatusServiceTest {
         assertFalse(result.participated());
         assertTrue(result.canParticipate());
         assertNull(result.unavailableReason());
+        assertEquals("BASIC", result.gameCode());
     }
 
     @Test
@@ -102,6 +124,66 @@ class ParticipationStatusServiceTest {
     }
 
     @Test
+    @DisplayName("참여 설정이 없으면 참여할 수 없다 — POST 가 409 로 거절하는 것과 같은 판정")
+    void 설정이없으면_참여불가다() {
+        when(publicEventService.getPublicEvent(1L))
+                .thenReturn(event(MembershipGrade.NORMAL));
+        when(userService.getById(7L))
+                .thenReturn(user(MembershipGrade.BEST));
+        when(eventGameConfigRepository.findAllByEventId(1L)).thenReturn(List.of());
+
+        ParticipationStatusResponse result = service.getStatus(1L, 7L);
+
+        assertFalse(result.canParticipate());
+        assertEquals(ParticipationUnavailableReason.NOT_CONFIGURED, result.unavailableReason());
+        assertNull(result.gameCode(), "설정이 없으면 방식도 알 수 없다");
+    }
+
+    @Test
+    @DisplayName("참여 설정이 둘이면 없는 것과 같다 — 어느 방식으로 참여할지 정할 수 없다")
+    void 설정이둘이면_참여불가다() {
+        when(publicEventService.getPublicEvent(1L))
+                .thenReturn(event(MembershipGrade.NORMAL));
+        when(userService.getById(7L))
+                .thenReturn(user(MembershipGrade.BEST));
+        List<EventGameConfig> two = List.of(config("BASIC"), config("LUCKY_POUCH"));
+        when(eventGameConfigRepository.findAllByEventId(1L)).thenReturn(two);
+
+        ParticipationStatusResponse result = service.getStatus(1L, 7L);
+
+        assertFalse(result.canParticipate());
+        assertEquals(ParticipationUnavailableReason.NOT_CONFIGURED, result.unavailableReason());
+        assertNull(result.gameCode());
+    }
+
+    @Test
+    @DisplayName("등급이 부족하고 설정도 없으면 등급 사유를 먼저 말한다 — POST 의 검사 순서와 같다")
+    void 등급과설정이_둘다걸리면_등급이우선이다() {
+        when(publicEventService.getPublicEvent(1L))
+                .thenReturn(event(MembershipGrade.BEST));
+        when(userService.getById(7L))
+                .thenReturn(user(MembershipGrade.NORMAL));
+        when(eventGameConfigRepository.findAllByEventId(1L)).thenReturn(List.of());
+
+        ParticipationStatusResponse result = service.getStatus(1L, 7L);
+
+        assertEquals(ParticipationUnavailableReason.INSUFFICIENT_GRADE, result.unavailableReason());
+    }
+
+    @Test
+    @DisplayName("참여 방식을 그대로 내려준다 — 화면이 어떤 입력을 받을지 이걸로 고른다")
+    void 참여방식을_내려준다() {
+        when(publicEventService.getPublicEvent(1L))
+                .thenReturn(event(MembershipGrade.NORMAL));
+        when(userService.getById(7L))
+                .thenReturn(user(MembershipGrade.BEST));
+        List<EventGameConfig> pouch = List.of(config("LUCKY_POUCH"));
+        when(eventGameConfigRepository.findAllByEventId(1L)).thenReturn(pouch);
+
+        assertEquals("LUCKY_POUCH", service.getStatus(1L, 7L).gameCode());
+    }
+
+    @Test
     void 접근할수없는_이벤트는_기존예외를그대로반환한다() {
         when(publicEventService.getPublicEvent(1L))
                 .thenThrow(new EventNotAccessibleException());
@@ -123,5 +205,13 @@ class ParticipationStatusServiceTest {
                 "user07", "hash", "사용자", "user07@test.com",
                 null, 50000, grade
         );
+    }
+
+    private EventGameConfig config(String code) {
+        Game game = mock(Game.class);
+        when(game.getCode()).thenReturn(code);
+        EventGameConfig config = mock(EventGameConfig.class);
+        when(config.getGame()).thenReturn(game);
+        return config;
     }
 }
