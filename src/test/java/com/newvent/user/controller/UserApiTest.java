@@ -1,7 +1,7 @@
 package com.newvent.user.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
@@ -13,6 +13,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.OffsetDateTime;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +23,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.newvent.auth.dto.AuthUser;
@@ -52,33 +55,39 @@ class UserApiTest {
     @DisplayName("회원가입 성공 시 201과 생성된 회원 정보를 반환한다")
     void 회원가입_성공() throws Exception {
         User user = new User(
-                "user01", "hash", "이름", "user01@test.com", "010-0000-0000", 70000, MembershipGrade.EXCELLENT);
-        when(userService.signUp(anyString(), anyString(), anyString(), anyString(), any(), anyInt()))
-                .thenReturn(user);
+                "user01", "hash", "이름", "user01@test.com", "010-0000-0000", 35000, MembershipGrade.NORMAL);
+        when(userService.signUp(anyString(), anyString(), anyString(), anyString(), any())).thenReturn(user);
 
         mockMvc.perform(post("/api/public/users/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(
                                 """
                                 {"loginId":"user01","password":"password123","name":"이름",
-                                 "email":"user01@test.com","phone":"010-0000-0000","plan":70000}
+                                 "email":"user01@test.com","phone":"010-0000-0000"}
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.loginId").value("user01"))
-                .andExpect(jsonPath("$.data.membershipGrade").value("EXCELLENT"));
+                .andExpect(jsonPath("$.data.membershipGrade").value("NORMAL"));
     }
 
     @Test
-    @DisplayName("plan이 0 이하면 400을 반환한다 (서비스까지 못 감)")
-    void 회원가입_plan_유효성실패() throws Exception {
+    @DisplayName("가입 요청에 plan 을 넣어도 무시되고 서비스에는 요금제가 전달되지 않는다")
+    void 회원가입_plan은_무시된다() throws Exception {
+        User user = new User(
+                "user01", "hash", "이름", "user01@test.com", "010-0000-0000", 35000, MembershipGrade.NORMAL);
+        when(userService.signUp(anyString(), anyString(), anyString(), anyString(), any())).thenReturn(user);
+
         mockMvc.perform(post("/api/public/users/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(
                                 """
                                 {"loginId":"user01","password":"password123","name":"이름",
-                                 "email":"user01@test.com","plan":0}
+                                 "email":"user01@test.com","phone":"010-0000-0000","plan":100000}
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.plan").value(35000))
+                .andExpect(jsonPath("$.data.membershipGrade").value("NORMAL"));
+        verify(userService).signUp("user01", "password123", "이름", "user01@test.com", "010-0000-0000");
     }
 
     @Test
@@ -89,7 +98,7 @@ class UserApiTest {
                         .content(
                                 """
                                 {"loginId":"user01","password":"short","name":"이름",
-                                 "email":"user01@test.com","plan":50000}
+                                 "email":"user01@test.com"}
                                 """))
                 .andExpect(status().isBadRequest());
     }
@@ -97,7 +106,7 @@ class UserApiTest {
     @Test
     @DisplayName("중복 가입 시도 시 서비스가 던진 예외를 409로 변환한다")
     void 회원가입_중복ID_409() throws Exception {
-        when(userService.signUp(anyString(), anyString(), anyString(), anyString(), any(), anyInt()))
+        when(userService.signUp(anyString(), anyString(), anyString(), anyString(), any()))
                 .thenThrow(new DuplicateUserException(UserErrorCode.DUPLICATE_LOGIN_ID));
 
         mockMvc.perform(post("/api/public/users/signup")
@@ -105,22 +114,25 @@ class UserApiTest {
                         .content(
                                 """
                                 {"loginId":"user01","password":"password123","name":"이름",
-                                 "email":"user01@test.com","plan":50000}
+                                 "email":"user01@test.com"}
                                 """))
                 .andExpect(status().isConflict());
     }
 
     @Test
-    @DisplayName("내 정보 조회는 경로가 아니라 토큰의 id 로 회원을 찾는다")
+    @DisplayName("내 정보 조회는 경로가 아니라 토큰의 id 로 회원을 찾고, 요금제·등급·가입일을 돌려준다")
     void 내정보_조회_성공() throws Exception {
         User user = new User("user01", "hash", "이름", "user01@test.com", "010-0000-0000", 50000,
                 MembershipGrade.NORMAL);
+        ReflectionTestUtils.setField(user, "createdAt", OffsetDateTime.parse("2024-03-15T10:00:00+09:00"));
         when(userService.getById(7L)).thenReturn(user);
 
         mockMvc.perform(get("/api/users/me").header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.user(7L))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.loginId").value("user01"))
-                .andExpect(jsonPath("$.data.membershipGrade").value("NORMAL"));
+                .andExpect(jsonPath("$.data.plan").value(50000))
+                .andExpect(jsonPath("$.data.membershipGrade").value("NORMAL"))
+                .andExpect(jsonPath("$.data.joinedAt").value("2024-03-15"));
         verify(userService).getById(7L);
     }
 
@@ -204,32 +216,20 @@ class UserApiTest {
     }
 
     @Test
-    @DisplayName("요금제 변경 성공 시 재계산된 등급을 반환한다")
-    void 요금제변경_성공() throws Exception {
-        User user = new User("user01", "hash", "이름", "user01@test.com", null, 70000, MembershipGrade.EXCELLENT);
-        when(userService.changePlan(anyLong(), anyInt())).thenReturn(user);
-
-        mockMvc.perform(patch("/api/users/me/plan")
+    @DisplayName("사용자는 요금제를 바꿀 수 없다 - 변경 API 가 없어 성공하지 못하고 서비스도 호출되지 않는다")
+    void 사용자_요금제변경_불가() throws Exception {
+        int statusCode = mockMvc.perform(patch("/api/users/me/plan")
                         .header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.user(7L)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"plan":70000}
+                                {"plan":100000}
                                 """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.membershipGrade").value("EXCELLENT"));
-        verify(userService).changePlan(7L, 70000);
-    }
+                .andReturn()
+                .getResponse()
+                .getStatus();
 
-    @Test
-    @DisplayName("요금제에 음수를 넣으면 400을 반환한다")
-    void 요금제변경_유효성실패() throws Exception {
-        mockMvc.perform(patch("/api/users/me/plan")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.user(7L)))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"plan":-5}
-                                """))
-                .andExpect(status().isBadRequest());
+        assertThat(statusCode).isGreaterThanOrEqualTo(400);
+        verifyNoInteractions(userService);
     }
 
     private String bearer(AuthUser principal) {

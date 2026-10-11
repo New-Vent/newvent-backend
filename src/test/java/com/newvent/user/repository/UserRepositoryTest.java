@@ -77,4 +77,66 @@ class UserRepositoryTest {
 
         assertThrows(DataIntegrityViolationException.class, () -> userRepository.saveAndFlush(duplicate));
     }
+
+    // 시드 회원(V3)이 DB 에 이미 있으므로, 검색 테스트는 다른 데이터와 겹치지 않는 고유한 글자를 쓴다.
+    private User saved(String loginId, String name, String email, MembershipGrade grade) {
+        return userRepository.saveAndFlush(new User(loginId, "hash", name, email, null, 50000, grade));
+    }
+
+    @Test
+    @DisplayName("검색어는 아이디·이름·이메일 어디에 있어도 찾고 대소문자를 구분하지 않는다")
+    void 검색_아이디_이름_이메일() {
+        saved("zqx1login", "가나다", "zqx1a@test.com", MembershipGrade.NORMAL);
+        saved("other1", "ZQX2이름", "zqx2a@test.com", MembershipGrade.NORMAL);
+        saved("other2", "라마바", "other2@zqx3mail.com", MembershipGrade.NORMAL);
+        saved("other3", "사아자", "other3@test.com", MembershipGrade.NORMAL);
+
+        assertEquals(1, userRepository.searchUsers("%zqx1login%", null, 0, 10).getTotalElements());
+        assertEquals(1, userRepository.searchUsers("%zqx2이름%", null, 0, 10).getTotalElements());
+        assertEquals(1, userRepository.searchUsers("%zqx3mail%", null, 0, 10).getTotalElements());
+        assertEquals(0, userRepository.searchUsers("%zqx9none%", null, 0, 10).getTotalElements());
+    }
+
+    @Test
+    @DisplayName("검색어의 % 는 이스케이프하면 글자 그대로 찾는다 (와일드카드로 쓰이지 않는다)")
+    void 검색_와일드카드_이스케이프() {
+        saved("wild_pct", "퍼센트A", "zqxpct@test.com", MembershipGrade.NORMAL);
+        saved("wild_pcx", "퍼센트B", "zqxpcx@test.com", MembershipGrade.NORMAL);
+        saved("zqx%name", "퍼센트C", "zqxpcname@test.com", MembershipGrade.NORMAL);
+
+        // "zqx%" 를 이스케이프 없이 쓰면 zqx 로 시작하는 모두가 걸리지만, 이스케이프하면 % 가 든 하나만 걸린다
+        assertEquals(1, userRepository.searchUsers("%zqx!%name%", null, 0, 10).getTotalElements());
+        assertEquals(3, userRepository.searchUsers("%zqx%", null, 0, 10).getTotalElements());
+    }
+
+    @Test
+    @DisplayName("등급 필터는 해당 등급만 남긴다")
+    void 검색_등급필터() {
+        saved("zqxg1", "등급1", "zqxg1@test.com", MembershipGrade.NORMAL);
+        saved("zqxg2", "등급2", "zqxg2@test.com", MembershipGrade.EXCELLENT);
+        saved("zqxg3", "등급3", "zqxg3@test.com", MembershipGrade.BEST);
+
+        assertEquals(3, userRepository.searchUsers("%zqxg%", null, 0, 10).getTotalElements());
+        var excellent = userRepository.searchUsers("%zqxg%", MembershipGrade.EXCELLENT, 0, 10);
+        assertEquals(1, excellent.getTotalElements());
+        assertEquals("zqxg2", excellent.getContent().get(0).getLoginId());
+    }
+
+    @Test
+    @DisplayName("조건이 없으면 전체를 최근 가입순(id 내림차순)으로 페이지 단위로 돌려준다")
+    void 검색_조건없음_최근순_페이지() {
+        User first = saved("zqxp1", "페이지1", "zqxp1@test.com", MembershipGrade.NORMAL);
+        saved("zqxp2", "페이지2", "zqxp2@test.com", MembershipGrade.NORMAL);
+        User third = saved("zqxp3", "페이지3", "zqxp3@test.com", MembershipGrade.NORMAL);
+
+        var all = userRepository.searchUsers(null, null, 0, 2);
+        assertEquals(2, all.getContent().size());
+        assertEquals(third.getId(), all.getContent().get(0).getId());
+        assertTrue(all.getTotalElements() >= 3);
+
+        var onlyMine = userRepository.searchUsers("%zqxp%", null, 0, 2);
+        assertEquals(3, onlyMine.getTotalElements());
+        assertEquals(2, onlyMine.getTotalPages());
+        assertEquals(first.getId(), userRepository.searchUsers("%zqxp%", null, 1, 2).getContent().get(0).getId());
+    }
 }
