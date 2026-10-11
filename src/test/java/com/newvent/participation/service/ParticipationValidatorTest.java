@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.newvent.participation.domain.EventGameConfig;
@@ -225,6 +226,105 @@ class ParticipationValidatorTest {
                 predictionConfig(),
                 new ParticipationCreateRequest(
                         "HOME_WIN", "01012345678", null));
+    }
+
+    // ── validateConfig — 설정만 검증하는 입구 (관리자 설정 API 가 쓴다) ──────
+
+    @Test
+    @DisplayName("기본형 설정에 resultMode 가 없으면 통과한다 — 결과 없이 참여만 기록하는 이벤트")
+    void 기본형_resultMode_없으면_통과() {
+        validator.validateConfig(game("BASIC"), Map.of());
+    }
+
+    @Test
+    @DisplayName("IMMEDIATE 인데 winProbability 나 prizeName 이 없으면 거부한다 — 전에는 통과하고 참여할 때 터졌다")
+    void 기본형_IMMEDIATE_필수값_누락은_거부() {
+        for (Map<String, Object> values : List.<Map<String, Object>>of(
+                Map.of("resultMode", "IMMEDIATE"),
+                Map.of("resultMode", "IMMEDIATE", "winProbability", 30),
+                Map.of("resultMode", "IMMEDIATE", "prizeName", "쿠폰"),
+                Map.of("resultMode", "IMMEDIATE", "winProbability", 101, "prizeName", "쿠폰"),
+                Map.of("resultMode", "IMMEDIATE", "winProbability", 30, "prizeName", " "))) {
+            assertConfigError("BASIC", values);
+        }
+    }
+
+    @Test
+    void 기본형_IMMEDIATE_는_확률과_경품명이_모두_있으면_통과() {
+        validator.validateConfig(
+                game("BASIC"),
+                Map.of("resultMode", "IMMEDIATE", "winProbability", 30, "prizeName", "데이터 5GB"));
+    }
+
+    @Test
+    void 기본형_GUARANTEED_는_경품명이_필요하다() {
+        assertConfigError("BASIC", Map.of("resultMode", "GUARANTEED"));
+        validator.validateConfig(game("BASIC"), Map.of("resultMode", "GUARANTEED", "prizeName", "쿠폰"));
+    }
+
+    @Test
+    void 기본형_DELAYED_는_추가값이_없어도_된다() {
+        validator.validateConfig(game("BASIC"), Map.of("resultMode", "DELAYED"));
+    }
+
+    @Test
+    void 모르는_resultMode_는_거부한다() {
+        assertConfigError("BASIC", Map.of("resultMode", "SOMEDAY"));
+    }
+
+    @Test
+    @DisplayName("사전예약형은 설정이 없다 — 전화번호는 입력이고 설정이 아니다")
+    void 사전예약형은_설정이_없다() {
+        validator.validateConfig(game("PRE_REGISTRATION"), Map.of());
+    }
+
+    @Test
+    void 설정검증도_복주머니_규칙을_그대로_적용한다() {
+        assertConfigError("LUCKY_POUCH", Map.of("pouches", List.of()));
+        assertConfigError("LUCKY_POUCH", Map.of(
+                "pouches", List.of(Map.of("pouchIndex", 1, "winProbability", 10))));
+        validator.validateConfig(game("LUCKY_POUCH"), Map.of(
+                "pouches", List.of(
+                        Map.of("pouchIndex", 1, "winProbability", 10, "prizeName", "상품권"),
+                        Map.of("pouchIndex", 2, "winProbability", 100, "prizeName", "데이터"))));
+    }
+
+    @Test
+    void 설정이_null_이면_거부한다() {
+        ParticipationException exception = assertThrows(
+                ParticipationException.class,
+                () -> validator.validateConfig(game("BASIC"), null));
+        assertEquals(ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED, exception.getErrorCode());
+    }
+
+    @Test
+    void 비활성_방식은_설정도_거부한다() {
+        Game game = mock(Game.class);
+        when(game.getCode()).thenReturn("BASIC");
+        when(game.isActive()).thenReturn(false);
+
+        ParticipationException exception = assertThrows(
+                ParticipationException.class,
+                () -> validator.validateConfig(game, Map.of()));
+        assertEquals(ParticipationErrorCode.UNSUPPORTED_PARTICIPATION_TYPE, exception.getErrorCode());
+    }
+
+    private Game game(String code) {
+        Game game = mock(Game.class);
+        when(game.getCode()).thenReturn(code);
+        when(game.isActive()).thenReturn(true);
+        return game;
+    }
+
+    private void assertConfigError(String code, Map<String, Object> values) {
+        Game game = game(code);
+        ParticipationException exception = assertThrows(
+                ParticipationException.class,
+                () -> validator.validateConfig(game, values));
+        assertEquals(
+                ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED,
+                exception.getErrorCode(),
+                () -> "설정 오류여야 합니다: " + values);
     }
 
     private EventGameConfig predictionConfig() {
