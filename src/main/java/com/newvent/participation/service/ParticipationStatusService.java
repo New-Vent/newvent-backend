@@ -1,9 +1,9 @@
 package com.newvent.participation.service;
 
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 import com.newvent.event.domain.Event;
 import com.newvent.event.service.PublicEventService;

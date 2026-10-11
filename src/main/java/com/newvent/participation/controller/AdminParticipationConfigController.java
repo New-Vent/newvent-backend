@@ -18,7 +18,6 @@ import com.newvent.participation.service.ParticipationConfigService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-
 import lombok.RequiredArgsConstructor;
 
 @Tag(name = "참여 설정", description = "이벤트의 참여 방식과 설정. 이벤트를 만든 관리자만 쓴다 — "

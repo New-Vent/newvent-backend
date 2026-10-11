@@ -3,7 +3,6 @@ package com.newvent.participation.dto.response;
 import com.newvent.participation.domain.ParticipationUnavailableReason;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import lombok.Builder;
 
 @Builder
