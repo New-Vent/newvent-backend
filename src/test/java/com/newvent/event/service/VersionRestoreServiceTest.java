@@ -57,7 +57,20 @@ class VersionRestoreServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new VersionRestoreService(eventRepository, eventVersionRepository, versionStore);
+        service = new VersionRestoreService(eventRepository, eventVersionRepository, versionStore,
+                java.time.Clock.fixed(java.time.Instant.parse("2026-10-08T00:00:00Z"), java.time.ZoneOffset.UTC));
+    }
+
+    @Test
+    void 종료_잠금된_이벤트는_버전을_되돌릴_수_없다() {
+        Event event = ownedEvent();
+        이벤트가_있다(event);
+        when(event.editLocked(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+        assertThatThrownBy(() -> service.restore(EVENT_ID, V2_ID, ADMIN_ID))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode())
+                .isEqualTo(EventErrorCode.EVENT_ENDED_NOT_EDITABLE);
+        verifyNoInteractions(eventVersionRepository, versionStore);
     }
 
     // ── 준비물 ───────────────────────────────────────────────────

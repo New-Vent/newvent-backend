@@ -47,6 +47,7 @@ public class AdminEventController {
 
     @GetMapping
     public ApiResponse<PageResponse<EventSummaryResponse>> list(
+            @AuthenticationPrincipal AuthUser principal,
             @RequestParam(required = false) String name,
             @RequestParam(required = false) EventStatus status,
             @RequestParam(required = false) EventProgress progress,
@@ -54,13 +55,13 @@ public class AdminEventController {
             @RequestParam(required = false) OffsetDateTime periodTo,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "10") @Min(1) @Max(50) int size) {
-        return ApiResponse.success(
-                eventService.findAdminEvents(name, status, progress, periodFrom, periodTo, page, size));
+        return ApiResponse.success(eventService.findAdminEvents(
+                principal.id(), name, status, progress, periodFrom, periodTo, page, size));
     }
 
     @GetMapping("/{id}")
-    public ApiResponse<EventDetailResponse> detail(@PathVariable Long id) {
-        return ApiResponse.success(eventService.findAdminEvent(id));
+    public ApiResponse<EventDetailResponse> detail(@AuthenticationPrincipal AuthUser principal, @PathVariable Long id) {
+        return ApiResponse.success(eventService.findAdminEvent(principal.id(), id));
     }
 
     // 목록 화면 상단 카운트(전체/미게시/진행중/종료). 삭제된 건 제외.
@@ -71,9 +72,10 @@ public class AdminEventController {
 
     @GetMapping("/trash")
     public ApiResponse<PageResponse<EventSummaryResponse>> trash(
+            @AuthenticationPrincipal AuthUser principal,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "10") @Min(1) @Max(50) int size) {
-        return ApiResponse.success(eventService.findDeletedEvents(page, size));
+        return ApiResponse.success(eventService.findDeletedEvents(principal.id(), page, size));
     }
 
     @PostMapping

@@ -483,9 +483,12 @@ public class EditService {
         boolean present = !BlockValidator.blockOf(doc, r.block()).isBlank();
 
         if (r.op() == Op.ADD && present) {
-            log.info("수정 — {} 는 이미 있어 ADD 를 EDIT 으로 본다 (event={})",
+            // ★★ 전에는 여기서 op 을 EDIT 으로 바꿨다. 그러면 "항목 하나 더" 라는 의도가
+            //    사라져서, 아래 검증기가 ITEM_ADDED 로 막을 때 그게 맞는지 틀린지 알 수 없었다.
+            //    삽입이냐 병합이냐는 apply() 가 before 로 가르므로 op 은 ADD 로 둬도 된다.
+            log.info("수정 — {} 는 이미 있다. 영역이 아니라 **항목**을 더하는 요청으로 본다 (event={})",
                     r.block().key(), job.eventId());
-            return new Decision.Run(r.block(), Op.EDIT, r.content());
+            return r;
         }
 
         if (r.op() != Op.ADD && !present) {
@@ -524,6 +527,11 @@ public class EditService {
         log.info("수정 — {} {} (event={}, job={}, 호출묶음={})",
                 block.key(), step.op(), cmd.eventId(), job.jobId(), ctx.requestId());
 
+        // ★ 항목 하나를 더하는 요청인가. 시스템 프롬프트 · 사용자 프롬프트 · 검증기
+        //   **세 곳이 같은 답**을 써야 한다. 한 곳이라도 빠지면 지시가 어긋나고,
+        //   어긋난 지시를 받은 모델은 그대로 두거나 지어낸다 — 둘 다 실패다
+        boolean addItem = step.op() == Op.ADD && !before.isBlank();
+
         RetryService.Result res;
         try {
             res = retry.run(ctx,
@@ -531,10 +539,14 @@ public class EditService {
                     // ★★ step.op() 을 넘긴다. 전에는 안 넘겨서 라우터가 STYLE 로 분류해도
                     //   EDIT 과 **똑같은 프롬프트**가 나갔다 — op 은 위 로그 한 줄에만 쓰였다.
                     //   그래서 "더 화려하게" 에 모델이 이모지만 붙이고 모양은 안 바꿨다.
+                    // ★★ addItem 을 넘긴다. 안 넘기면 "항목을 새로 만들거나 지우지 마라" 가
+                    //   그대로 나가서, 사용자 프롬프트의 "하나만 더한다" 와 정면으로 어긋난다
                     PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks(),
-                            step.op() == Op.STYLE),
+                            step.op() == Op.STYLE, addItem),
                     userPrompt(cmd, step, before),
-                    HtmlPolicy.edit(block, before, cmd.requestText()));
+                    // ★ 항목을 하나 더하는 요청이면 검증기에 그렇게 알린다. 안 알리면
+                    //   ITEM_ADDED 로 4회가 전부 터지고 관리자는 이유를 못 듣는다
+                    HtmlPolicy.edit(block, before, cmd.requestText(), addItem));
         } catch (RetryService.Aborted e) {
             // ★ 터진 시도의 실패 행은 문이 남겼다. 그 앞의 시도들은 아직 아무도 안 남겼다.
             //   ctx 가 여기 있으므로 여기서 남긴다 — runSafely 로 올라가면 못 남긴다
@@ -641,6 +653,16 @@ public class EditService {
         if (step.content() != null && !step.content().isBlank()) {
             s.add("[관리자가 직접 쓴 문구 — 이 문구를 그대로 쓴다]");
             s.add(step.content().strip());
+            s.add("");
+        }
+
+        // ★ 항목 하나를 더하는 요청. 프롬프트의 기본 자세는 "문구만 고쳐라" 라서,
+        //   여기서 말해 주지 않으면 모델이 아무것도 안 하고 원본을 돌려준다
+        //   ("참여 방법에 선착순 3,000명 추가" 가 그랬다 — 실측).
+        if (step.op() == Op.ADD && !before.isBlank()) {
+            s.add("[이번 요청은 **항목 하나를 더하는 것**이다]");
+            s.add("- 이 영역의 목록에 항목을 **하나만** 더한다. 기존 항목은 그대로 둔다.");
+            s.add("- 더하는 내용은 위 관리자 문구를 쓴다. 없는 혜택이나 수치를 지어내지 마라.");
             s.add("");
         }
 

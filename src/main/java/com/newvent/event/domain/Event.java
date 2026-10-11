@@ -180,6 +180,10 @@ public class Event extends BaseTimeEntity {
         return status == EventStatus.PUBLISHED;
     }
 
+    public boolean ownedBy(Long adminId) {
+        return adminId != null && ownerAdmin != null && adminId.equals(ownerAdmin.getId());
+    }
+
     /**
      * 게시 중이고 이미 시작했으며, 종료 3일 전부터 종료 시각까지(포함)면 마감 임박.
      * 종료 시각 포함은 자동 종료({@code endDate < now})·공개 접근 기간과 같은 기준이다.
