@@ -251,21 +251,134 @@ DELETE /{id}/permanent  영구 삭제 (되돌릴 수 없음)
 어느 쪽이 맞는지 정할 근거가 없습니다. 설정 API 는 기존 설정을 **조회만** 하고 생성·수정하지
 않습니다.
 
----
+그래서 **상태 API 가 `gameCode` 를 내려줍니다.** 화면이 어떤 입력을 받을지 이걸로 고릅니다 —
+`ParticipationCreateRequest` 는 `prediction`·`phoneNumber`·`pouchIndex` 셋을 받는데 방식마다
+**하나만** 보내야 하고 나머지를 보내면 400 입니다.
 
-## 11. 미리보기 HTML 은 읽기 전용으로 띄웁니다
+### 상태 API 와 참여 API 의 판정이 같아야 합니다
 
-버전 상세·미리보기가 돌려주는 HTML 은 **LLM 이 만든 것**입니다. 정화를 거치지만 화면에
-넣을 때도 격리해야 합니다.
-
-```html
-<iframe sandbox srcdoc="…">   <!-- allow-same-origin 을 주지 않는다 -->
+```
+GET  /api/users/me/events/{id}/participation-status     canParticipate · unavailableReason · gameCode
+POST /api/users/me/events/{id}/participations           실제 참여
 ```
 
-`allow-same-origin` 을 주면 iframe 안의 스크립트가 **부모 문서의 쿠키·DOM 에 접근**합니다.
-정화를 한 번 통과한 HTML 이라도 그 권한을 줄 이유가 없습니다.
+**두 판정이 어긋나면 화면이 "항상 실패하는 버튼" 을 띄웁니다.** 실제로 그랬습니다 — 상태
+API 가 참여 설정을 보지 않아서, 설정이 없는 이벤트에 `canParticipate: true` 를 주고 POST 는
+`409 PARTICIPATION409-1` 로 거절했습니다.
+
+검사 순서도 맞춥니다.
+
+| 순서 | 조건 | 상태 API | 참여 API |
+| --- | --- | --- | --- |
+| 1 | 이미 참여 | `ALREADY_PARTICIPATED` | `409 PARTICIPATION409-0` |
+| 2 | 등급 미달 | `INSUFFICIENT_GRADE` | `403 PARTICIPATION403-0` |
+| 3 | 설정이 하나가 아님 | `NOT_CONFIGURED` | `409 PARTICIPATION409-1` |
+
+**설정이 "하나" 여야 합니다.** 없으면 참여할 수 없고, 둘이면 어느 방식으로 참여할지 정할
+근거가 없어서 없는 것과 같이 다룹니다 (`configs.size() == 1`).
+
+> `NOT_CONFIGURED` 는 **사용자가 고칠 수 없는 사유**입니다. "등급이 부족해요" 처럼 사용자
+> 탓으로 읽히면 안 되고, 화면에서는 "준비 중" 으로 보여주고 버튼을 숨기는 쪽이 맞습니다.
+
+### 참여 설정은 이벤트당 하나이고, 참여가 시작되면 잠깁니다
+
+```
+PUT /api/admin/events/{eventId}/participation-config    { gameCode, config }
+GET /api/admin/events/{eventId}/participation-config
+```
+
+**`POST` 가 아니라 `PUT` 입니다.** 이벤트당 설정이 하나라서(`configs.size() != 1` 을 거부)
+있으면 그 행을 고치고 없으면 만듭니다. 방식이 바뀌어도 행을 새로 만들지 않습니다 —
+새로 만들면 둘이 되어 참여가 막힙니다.
+
+**참여 기록이 한 건이라도 있으면 바꿀 수 없습니다** (`409 PARTICIPATION409-3`).
+이미 저장된 `result_data` 가 그때의 방식을 전제합니다 — `BASIC` 으로 참여한 기록이 있는데
+`LUCKY_POUCH` 로 바꾸면 그 기록에 `pouchIndex` 가 없습니다.
+
+**조회는 설정이 없어도 404 가 아닙니다.** `gameCode: null`, `config: {}` 를 줍니다.
+설정 화면은 어차피 빈 폼으로 시작하므로 클라이언트가 분기를 만들 필요가 없습니다.
+
+#### 설정 검증은 한 곳입니다
+
+`ParticipationValidator` 에 입구가 둘입니다.
+
+```java
+validateConfig(game, config)        // 설정만 — 설정 저장 API
+validate(eventGameConfig, request)  // 설정 + 입력 — 참여 API (앞의 것을 먼저 부른다)
+```
+
+**설정 규칙을 두 벌로 쓰지 않습니다.** 설정 API 가 자기 검증을 따로 가지면 "저장은 됐는데
+참여는 안 되는" 설정이 생깁니다.
+
+> ⚠️ **`BASIC` 의 설정은 한동안 검증되지 않았습니다.** `validateBasic` 이 `config` 를 보지
+> 않는데 `processBasic` 은 `resultMode` 를 읽고, `IMMEDIATE` 면 `winProbability`·`prizeName` 을,
+> `GUARANTEED` 면 `prizeName` 을 요구했습니다. 그래서 `{"resultMode":"IMMEDIATE"}` 같은 반쪽
+> 설정이 저장되면 **검증은 통과하고 참여할 때마다 `409`** 가 났습니다. `validateBasicConfig` 로
+> 막았습니다 — 설정 저장 API 가 그 상태를 만들 수 있었던 것이 계기입니다.
+
+`V18__seed_published_event_participation.sql` 은 게시 중인 이벤트의 **초기값**입니다. 위 API 로
+덮어쓰면 되고, **지우지 않습니다** — 뒤에 마이그레이션이 생긴 뒤 지우면 Flyway 가 기동을
+멈춥니다(`Detected applied migration not resolved locally`). V7·V8·V9 와 같은 성격입니다.
+
+---
+
+## 11. 미리보기 HTML 은 iframe 으로 격리합니다
+
+버전 상세·미리보기가 돌려주는 HTML 을 **관리자 DOM 에 직접 넣지 않습니다.**
+
+위험한 쪽이 LLM 출력이라고 생각하기 쉬운데 반대입니다. 백지 생성 결과는
+`BlockValidator.sanitizeGenerated` 가 `script`·`button`·`id`·`data-slot` 을 전부 지웁니다.
+남는 것은 **사람이 쓴 쪽**입니다.
+
+| 출처 | `<script>` | 왜 |
+| --- | --- | --- |
+| 백지 생성 (LLM) | **없음** | Safelist 가 지운다 |
+| 기본 제공 템플릿 5종 | **있음 (각 1개)** | `TemplateService.sanitizeIfNeeded` 가 `builtin()` 은 정화하지 않는다 — 우리가 보증하는 HTML 이다 |
+| 관리자 등록 템플릿 | 조건부 | `SavedTemplateHtml` 이 기본 5종과 **바이트가 같은 것만** 통과시킨다 (`Approved.SCRIPTS`) |
+
+즉 미리보기 안에서 실제로 실행될 수 있는 스크립트는 **우리가 쓴 것뿐**입니다. 그래도
+격리합니다 — 정화 규칙에 구멍이 생기면 그때는 관리자 세션 전체가 걸립니다.
+
+### sandbox 는 모드에 따라 다릅니다
+
+```html
+<!-- 읽기: 버전 상세 · 공개 이벤트 상세 -->
+<iframe sandbox="allow-same-origin" srcdoc="…">
+
+<!-- 에디터: 블록 선택 · 직접 편집 -->
+<iframe sandbox="allow-same-origin allow-scripts" srcdoc="…">
+```
+
+**`allow-same-origin` 을 주는 이유** — iframe 안의 마크업은 "여기가 1번 칸" 이라고
+**선언만** 하고, 클릭 처리와 API 호출은 **호스트가** 합니다. 그래야 생성된 HTML 에
+스크립트를 넣지 않고도 인터랙션을 붙일 수 있습니다. 호스트가 `contentDocument` 에
+이벤트 위임을 걸려면 same-origin 이어야 합니다.
+
+**위험의 방향을 구분합니다.**
+
+| 무엇 | 필요한 권한 | 위험 |
+| --- | --- | --- |
+| 호스트가 iframe 을 읽는다 (클릭 위임·블록 선택·높이 측정) | `allow-same-origin` | 없음 — 부모가 자식을 읽는 것이다 |
+| iframe 안 스크립트가 부모의 쿠키·DOM 을 건드린다 | `allow-same-origin` **＋** `allow-scripts` | 관리자 세션 탈취 |
+
+**`allow-same-origin` 만으로는 두 번째가 성립하지 않습니다.** iframe 안의 스크립트가
+아예 실행되지 않기 때문입니다. 그래서 읽기 모드에서는 `allow-scripts` 를 주지 않습니다.
+
+**에디터에만 둘을 같이 주는 이유** — 템플릿이 노출하는 `window.newVentReinit(blockKey)` 을
+불러야 블록을 갈아끼운 뒤 타이머·참가자 카운터가 새 DOM 에 다시 붙습니다. 에디터는
+관리자 **본인 이벤트만** 열고, 그 HTML 의 스크립트는 위 표의 조건을 통과한 것뿐입니다.
+
+> 읽기 모드에서 `allow-scripts` 를 빼면 **덤이 하나 있습니다.** 템플릿 자체의 데모
+> 토스트 위임이 돌지 않아, 호스트가 capture 단계에서 전파를 끊어 싸울 필요가 없습니다.
 
 조회 API 는 **조회만** 합니다. 저장된 버전·현재 작업 내용·게시 버전을 바꾸지 않습니다.
+
+### 버전 상세는 슬롯이 빈 원문입니다
+
+`GET /api/admin/events/{eventId}/versions/{versionId}` 는 `html_content` 를 **그대로**
+돌려줍니다. `Slots.fill` 을 거치지 않으므로 **기간·참여 링크가 빈칸으로 보입니다.**
+공개 상세(`publishedHtml`)는 채워서 주므로 두 API 의 동작이 다릅니다 — 미리보기에
+기간이 안 보이는 것은 버그가 아닙니다. 값을 보여줘야 하면 호스트가 채웁니다.
 
 ---
 
