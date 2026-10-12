@@ -53,6 +53,8 @@ public class GenerateController {
             description = "202 와 jobId 를 돌려주고 생성은 서버에서 계속 돈다. 이벤트를 만든 관리자만 할 수 있다 (아니면 403 COMMON403-0). "
                     + "templateCode 를 보내지 않으면 이벤트에 붙은 템플릿으로, 빈 문자열이면 requestText 로 AI 가 만든다. "
                     + "템플릿 경로에서는 모델을 부르지 않는다. 둘을 같이 보내면 요청문이 버려지므로 400 (GEN400-3). "
+                    + "AI 경로에서는 requestText 로 다른 이벤트의 비슷한 예시를 거리 0.5 이내에서 최대 3개 찾아 프롬프트에 참고로 넣는다. "
+                    + "검색이 실패하거나 결과가 없어도 생성은 그대로 진행된다. "
                     + "AI 경로에서 requestText 가 비면 400 (GEN400-0), 500자를 넘으면 400. "
                     + "요청문에 개인정보가 보이면 바로 ASK_BACK 으로 끝나고, 확인한 뒤 privacyConfirmationJobId·privacyConfirmed 를 담아 "
                     + "다시 보낸다 (확인 요청이 없거나 만료 409 FILTER409-0, 내용이 다르면 409 FILTER409-2). "
