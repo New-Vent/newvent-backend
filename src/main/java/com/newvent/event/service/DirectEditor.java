@@ -32,6 +32,14 @@ import com.newvent.registry.Slot;
 public final class DirectEditor {
 
     private DirectEditor() {}
+    private static final String TEXT_ID_PREFIX = "nv-direct-text-";
+    private static boolean marked(TextNode node) {
+        return node.parent() instanceof Element el && el.normalName().equals("span")
+                && el.id().startsWith(TEXT_ID_PREFIX);
+    }
+    private static String editableValue(TextNode node) {
+        return marked(node) ? node.getWholeText() : node.text().trim();
+    }
 
     /** 미리보기 HTML과 저장본에 공통으로 적용하는 편집 가능 문구 순서. */
     public record EditableText(int index, String before) {}
@@ -41,7 +49,7 @@ public final class DirectEditor {
         List<TextNode> nodes = collectTextNodes(Jsoup.parseBodyFragment(html));
         List<EditableText> result = new ArrayList<>(nodes.size());
         for (int i = 0; i < nodes.size(); i++) {
-            result.add(new EditableText(i, nodes.get(i).text().trim()));
+            result.add(new EditableText(i, editableValue(nodes.get(i))));
         }
         return List.copyOf(result);
     }
@@ -96,14 +104,23 @@ public final class DirectEditor {
             }
 
             TextNode targetNode = textNodes.get(idx);
-            String actualText = targetNode.text().trim();
-            String expectedText = edit.before().trim();
+            String actualText = editableValue(targetNode);
+            String expectedText = marked(targetNode) ? edit.before() : edit.before().trim();
 
-            if (!actualText.equals(expectedText) && !targetNode.getWholeText().trim().equals(expectedText)) {
+            if (!actualText.equals(expectedText)
+                    && (marked(targetNode) || !targetNode.getWholeText().trim().equals(expectedText))) {
                 throw new DirectEditException(DirectEditErrorCode.BEFORE_TEXT_MISMATCH);
             }
 
-            targetNode.text(edit.after());
+            if (!marked(targetNode)) {
+                String id = TEXT_ID_PREFIX + idx;
+                while (doc.getElementById(id) != null) id += "-next";
+                Element holder = new Element("span").attr("id", id)
+                        .attr("style", "white-space: pre-line;");
+                targetNode.replaceWith(holder);
+                holder.appendChild(targetNode);
+            }
+            targetNode.text(edit.after().replace("\r\n", "\n").replace('\r', '\n'));
         }
 
         return doc.body().html();
@@ -193,6 +210,10 @@ public final class DirectEditor {
     }
 
     private static List<TextNode> collectTextNodes(Document doc) {
+        // Empty text nodes do not survive HTML parsing. Recreate the node in its retained holder.
+        for (Element el : doc.select("span[id^=" + TEXT_ID_PREFIX + "]")) {
+            if (el.childNodeSize() == 0) el.appendChild(new TextNode(""));
+        }
         List<TextNode> result = new ArrayList<>();
         Element body = doc.body();
         if (body == null) {
@@ -218,7 +239,7 @@ public final class DirectEditor {
                     }
                 } else if (node instanceof TextNode tn) {
                     if (blockDepth > 0 && noticeDepth == 0 && periodDepth == 0) {
-                        if (!isIgnoredParent(tn) && !tn.isBlank()) {
+                        if (!isIgnoredParent(tn) && (!tn.isBlank() || marked(tn))) {
                             result.add(tn);
                         }
                     }

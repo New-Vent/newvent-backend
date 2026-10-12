@@ -25,6 +25,9 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     // 전체 재색인용. 삭제된 이벤트는 건너뛴다
     List<Event> findAllByDeletedAtIsNull();
 
+    /** 시드 멱등 가드 — 삭제되지 않은 SEED: 이벤트가 이미 있으면 재실행 시 건너뛴다. */
+    boolean existsByTitleStartingWithAndDeletedAtIsNull(String prefix);
+
     /**
      * 버전을 덧붙이기 전에 이벤트 행을 잠근다 — {@code SELECT … FOR UPDATE}.
      *
@@ -205,4 +208,12 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     // 관리자 목록 화면 상단 카운트 — 상태별로 묶어서 한 번에 센다(삭제된 건 제외).
     @Query("SELECT e.status, COUNT(e) FROM Event e WHERE e.deletedAt IS NULL GROUP BY e.status")
     List<Object[]> countGroupedByStatus();
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT e
+        FROM Event e
+        WHERE e.id = :eventId
+        """)
+    Optional<Event> findByIdForDraw(@Param("eventId") Long eventId);
 }

@@ -1,8 +1,10 @@
 questions:
+  # ── 일반 질의 ──
   - query: "신규 가입 혜택"
     expectedBlock: benefits
   - query: "참여 방법"
     expectedBlock: steps
+  # 주의: 시드 hero에는 기간 문구가 없어서 시드 기준으로는 실패할 수 있음
   - query: "이벤트 기간"
     expectedBlock: hero
   - query: "참여 버튼 문구"
@@ -13,9 +15,77 @@ questions:
     expectedBlock: steps
   - query: "이벤트 제목 추천"
     expectedBlock: hero
+  - query: "무료 배송"
+    expectedBlock: benefits
+
+  # ── negative: 결과가 없어야 정상 ──
   - query: "유의사항"
     expectedBlock:
   - query: "존재하지 않는 내용 xyz123"
     expectedBlock:
-  - query: "무료 배송"
+  - query: "주식 투자 전략"
+    expectedBlock:
+  - query: "당첨자 발표일"
+    expectedBlock:
+  - query: "문의처 고객센터 전화번호"
+    expectedBlock:
+
+  # ── 시드: 블록별 ──
+  - query: "승부 예측 경품"
     expectedBlock: benefits
+  - query: "출석 버튼 눌러 복주머니 열기"
+    expectedBlock: steps
+  - query: "최우수 쿠폰팩"
+    expectedBlock: benefits
+  - query: "타임딜 마감 시간"
+    expectedBlock: highlight
+  - query: "사전예약 방법"
+    expectedBlock: steps
+  - query: "경품 응모하기"
+    expectedBlock: cta
+  - query: "참여 대상 등급"
+    expectedBlock: audience
+  - query: "요금제 비교표"
+    expectedBlock: compare
+  - query: "연차에 따라 단계별 보상이 지급되는 방식"
+    expectedBlock: intro
+  - query: "배송은 언제 오나요"
+    expectedBlock: faq
+  - query: "베타 기간 비용"
+    expectedBlock: faq
+
+  # ── 시드: 특정 블록에만 나오는 문구 ──
+  - query: "스마트워치 할인"
+    expectedBlock: benefits
+  - query: "우천 시 전액 환불"
+    expectedBlock: benefits
+  - query: "스탬프 모아서 경품 응모"
+    expectedBlock: steps
+  - query: "자정에 새해 소원 적기"
+    expectedBlock: steps
+  - query: "재고 소진 시 종료"
+    expectedBlock: hero
+  - query: "스코어 맞히기"
+    expectedBlock: benefits
+  - query: "응원왕 투표"
+    expectedBlock: hero
+  - query: "세뱃돈 뽑기"
+    expectedBlock: steps
+  - query: "송편 세트"
+    expectedBlock: benefits
+  - query: "데이터 3GB"
+    expectedBlock: benefits
+  - query: "자정까지 반짝세일"
+    expectedBlock: hero
+  - query: "초대장 발송"
+    expectedBlock: steps
+  - query: "가족 결합 할인"
+    expectedBlock: benefits
+
+  # ── 시드: 엣지 케이스 ──
+  - query: "free data for new members"
+    expectedBlock: benefits
+  - query: "리뷰 작성 시 적립"
+    expectedBlock: benefits
+  - query: "안내문이 여러 청크로 나뉘어 저장되는지"
+    expectedBlock: hero
