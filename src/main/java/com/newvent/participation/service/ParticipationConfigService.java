@@ -8,6 +8,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.auth.dto.AuthUser;
 import com.newvent.event.domain.Event;
+import com.newvent.event.exception.EventErrorCode;
+import com.newvent.event.exception.EventException;
+import com.newvent.event.repository.EventRepository;
 import com.newvent.event.service.EventOwnerCheck;
 import com.newvent.participation.domain.EventGameConfig;
 import com.newvent.participation.domain.Game;
@@ -42,6 +45,7 @@ import lombok.extern.slf4j.Slf4j;
 public class ParticipationConfigService {
 
     private final EventOwnerCheck ownerCheck;
+    private final EventRepository eventRepository;
     private final GameRepository gameRepository;
     private final EventGameConfigRepository eventGameConfigRepository;
     private final EventParticipationRepository participationRepository;
@@ -54,16 +58,37 @@ public class ParticipationConfigService {
             String gameCode,
             Map<String, Object> config
     ) {
-        Event event = ownerCheck.requireOwned(eventId, admin);
+        // ① 권한을 먼저 본다. 남의 이벤트가 행을 잠그게 하지 않는다
+        ownerCheck.requireOwned(eventId, admin);
+
+        // ② ★ 이벤트 행을 잠근다 (SELECT … FOR UPDATE)
+        //   ParticipationService.participate 가 맨 먼저 같은 잠금을 잡는다.
+        //   잠금 없이 existsByEventId 만 보면 이런 경합이 생긴다:
+        //
+        //     관리자(설정 변경)            사용자(참여)
+        //     existsByEventId → 0건
+        //                                  설정 읽기 (옛 방식)
+        //                                  참여 저장 (옛 방식의 result_data)
+        //                                  커밋
+        //     changeConfig (새 방식)
+        //     커밋
+        //
+        //   결과: result_data 는 BASIC 인데 설정은 LUCKY_POUCH 다. 그 기록에는
+        //   pouchIndex 가 없어서 조회 화면이 설명할 수 없는 상태가 된다.
+        //   같은 행을 잠그면 두 트랜잭션이 직렬화되어 뒤에 온 쪽이 기다린다.
+        Event event = eventRepository.findByIdForDraw(eventId)
+                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
 
         Game game = gameRepository.findByCode(gameCode)
                 .orElseThrow(() -> new ParticipationException(
                         ParticipationErrorCode.UNSUPPORTED_PARTICIPATION_TYPE));
 
-        // ★ 저장 전에 검증한다. 통과하지 못한 설정이 DB 에 남으면
+        // ③ 저장 전에 검증한다. 통과하지 못한 설정이 DB 에 남으면
         //   상태 API 는 "참여 가능" 이라 하고 참여 API 는 409 를 내는 상태가 된다.
         validator.validateConfig(game, config);
+        requireAnnouncementAfterEnd(event, game, config);
 
+        // ④ 잠금을 잡은 뒤에 본다. 이제 그 사이에 참여가 끼어들 수 없다
         if (participationRepository.existsByEventId(eventId)) {
             throw new ParticipationException(ParticipationErrorCode.PARTICIPATION_CONFIG_LOCKED);
         }
@@ -89,6 +114,25 @@ public class ParticipationConfigService {
 
         eventGameConfigRepository.flush();
         return ParticipationConfigResponse.from(eventId, saved);
+    }
+
+    /**
+     * 추후 추첨의 발표 시각은 **이벤트 종료 이후**여야 한다.
+     *
+     * ★ 스케줄러(DelayedEventDrawService)가 같은 조건을 검사하고 어기면 예외를 던진다.
+     *   거기서 걸리면 로그에만 남고 관리자는 모른다 — 저장 시점에 막는다.
+     * ★ 종료일이 없으면 비교할 수 없으니 통과시킨다. 그 경우 스케줄러도 돌지 않는다.
+     */
+    private void requireAnnouncementAfterEnd(Event event, Game game, Map<String, Object> config) {
+        if (!"BASIC".equals(game.getCode()) || !"DELAYED".equals(String.valueOf(config.get("resultMode")))) {
+            return;
+        }
+        if (event.getEndDate() == null) {
+            return;
+        }
+        if (!validator.readAnnouncementAt(config).isAfter(event.getEndDate())) {
+            throw new ParticipationException(ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED);
+        }
     }
 
     /**

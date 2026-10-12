@@ -1,5 +1,7 @@
 package com.newvent.participation.service;
 
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -99,13 +101,51 @@ public class ParticipationValidator {
         }
 
         switch (resultMode.toString()) {
-            case "DELAYED" -> { }
+            case "DELAYED" -> validateDelayed(config);
             case "IMMEDIATE" -> {
                 validateProbability(config.get("winProbability"));
                 requirePrizeName(config.get("prizeName"));
             }
             case "GUARANTEED" -> requirePrizeName(config.get("prizeName"));
             default -> throw invalidConfig();
+        }
+    }
+
+    /**
+     * 추후 추첨(DELAYED) 설정.
+     *
+     * ★ 이 셋이 없으면 **야간 스케줄러가 매일 실패한다.**
+     *   DelayedEventDrawService 가 winnerCount · announcementAt · prizeName 을 읽고
+     *   하나라도 없으면 ParticipationException 을 던진다. 그동안 참여 기록은
+     *   PENDING 으로 영원히 남는다 — 사용자는 결과를 못 본다.
+     *
+     * ★ 저장 시점에 막는 게 맞다. 스케줄러가 던지는 것은 **로그에만** 남고
+     *   관리자는 설정이 잘못됐다는 사실을 알 길이 없다.
+     *
+     * ★ announcementAt 이 이벤트 종료 이후여야 하는 조건은 여기서 못 본다 —
+     *   이벤트를 모른다. ParticipationConfigService 가 저장 전에 확인한다.
+     */
+    private void validateDelayed(Map<String, Object> config) {
+        // 당첨 인원: 1 이상
+        ParticipationConfigReader.readInteger(
+            config.get("winnerCount"), 1, Integer.MAX_VALUE, this::invalidConfig);
+
+        requirePrizeName(config.get("prizeName"));
+        readAnnouncementAt(config);
+    }
+
+    /**
+     * 발표 시각. 스케줄러와 **같은 방식으로** 파싱해야 한다 —
+     * 여기서 통과한 값이 거기서 깨지면 저장 시점 검증이 무의미하다.
+     */
+    public OffsetDateTime readAnnouncementAt(Map<String, Object> config) {
+        if (!(config.get("announcementAt") instanceof String text) || text.isBlank()) {
+            throw invalidConfig();
+        }
+        try {
+            return OffsetDateTime.parse(text);
+        } catch (DateTimeParseException exception) {
+            throw invalidConfig();
         }
     }
 

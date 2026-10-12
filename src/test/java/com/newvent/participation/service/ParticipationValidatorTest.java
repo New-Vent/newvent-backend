@@ -263,8 +263,22 @@ class ParticipationValidatorTest {
     }
 
     @Test
-    void 기본형_DELAYED_는_추가값이_없어도_된다() {
-        validator.validateConfig(game("BASIC"), Map.of("resultMode", "DELAYED"));
+    @DisplayName("DELAYED 는 winnerCount·announcementAt·prizeName 이 모두 필요하다 — 없으면 야간 스케줄러가 매일 실패한다")
+    void 기본형_DELAYED_는_필수값이_있다() {
+        for (Map<String, Object> values : List.<Map<String, Object>>of(
+                Map.of("resultMode", "DELAYED"),
+                Map.of("resultMode", "DELAYED", "winnerCount", 10),
+                Map.of("resultMode", "DELAYED", "winnerCount", 10, "prizeName", "쿠폰"),
+                Map.of("resultMode", "DELAYED", "winnerCount", 0,
+                        "prizeName", "쿠폰", "announcementAt", "2026-12-01T00:00:00+09:00"),
+                Map.of("resultMode", "DELAYED", "winnerCount", 10,
+                        "prizeName", "쿠폰", "announcementAt", "내일"))) {
+            assertConfigError("BASIC", values);
+        }
+
+        validator.validateConfig(game("BASIC"), Map.of(
+                "resultMode", "DELAYED", "winnerCount", 10, "prizeName", "쿠폰",
+                "announcementAt", "2026-12-01T00:00:00+09:00"));
     }
 
     @Test

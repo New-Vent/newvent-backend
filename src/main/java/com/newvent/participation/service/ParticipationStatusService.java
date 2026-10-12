@@ -10,6 +10,7 @@ import com.newvent.event.service.PublicEventService;
 import com.newvent.participation.domain.EventGameConfig;
 import com.newvent.participation.domain.ParticipationUnavailableReason;
 import com.newvent.participation.dto.response.ParticipationStatusResponse;
+import com.newvent.participation.exception.ParticipationException;
 import com.newvent.participation.repository.EventGameConfigRepository;
 import com.newvent.participation.repository.EventParticipationRepository;
 import com.newvent.user.domain.MembershipGrade;
@@ -34,6 +35,7 @@ public class ParticipationStatusService {
     private final UserService userService;
     private final EventParticipationRepository participationRepository;
     private final EventGameConfigRepository eventGameConfigRepository;
+    private final ParticipationValidator validator;
 
     @Transactional(readOnly = true)
     public ParticipationStatusResponse getStatus(Long eventId, Long userId) {
@@ -46,7 +48,7 @@ public class ParticipationStatusService {
         // ★ size() == 1 이 기준이다. ParticipationService 가 그걸로 거르므로 같게 맞춘다 —
         //   설정이 둘이면 어느 방식으로 참여할지 정할 수 없어서 없는 것과 같다.
         List<EventGameConfig> configs = eventGameConfigRepository.findAllByEventId(eventId);
-        boolean configured = configs.size() == 1;
+        boolean configured = configs.size() == 1 && valid(configs.getFirst());
         String gameCode = configured ? configs.getFirst().getGame().getCode() : null;
 
         // ★ 순서가 POST 와 같다 — 등급을 먼저 보고 설정을 나중에 본다.
@@ -67,6 +69,28 @@ public class ParticipationStatusService {
                 .unavailableReason(reason)
                 .gameCode(gameCode)
                 .build();
+    }
+
+    /**
+     * 설정이 하나 있다는 것만으로는 부족하다 — **내용까지** 참여 API 와 같은 기준으로 본다.
+     *
+     * ★ 단일성만 보면 여전히 거짓말을 한다
+     *   설정이 하나 있지만 모양이 틀린 경우(지원하지 않는 방식, LUCKY_POUCH 인데
+     *   칸에 prizeName 이 없음 …)에 canParticipate=true 를 주고 POST 는 409 를 낸다.
+     *   그래서 validateConfig 를 그대로 부른다 — 기준을 두 벌로 쓰지 않는다.
+     *
+     * ★ 예외를 삼키는 게 맞다
+     *   상태 조회는 "지금 참여할 수 있나" 에 답하는 API 다. 설정이 틀렸다는 것은
+     *   관리자에게 알릴 일이고, 사용자에게는 **참여 불가**라는 사실만 전하면 된다.
+     *   사유는 NOT_CONFIGURED 로 묶인다 — 사용자가 고칠 수 없는 것은 하나다.
+     */
+    private boolean valid(EventGameConfig config) {
+        try {
+            validator.validateConfig(config.getGame(), config.getConfig());
+            return true;
+        } catch (ParticipationException exception) {
+            return false;
+        }
     }
 
     private int gradeRank(MembershipGrade grade) {
