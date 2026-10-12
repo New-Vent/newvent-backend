@@ -1,14 +1,13 @@
 package com.newvent.generation.controller;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
 import com.newvent.event.domain.Event;
-import com.newvent.event.exception.EventErrorCode;
-import com.newvent.event.exception.EventException;
-import com.newvent.event.repository.EventRepository;
-import com.newvent.event.service.PublicEventService;
+import com.newvent.event.service.EventOwnerCheck;
 import com.newvent.generation.dto.PreviewResponse;
 import com.newvent.generation.exception.GenerationErrorCode;
 import com.newvent.generation.exception.GenerationException;
@@ -43,10 +42,10 @@ public class GenerationPreviewController {
      */
     @GetMapping
     @Transactional(readOnly = true)
-    public ApiResponse<PreviewResponse> preview(@PathVariable Long eventId) {
+    public ApiResponse<PreviewResponse> preview(@PathVariable Long eventId,
+                                                @AuthenticationPrincipal AuthUser admin) {
 
-        Event event = events.findByIdAndDeletedAtIsNull(eventId)
-                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        Event event = ownerCheck.requireOwned(eventId, admin);
         return generation.render(GenerateCommand.forRender(event))
                 .map(rendered -> ApiResponse.success(PreviewResponse.of(rendered,
                         pages.pageOf(event, rendered.html()))))
