@@ -28,6 +28,8 @@ public enum FailureCode {
     // ── 형식 — 출력이 HTML 조각 형식을 못 지켰다 ─────────────────────
     NO_HTML("no_html", Category.FORMAT, Severity.HARD, Action.RETRY),
 
+    EDIT_RESPONSE_PARSE("edit_response_parse", Category.FORMAT, Severity.HARD, Action.RETRY),
+
     /** done_reason == length. Jsoup 이 끊긴 태그를 닫아 버려서 검증만으로는 못 잡는다 */
     TRUNCATED("truncated", Category.FORMAT, Severity.HARD, Action.RETRY),
 

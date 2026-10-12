@@ -72,6 +72,7 @@ public class EditService {
     private final LlmCallGateway gateway;
     private final com.newvent.filtering.FilteringPolicy filtering;
 
+    private record Applied(String html, String changeSummary) {}
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "edit");
@@ -251,13 +252,19 @@ public class EditService {
         }
         // ★ 아무것도 안 바뀐 연산을 모은다 — 아래 "조용한 실패" 검사에 쓴다
         List<Decision.Run> noChange = new ArrayList<>();
+        List<String> summaries = new ArrayList<>();
         for (Decision.Run step : plan) {
             if (job.checkCancelled()) return;
             String beforeStep = BlockValidator.blockOf(doc, step.block());
-            doc = apply(job, cmd, doc, step);
-            if (doc == null) return;            // 실패 — job 에 문구가 담겼다
+
+            Applied applied = apply(job, cmd, doc, step);
+            if (applied == null) return;
+
+            doc = applied.html();
             if (unchanged(beforeStep, BlockValidator.blockOf(doc, step.block()))) {
                 noChange.add(step);
+            } else {
+                summaries.add(applied.changeSummary());
             }
         }
         if (job.checkCancelled()) return;
@@ -291,7 +298,9 @@ public class EditService {
         doc = PageShell.settle(doc);
 
         job.to(GenerationJob.Phase.SAVING);
-        VersionStore.Saved saved = versions.save(cmd.eventId(), doc, base.versionId());
+
+        String changeSummary = String.join("; ", summaries);
+        VersionStore.Saved saved = versions.save(cmd.eventId(), doc, base.versionId(), changeSummary);
         log.info("수정 저장 (event={}, versionId={}, v{}, source=v{}) — 연산 {}개",
                 cmd.eventId(), saved.versionId(), saved.versionNo(),
                 base.versionNo(), plan.size());
@@ -507,7 +516,7 @@ public class EditService {
     /**
      * 연산 하나를 문서에 반영한다.
      */
-    private String apply(GenerationJob job, EditCommand cmd, String doc, Decision.Run step) {
+    private Applied apply(GenerationJob job, EditCommand cmd, String doc, Decision.Run step) {
         Block block = step.block();
         String before = BlockValidator.blockOf(doc, block);
 
@@ -516,7 +525,8 @@ public class EditService {
         if (step.op() == Op.DELETE) {
             // 문서에 있는지는 planAll 의 againstDocument 가 이미 봤다
             log.info("수정 — {} 삭제 (event={}). 모델을 부르지 않는다", block.key(), cmd.eventId());
-            return removeBlock(doc, block);
+            String blockName = block.desc().split("[—.]")[0].strip();
+            return new Applied(removeBlock(doc, block), blockName + " 영역 삭제");
         }
 
         job.to(GenerationJob.Phase.CALLING);
@@ -534,7 +544,7 @@ public class EditService {
 
         RetryService.Result res;
         try {
-            res = retry.run(ctx,
+            res = retry.runEdit(ctx,
                     // ★ 영역을 골랐으면 hero 에도 페이지 전체 색감(팔레트)을 안내하지 않는다 — 선택 밖이 바뀐다
                     // ★★ step.op() 을 넘긴다. 전에는 안 넘겨서 라우터가 STYLE 로 분류해도
                     //   EDIT 과 **똑같은 프롬프트**가 나갔다 — op 은 위 로그 한 줄에만 쓰였다.
@@ -571,9 +581,20 @@ public class EditService {
 
         // ★ 없던 영역이면 병합이 아니라 삽입이다.
         //   BlockMerge.merge 는 있는 섹션을 갈아끼울 뿐 새로 만들지 못한다
-        return before.isBlank()
-                ? insertBlock(doc, block, html.strip())
-                : BlockMerge.merge(doc, block, html);
+        String merged = before.isBlank()
+            ? insertBlock(doc, block, html.strip())
+            : BlockMerge.merge(doc, block, html);
+
+        String summary = res.changeSummary();
+
+        if (summary == null || summary.isBlank()) {
+            String blockName = block.desc().split("[—.]")[0].strip();
+            summary = blockName + (step.op() == Op.ADD
+                ? " 영역 추가"
+                : " 영역 수정");
+        }
+
+        return new Applied(merged, summary);
     }
 
     /** 섹션들의 palette-* class 를 걷어 낸다 — 선택 영역 수정용. 다른 class 는 그대로 */
@@ -670,9 +691,15 @@ public class EditService {
             s.add("[현재 상태]");
             s.add("이 영역이 아직 없습니다. 새로 만드세요.");
         } else {
-            s.add("[현재 내용 — 이걸 고쳐서 전체를 다시 출력한다]");
+            s.add("[현재 내용 — 이 영역을 수정한다]");
             s.add(before);
         }
+
+        s.add("");
+        s.add("수정한 영역의 HTML을 그대로 반환하고, 마지막에 "
+            + "<!-- changeSummary: 실제 변경 내용의 한 줄 요약 --> "
+            + "형식의 주석을 붙이세요.");
+
         return s.toString();
     }
 }

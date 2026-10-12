@@ -42,6 +42,9 @@ public class EventVersion {
     @Column(name = "html_content", nullable = false, columnDefinition = "text")
     private String htmlContent;
 
+    @Column(name = "change_summary", columnDefinition = "text")
+    private String changeSummary;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -100,12 +103,15 @@ public class EventVersion {
          *
          */
     public static EventVersion create(Event event, int versionNo,
-            String htmlContent, EventVersion sourceVersion) {
+            String htmlContent, EventVersion sourceVersion, String changeSummary) {
             EventVersion version = new EventVersion();
             version.event = event;
             version.versionNo = versionNo;
             version.htmlContent = htmlContent;
             version.sourceVersion = sourceVersion;
+            version.changeSummary = changeSummary == null || changeSummary.isBlank()
+                ? null
+                : changeSummary.strip();
             return version;
         }
 }
