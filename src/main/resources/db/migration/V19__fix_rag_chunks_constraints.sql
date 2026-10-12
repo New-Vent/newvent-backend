@@ -7,20 +7,36 @@
 -- 3. fk_rag_chunks_version 을 SET NULL → CASCADE 로 교체: 버전 삭제 시 고아 청크가 남지 않는다.
 --    SET NULL 상태에서는 버전이 없어져도 청크가 계속 검색에 노출된다.
 --
+-- ★ 구 V18(동일 내용) 적용 DB와 신규 DB 모두에서 동작하도록 존재 여부 확인 후 실행한다.
 -- ★ uk 추가 전에 중복 행이 있으면 마이그레이션이 실패한다. 운영 DB 에서 0건인지 확인할 것.
 --     SELECT event_id, version_id, block_key, chunk_index, count(*)
 --       FROM rag_chunks GROUP BY 1, 2, 3, 4 HAVING count(*) > 1;
-ALTER TABLE rag_chunks DROP CONSTRAINT ck_rag_chunks_block_key;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_rag_chunks_block_key') THEN
+        ALTER TABLE rag_chunks DROP CONSTRAINT ck_rag_chunks_block_key;
+    END IF;
+END $$;
 
 ALTER TABLE rag_chunks ADD CONSTRAINT ck_rag_chunks_block_key
     CHECK (block_key IN ('hero', 'highlight', 'intro', 'stats', 'benefits',
         'prize', 'coupon', 'compare', 'audience', 'steps',
         'schedule', 'faq', 'notices', 'cta'));
 
-ALTER TABLE rag_chunks ADD CONSTRAINT uk_rag_chunks_version_block
-    UNIQUE (event_id, version_id, block_key, chunk_index);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uk_rag_chunks_version_block') THEN
+        ALTER TABLE rag_chunks ADD CONSTRAINT uk_rag_chunks_version_block
+            UNIQUE (event_id, version_id, block_key, chunk_index);
+    END IF;
+END $$;
 
-ALTER TABLE rag_chunks DROP CONSTRAINT fk_rag_chunks_version;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_rag_chunks_version') THEN
+        ALTER TABLE rag_chunks DROP CONSTRAINT fk_rag_chunks_version;
+    END IF;
+END $$;
 
 ALTER TABLE rag_chunks ADD CONSTRAINT fk_rag_chunks_version
     FOREIGN KEY (version_id) REFERENCES event_versions (id)
