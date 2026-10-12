@@ -2,9 +2,12 @@ package com.newvent.generation.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
+import com.newvent.event.service.EventOwnerCheck;
 import com.newvent.generation.dto.GenerationJobResponse;
 import com.newvent.generation.exception.GenerationErrorCode;
 import com.newvent.generation.exception.GenerationException;
@@ -17,6 +20,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * 생성 진행 상태 조회 · 중단.
+ *
+ * ★ 이벤트 소유 관리자만 볼 수 있다. 작업을 찾기 전에 확인한다.
  */
 @Tag(name = "페이지 생성 작업", description = "생성 시작이 돌려준 jobId 로 진행 상황을 보고 중단한다. "
         + "작업은 서버 메모리에 30분만 남아 그 뒤나 서버 재시작 후에는 404 (GEN404-0). "
@@ -27,10 +32,13 @@ public class GenerationJobController {
 
     private final GenerationService generation;
     private final GenerationJobStore jobs;
+    private final EventOwnerCheck ownerCheck;
 
-    public GenerationJobController(GenerationService generation, GenerationJobStore jobs) {
+    public GenerationJobController(GenerationService generation, GenerationJobStore jobs,
+                                   EventOwnerCheck ownerCheck) {
         this.generation = generation;
         this.jobs = jobs;
+        this.ownerCheck = ownerCheck;
     }
 
     /**
@@ -43,7 +51,9 @@ public class GenerationJobController {
                     + "privacyTypes 를 보여 주고 확인을 받아 다시 시작한다. FAILED 의 message 는 화면에 그대로 보여 줘도 된다.")
     @GetMapping
     public ApiResponse<GenerationJobResponse> status(@PathVariable Long eventId,
-                                                     @PathVariable String jobId) {
+                                                     @PathVariable String jobId,
+                                                     @AuthenticationPrincipal AuthUser admin) {
+        ownerCheck.requireOwned(eventId, admin);
         return ApiResponse.success(GenerationJobResponse.of(find(eventId, jobId)));
     }
 
@@ -58,7 +68,9 @@ public class GenerationJobController {
                     + "이미 끝난 작업이면 404 (GEN404-2)")
     @DeleteMapping
     public ResponseEntity<ApiResponse<Void>> cancel(@PathVariable Long eventId,
-                                                    @PathVariable String jobId) {
+                                                    @PathVariable String jobId,
+                                                    @AuthenticationPrincipal AuthUser admin) {
+        ownerCheck.requireOwned(eventId, admin);
         // ★ 찾은 작업을 그대로 넘긴다. eventId 로 다시 찾으면 그 사이에 다른 작업이
         GenerationJob job = find(eventId, jobId);
         if (!generation.cancel(job)) {

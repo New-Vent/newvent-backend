@@ -1,13 +1,13 @@
 package com.newvent.generation.controller;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
 import com.newvent.event.domain.Event;
-import com.newvent.event.exception.EventErrorCode;
-import com.newvent.event.exception.EventException;
-import com.newvent.event.repository.EventRepository;
+import com.newvent.event.service.EventOwnerCheck;
 import com.newvent.generation.dto.PreviewResponse;
 import com.newvent.generation.exception.GenerationErrorCode;
 import com.newvent.generation.exception.GenerationException;
@@ -27,17 +27,18 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class GenerationPreviewController {
 
     private final GenerationService generation;
-    private final EventRepository events;
+    private final EventOwnerCheck ownerCheck;
 
-    public GenerationPreviewController(GenerationService generation, EventRepository events) {
+    public GenerationPreviewController(GenerationService generation, EventOwnerCheck ownerCheck) {
         this.generation = generation;
-        this.events = events;
+        this.ownerCheck = ownerCheck;
     }
 
     /**
      * 저장된 마지막 버전에 이벤트 값을 채워 돌려준다.
      *
      * ★ 응답에 versionId 가 같이 나간다. 프론트가 이후 수정의 기준으로 쓴다.
+     * ★ 이벤트 소유 관리자만 볼 수 있다.
      */
     @Operation(
             summary = "마지막 버전 미리보기",
@@ -45,10 +46,10 @@ public class GenerationPreviewController {
                     + "이벤트가 없으면 404 (EVENT404-0), 아직 만든 페이지가 없으면 404 (GEN404-1)")
     @GetMapping
     @Transactional(readOnly = true)
-    public ApiResponse<PreviewResponse> preview(@PathVariable Long eventId) {
+    public ApiResponse<PreviewResponse> preview(@PathVariable Long eventId,
+                                                @AuthenticationPrincipal AuthUser admin) {
 
-        Event event = events.findByIdAndDeletedAtIsNull(eventId)
-                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+        Event event = ownerCheck.requireOwned(eventId, admin);
         return generation.render(GenerateCommand.forRender(event))
                 .map(rendered -> ApiResponse.success(PreviewResponse.of(rendered)))
                 .orElseThrow(() -> new GenerationException(GenerationErrorCode.PAGE_NOT_FOUND));
