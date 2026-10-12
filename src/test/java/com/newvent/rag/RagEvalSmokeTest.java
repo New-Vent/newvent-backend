@@ -119,9 +119,6 @@ class RagEvalSmokeTest {
             //   Q8(유의사항 → 없음)이 이 결정을 고정한다.
             if ("notices".equals(key)) continue;
             String content = section.text();
-            // ★ 5글자 미만 짧은 cta는 평가에서 제외한다. "참여"·"쿠폰 받기" 같은 짧은 문구가
-            //   top-3을 싹쓸이해서 모델 비교가 무의미해진다 (평가 코퍼스 편향).
-            if (content.strip().length() < 6) continue;
             repo.save(RagChunk.create(event, null, key, i++,
                     content, embedding.modelName(),
                     embedding.embed(content), Instant.now()));
