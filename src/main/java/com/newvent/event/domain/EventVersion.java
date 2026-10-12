@@ -101,11 +101,22 @@ public class EventVersion {
          */
     public static EventVersion create(Event event, int versionNo,
             String htmlContent, EventVersion sourceVersion) {
+            return create(event, versionNo, htmlContent, sourceVersion, null);
+        }
+
+        /**
+         * 새 버전. 어느 채팅 요청으로 만든 버전인지 같이 건다.
+         *
+         * @param requestMessage 이 버전을 만든 관리자 요청 메시지. 채팅 요청이 아니면 null
+         */
+    public static EventVersion create(Event event, int versionNo,
+            String htmlContent, EventVersion sourceVersion, ChatMessage requestMessage) {
             EventVersion version = new EventVersion();
             version.event = event;
             version.versionNo = versionNo;
             version.htmlContent = htmlContent;
             version.sourceVersion = sourceVersion;
+            version.requestMessage = requestMessage;
             return version;
         }
 }
