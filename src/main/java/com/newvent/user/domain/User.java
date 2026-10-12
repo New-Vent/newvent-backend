@@ -17,12 +17,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * users 테이블 매핑 (ERD v2에서 확정된 스키마, PR #11의 V1__init_schema.sql과 일치).
- *   plan은 요금제 "금액"(원 단위), membership_grade는 캐시값이다 — 회원가입·요금제변경·로그인
- *   시점에 MembershipGradeService로 재계산한 결과만 반영하고, 그 외 조회에서는 이 값을
- *   그대로 신뢰한다 (재계산은 이 엔티티가 아니라 호출하는 쪽 책임).
- */
+//   plan은 요금제 "금액"(원 단위), membership_grade는 캐시값 - 회원가입·요금제변경·로그인
 @Getter
 @Entity
 @Table(name = "users")
@@ -72,8 +67,9 @@ public class User extends BaseTimeEntity {
         this.membershipGrade = membershipGrade;
     }
 
+    // 아직 저장 전이라 createdAt 이 없으면 null
     public LocalDate joinedAt() {
-        return getCreatedAt().toLocalDate();
+        return getCreatedAt() == null ? null : getCreatedAt().toLocalDate();
     }
 
     public void changePlan(int newPlan, MembershipGrade recalculatedGrade) {

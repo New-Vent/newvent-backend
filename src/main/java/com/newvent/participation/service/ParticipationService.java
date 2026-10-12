@@ -11,6 +11,7 @@ import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
+import com.newvent.event.repository.EventRepository;
 import com.newvent.event.service.PublicEventService;
 import com.newvent.participation.domain.EventGameConfig;
 import com.newvent.participation.domain.EventParticipation;
@@ -36,9 +37,14 @@ public class ParticipationService {
     private final EventGameConfigRepository eventGameConfigRepository;
     private final ParticipationValidator participationValidator;
     private final ParticipationResultProcessor participationResultProcessor;
+    private final EventRepository eventRepository;
 
     @Transactional
     public ParticipationCreateResponse participate(Long eventId, Long userId, ParticipationCreateRequest request) {
+
+        eventRepository.findByIdForDraw(eventId)
+            .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_ACCESSIBLE));
+
         Event event = publicEventService.getPublicEvent(eventId);
 
         // 실제 참여는 게시 중인 이벤트에만 허용함
@@ -65,7 +71,7 @@ public class ParticipationService {
         EventGameConfig config = configs.getFirst();
 
         Map<String, Object> submittedData = participationValidator.validate(config, request);
-        Map<String, Object> resultData = participationResultProcessor.process(config);
+        Map<String, Object> resultData = participationResultProcessor.process(config, submittedData);
         try {
             EventParticipation participation = participationRepository.saveAndFlush(EventParticipation.create(event, user, submittedData, resultData));
             return ParticipationCreateResponse.builder()

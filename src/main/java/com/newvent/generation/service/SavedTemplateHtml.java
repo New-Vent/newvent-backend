@@ -28,7 +28,7 @@ public final class SavedTemplateHtml {
         Document source = parse(html);
         List<String> scripts = source.select("script").stream()
                 .map(Element::outerHtml).filter(Approved.SCRIPTS::contains).distinct().toList();
-        Element root = source.selectFirst(".ev-container, .event-page");
+        Element root = PageShell.rootOf(source);
         List<String> palettes = root == null ? List.of() : root.classNames().stream()
                 .filter(c -> Palette.find(c).isPresent()).limit(1).toList();
 
@@ -39,7 +39,7 @@ public final class SavedTemplateHtml {
         for (String script : scripts) cleaned.body().append(script);
         String result = PageShell.plant(Slots.clear(cleaned.body().html()), null);
         Document out = parse(result);
-        Element outRoot = out.selectFirst(".ev-container, .event-page");
+        Element outRoot = PageShell.rootOf(out);
         palettes.forEach(outRoot::addClass);
         return out.body().html();
     }

@@ -272,6 +272,12 @@ Content-Type: application/json
 기준 HTML 조회와 새 버전 저장 전에 거절하므로 직접 편집 결과는 저장되지 않는다.
 `DRAFT`는 기간이 지나도 직접 편집할 수 있다. 소유자가 아닌 관리자의 요청은 기존대로 403을 반환한다.
 
+직접 편집의 `after`는 빈 문자열과 줄바꿈을 허용한다. 수정한 문구에는 서버가
+`span[id^="nv-direct-text-"]`과 `white-space: pre-line`을 붙인다.
+빈 문구도 이 요소를 남겨 다음 `editableTexts` 조회에서 문구 수와 순서를 유지한다.
+이미 직접 편집한 문구의 `before`는 줄바꿈과 공백을 포함한 응답 값을 그대로 보낸다.
+기존 버전에는 일괄 변환이나 DB 마이그레이션을 적용하지 않는다.
+
 ---
 
 ## `PATCH /api/admin/events/{id}/status`
@@ -317,9 +323,15 @@ Content-Type: application/json
 
 ## 게시
 
+게시·재게시·게시 내리기는 이벤트 소유 관리자만 실행할 수 있다. 다른 관리자가 요청하면
+`403 COMMON403-0`을 반환하며 이벤트 상태와 버전을 변경하지 않는다.
+
+같은 소유자 제한은 이벤트 수정·종료·휴지통 이동·복구·영구 삭제에도 적용한다.
+관리자 ID는 인증 정보에서 읽으며 요청 본문이나 쿼리로 받지 않는다.
+
 | Method | Path | 설명 | 오류 |
 | --- | --- | --- | --- |
-| `POST` | `/api/admin/events/{id}/publish` | 요청 `{ "versionId": 10 }`. 게시(`DRAFT` → `PUBLISHED`) 또는 재게시(다른 버전으로 교체). 고른 버전은 저장 지점으로 표시된다. 게시된 `EventDetailResponse` | `versionId` 누락 400 `COMMON400-0` · 없는 이벤트 404 `EVENT404-0` · 없는 버전 404 `EVENT404-3` · 종료된 이벤트 409 `EVENT409-5` |
+| `POST` | `/api/admin/events/{id}/publish` | 요청 `{ "versionId": 10 }`. 게시(`DRAFT` → `PUBLISHED`) 또는 재게시(다른 버전으로 교체). 고른 버전은 저장 지점으로 표시된다. 게시 시각에 종료일시가 지났으면(종료 시각과 같은 순간 포함) 게시할 수 없다 — 기간을 고친 뒤 다시 게시한다. 시작일은 검사하지 않는다(진행 중 이벤트의 게시·재게시, 시작 전 이벤트의 예약 게시 모두 가능). 게시된 `EventDetailResponse` | `versionId` 누락 400 `COMMON400-0` · 없는 이벤트 404 `EVENT404-0` · 없는 버전 404 `EVENT404-3` · 종료된 이벤트 409 `EVENT409-5` · 종료일시가 지난 이벤트 409 `EVENT409-8` |
 | `POST` | `/api/admin/events/{id}/unpublish` | 게시 내리기(`PUBLISHED` → `DRAFT`). 요청 본문 없음. 게시 버전(`publishedVersion`)을 해제해 사용자 화면에서 내리고, 저장된 버전·참여 기록·알림 표시는 그대로 둔다. 내린 뒤에는 `POST /{id}/publish` 로 다시 게시할 수 있다. 내려진 `EventDetailResponse` (`status` 는 `DRAFT`, `closingSoon` 은 `false`) | 없거나 삭제된 이벤트 404 `EVENT404-0` · 게시 중(`PUBLISHED`)이 아닌 이벤트(`DRAFT`·`ENDED`) 409 `EVENT409-7` · 종료 시각이 지났지만 아직 `ENDED` 로 바뀌기 전인 이벤트 409 `EVENT409-1` |
 
 ---
@@ -491,8 +503,8 @@ http://localhost:8080/api/admin/llm-calls/1
 
 ## `POST /api/admin/rag/reindex`
 
-수동 재색인. `versionId` 가 있으면 그 버전 1개, 없으면 이벤트 전체 버전을 오래된 것부터 순차로 돌린다.
-색인은 버전별로 (묵은 청크 삭제 + 신규 저장) 한 트랜잭션이고, 재색인 전체도 같은 트랜잭션에 묶인다.
+수동 재색인. 한 버전만 돌린다. 이벤트 전체 버전을 돌리려면 `/reindex/all` 로 보낸다.
+색인은 (묵은 청크 삭제 + 신규 저장) 한 트랜잭션이다.
 돌린 뒤의 색인 현황을 돌려준다.
 
 ### Request body
@@ -500,10 +512,10 @@ http://localhost:8080/api/admin/llm-calls/1
 | 필드 | 필수 | 설명 |
 | --- | --- | --- |
 | `eventId` | O | 색인할 이벤트 |
-| `versionId` | X | 없으면 이벤트 전체 버전 |
+| `versionId` | O | 색인할 버전 (한 버전만) |
 
 ```json
-{ "eventId": 3 }
+{ "eventId": 3, "versionId": 5 }
 ```
 
 ### 200 예시
@@ -529,7 +541,7 @@ http://localhost:8080/api/admin/llm-calls/1
 
 | 상황 | HTTP | code |
 | --- | --- | --- |
-| `eventId` 누락 | 400 | `COMMON400-0` |
+| `eventId`·`versionId` 누락 | 400 | `COMMON400-0` |
 | `versionId` 가 없거나 다른 이벤트 소속 | 404 | `EVENT404-3` |
 
 ```text
@@ -725,6 +737,88 @@ http://localhost:8080/api/admin/rag/recommend-prompts?eventId=3&query=성과급&
 
 ```text
 http://localhost:8080/api/admin/rag/similar-versions?eventId=3&versionId=10&topK=3
+```
+
+---
+
+## `GET /api/admin/rag/quality-trend`
+
+주간 품질 추이. 호출 건수·RAG 사용 건수·청크 수를 주별로 묶어 보여준다.
+distance 평균은 저장하지 않으므로(쿼리 시점 계산값) 건수 기반으로 추이를 본다.
+
+### Query
+
+| 이름 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- |
+| `weeks` | X | `4` | 1~12. 조회할 주 수 |
+
+### 200 예시
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "weekStart": "2026-09-21",
+      "totalCalls": 10,
+      "ragUsedCalls": 4,
+      "chunkCount": 25
+    }
+  ],
+  "message": null
+}
+```
+
+### 오류
+
+| 상황 | HTTP | code |
+| --- | --- | --- |
+| `weeks` 가 1 미만·12 초과 | 400 | `COMMON400-0` |
+
+```text
+http://localhost:8080/api/admin/rag/quality-trend?weeks=4
+```
+
+---
+
+## `POST /api/admin/rag/reindex/all`
+
+전체 재색인 비동기 시작. 삭제된 이벤트·시드(`SEED:`) 제외, 하나가 터져도 멈추지 않고 다음으로 넘어간다.
+이벤트당 (삭제 + 저장) 한 트랜잭션이라 중간 실패 시 그 이벤트는 손대기 전 상태로 남는다.
+전역 작업은 한 번에 하나 — 이미 돌고 있으면 `409`, 자리를 잡으면 `202` + 시작 시각만 돌려주고
+서버에서 `@Async` 로 계속 돈다 (nginx 60초 타임아웃 회피). 야간 스케줄러(매일 03:00 KST)가 같은 자리를 쓴다.
+
+### 202 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "running": true,
+    "startedAt": "2026-10-07T03:00:00Z",
+    "finishedAt": null,
+    "lastResult": null
+  },
+  "message": null
+}
+```
+
+### 오류
+
+| 상황 | HTTP |
+| --- | --- |
+| 이미 전체 재색인이 돌고 있음 | 409 |
+
+```text
+POST http://localhost:8080/api/admin/rag/reindex/all
+```
+
+## `GET /api/admin/rag/reindex/all/status`
+
+전체 재색인 진행 상태. `running`·시작·종료·직전 결과(`ReindexAllResponse` 모양 그대로).
+
+```text
+GET http://localhost:8080/api/admin/rag/reindex/all/status
 ```
 
 ---

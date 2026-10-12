@@ -49,18 +49,23 @@ class EventRepositoryAdminSearchTest {
     @Autowired
     private TestEntityManager tem;
 
-    private Long october, november, noDates, deleted;
+    private Long admin, october, november, noDates, deleted;
 
     @BeforeEach
     void seed() {
         EntityManager em = tem.getEntityManager();
-        Long admin = ((Number) em.createNativeQuery(
-                        "INSERT INTO admins (login_id, password_hash, name) VALUES ('search_admin','x','관리자') RETURNING id")
-                .getSingleResult()).longValue();
+        admin = insertAdmin(em, "search_admin");
         october = insert(em, admin, "검색확인 가을 응원", OCT_1, OCT_31, "DRAFT", false);
         november = insert(em, admin, "검색확인 겨울 특가", NOV_1, NOV_30, "PUBLISHED", false);
         noDates = insert(em, admin, "검색확인 날짜 없음", null, null, "DRAFT", false);
         deleted = insert(em, admin, "검색확인 지운 것", OCT_1, OCT_31, "DRAFT", true);
+    }
+
+    private static Long insertAdmin(EntityManager em, String loginId) {
+        return ((Number) em.createNativeQuery(
+                        "INSERT INTO admins (login_id, password_hash, name) VALUES (?1, 'x', '관리자') RETURNING id")
+                .setParameter(1, loginId)
+                .getSingleResult()).longValue();
     }
 
     private static Long insert(EntityManager em, Long admin, String title, OffsetDateTime start,
@@ -137,6 +142,22 @@ class EventRepositoryAdminSearchTest {
 
     private List<Long> idSearch(Long id) {
         return events.findAdminEvents("%이름에없는검색어%", id, null, null, OCT_15, null, null, PageRequest.of(0, 50))
+                .getContent().stream().map(Event::getId).toList();
+    }
+
+    @Test
+    @DisplayName("휴지통은 소유 관리자가 지운 것만 나온다")
+    void 휴지통은_본인_것만() {
+        EntityManager em = tem.getEntityManager();
+        Long other = insertAdmin(em, "trash_other_admin");
+        Long othersDeleted = insert(em, other, "검색확인 남이 지운 것", OCT_1, OCT_31, "DRAFT", true);
+
+        assertEquals(List.of(deleted), trash(admin));
+        assertEquals(List.of(othersDeleted), trash(other));
+    }
+
+    private List<Long> trash(Long adminId) {
+        return events.findDeletedEvents(adminId, PageRequest.of(0, 50))
                 .getContent().stream().map(Event::getId).toList();
     }
 

@@ -24,3 +24,17 @@ auth:
     same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
+
+# ── OpenAPI 문서는 배포에서 끈다 ──────────────────────────────
+#
+#   Swagger UI 는 엔드포인트의 경로·요청·응답 모양을 통째로 보여준다.
+#   공개 서버(newvent.duckdns.org)에서는 내부 구조를 그대로 노출하는 것이다.
+#
+#   SecurityConfig 가 /swagger-ui/** · /v3/api-docs/** 를 permitAll 로 열어두지만,
+#   여기서 springdoc 자체를 끄면 그 경로에 핸들러가 없어 404 가 된다.
+#   즉 "열려 있는데 아무것도 없는" 상태다. 문서는 로컬·dev 에서만 본다.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

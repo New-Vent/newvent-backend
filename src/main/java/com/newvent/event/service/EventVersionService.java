@@ -3,6 +3,7 @@ package com.newvent.event.service;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Objects;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,9 +31,8 @@ public class EventVersionService {
 
     private final Clock clock;
 
-    public EventVersionListResponse getVersions(Long eventId) {
-        Event event = eventRepository.findByIdAndDeletedAtIsNull(eventId)
-                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+    public EventVersionListResponse getVersions(Long eventId, Long adminId) {
+        Event event = findOwnedEvent(eventId, adminId);
 
         List<EventVersionSummaryResponse> versions = eventVersionRepository
                 .findByEventIdOrderByVersionNoDesc(eventId)
@@ -48,18 +48,18 @@ public class EventVersionService {
     }
 
     @Transactional
-    public void markCheckpoint(Long eventId, Long versionId) {
+    public void markCheckpoint(Long eventId, Long versionId, Long adminId) {
+        findOwnedEvent(eventId, adminId);
+
         EventVersion version = findVersion(eventId, versionId);
         version.markCheckpoint(OffsetDateTime.now(clock));
     }
 
     @Transactional
-    public void unmarkCheckpoint(Long eventId, Long versionId) {
-        Event event = eventRepository.findByIdAndDeletedAtIsNull(eventId)
-                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
+    public void unmarkCheckpoint(Long eventId, Long versionId, Long adminId) {
+        Event event = findOwnedEvent(eventId, adminId);
 
-        EventVersion version = eventVersionRepository.findByIdAndEventId(versionId, eventId)
-                .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
+        EventVersion version = findVersion(eventId, versionId);
 
         if (event.getStatus() == EventStatus.PUBLISHED
                 && event.getPublishedVersion() != null
@@ -70,16 +70,29 @@ public class EventVersionService {
         version.unmarkCheckpoint();
     }
 
-    private EventVersion findVersion(Long eventId, Long versionId) {
-        eventRepository.findByIdAndDeletedAtIsNull(eventId)
-                .orElseThrow(() -> new EventException(EventErrorCode.EVENT_NOT_FOUND));
-
-        return eventVersionRepository.findByIdAndEventId(versionId, eventId)
-                .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
-    }
-
-    public EventVersionDetailResponse getVersion(Long eventId, Long versionId) {
+    public EventVersionDetailResponse getVersion(Long eventId, Long versionId, Long adminId) {
+        findOwnedEvent(eventId, adminId);
         EventVersion version = findVersion(eventId, versionId);
         return EventVersionDetailResponse.from(version);
+    }
+
+    private EventVersion findVersion(Long eventId, Long versionId) {
+        return eventVersionRepository.findByIdAndEventId(versionId, eventId)
+            .orElseThrow(() ->
+                new EventException(EventErrorCode.VERSION_NOT_FOUND));
+    }
+
+    private Event findOwnedEvent(Long eventId, Long adminId) {
+        Event event = eventRepository.findByIdAndDeletedAtIsNull(eventId)
+            .orElseThrow(() ->
+                new EventException(EventErrorCode.EVENT_NOT_FOUND));
+
+        if (adminId == null
+            || event.getOwnerAdmin() == null
+            || !Objects.equals(event.getOwnerAdmin().getId(), adminId)) {
+            throw new EventException(EventErrorCode.EVENT_NOT_ACCESSIBLE);
+        }
+
+        return event;
     }
 }

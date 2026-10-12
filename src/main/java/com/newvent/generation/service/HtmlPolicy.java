@@ -74,6 +74,11 @@ public interface HtmlPolicy {
      * @param userPrompt 사용자 요청 원문 — ValueCheck 가 여기 나온 숫자는 허용한다
      */
     static HtmlPolicy edit(Block target, String before, String userPrompt) {
+        return edit(target, before, userPrompt, false);
+    }
+
+    /** @param allowOneMore 항목을 하나 더하는 요청인가 (BlockValidator.validateEdited 참고) */
+    static HtmlPolicy edit(Block target, String before, String userPrompt, boolean allowOneMore) {
         // ★ 람다 캡처를 위해 effectively-final 지역 변수로 받는다
         final String beforeSnap = before;
         final String promptSnap = userPrompt;
@@ -86,7 +91,7 @@ public interface HtmlPolicy {
             @Override
             public List<Failure> validate(String html) {
                 List<Failure> f = new ArrayList<>(
-                        BlockValidator.validateEdited(target, beforeSnap, html));
+                        BlockValidator.validateEdited(target, beforeSnap, html, allowOneMore));
                 // REQ-LLM-41 — 없던 수치가 생겼나 (value_added → 실패, warning_value_removed → 경고)
                 f.addAll(ValueCheck.diff(beforeSnap, html, promptSnap));
                 return f;
