@@ -1,6 +1,7 @@
 package com.newvent.rag.controller;
 
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -67,6 +68,19 @@ class RagControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.eventId").value(3));
         verify(embedding).reindex(3L, 5L);
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/rag/reindex — 전체 재색인이 돌고 있으면 409")
+    void 재색인_전체실행중_충돌() throws Exception {
+        given(embedding.isReindexAllRunning()).willReturn(true);
+        given(embedding.getReindexAllStatus()).willReturn(ReindexAllStatus.idle());
+
+        mockMvc.perform(post("/api/admin/rag/reindex")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"eventId\":3,\"versionId\":5}"))
+                .andExpect(status().isConflict());
+        verify(embedding, never()).reindex(3L, 5L);
     }
 
     @Test

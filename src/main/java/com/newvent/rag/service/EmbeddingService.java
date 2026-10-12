@@ -89,6 +89,10 @@ public class EmbeddingService {
 		EventVersion version = versions.findByIdAndEventId(versionId, eventId)
 				.orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
 		List<Chunk> parts = chunking.chunk(version.getHtmlContent());
+		// 청크가 하나도 안 나오면 삭제를 하지 않는다. 빈 입력으로 기존 색인을 날리지 않기 위해.
+		if (parts.isEmpty()) {
+			return 0;
+		}
 		// 지우기와 저장을 한 트랜잭션으로 묶음. 중간에 실패하면 둘 다 없던 일이 되어 절반만 저장되는 일은 없음.
 		chunks.deleteByEventIdAndVersionId(eventId, versionId);
 		List<RagChunk> entities = new ArrayList<>(parts.size());
@@ -127,6 +131,16 @@ public class EmbeddingService {
 	public ReindexAllStatus getReindexAllStatus() {
 		return new ReindexAllStatus(reindexing.get(), reindexStartedAt,
 				reindexFinishedAt, lastResult);
+	}
+
+	/** 전체 재색인이 돌고 있는지 읽기만 한다. 자리를 잡지 않으므로 단건 재색인 충돌 검사에 쓴다. */
+	public boolean isReindexAllRunning() {
+		return reindexing.get();
+	}
+
+	/** 자리 해제. async 제출이 거부돼 finally 가 안 돌 때 호출한다. */
+	public void releaseReindexSlot() {
+		reindexing.set(false);
 	}
 
 	/**

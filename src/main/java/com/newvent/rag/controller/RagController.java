@@ -49,11 +49,16 @@ public class RagController {
 		this.comparing = comparing;
 	}
 
-    /** 수동 재색인. versionId가 없으면 이벤트 전체. 돌리고 나서 현황을 돌려준다. */
+    /** 수동 재색인. 한 버전만 돌린다. 전체 재색인이 돌고 있으면 409. 돌리고 나서 현황을 돌려준다. */
     @PostMapping("/reindex")
-    public ApiResponse<IndexStatusResponse> reindex(@Valid @RequestBody ReindexRequest request) {
+    public ResponseEntity<ApiResponse<?>> reindex(
+            @Valid @RequestBody ReindexRequest request) {
+        if (embedding.isReindexAllRunning()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiResponse.success(embedding.getReindexAllStatus()));
+        }
         embedding.reindex(request.eventId(), request.versionId());
-        return ApiResponse.success(embedding.getStatus(request.eventId()));
+        return ResponseEntity.ok(ApiResponse.success(embedding.getStatus(request.eventId())));
     }
 
     /** 색인 현황. 전체 버전 중 몇 개가 들어갔는지. */
@@ -106,7 +111,13 @@ public class RagController {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ApiResponse.success(embedding.getReindexAllStatus()));
         }
-        embedding.indexAllEventsAsync();
+        try {
+            embedding.indexAllEventsAsync();
+        } catch (RuntimeException e) {
+            // 제출 거부 등으로 async 본문이 안 돌면 finally 가 안 돌아 플래그가 누수된다. 직접 해제.
+            embedding.releaseReindexSlot();
+            throw e;
+        }
         return ResponseEntity.accepted()
                 .body(ApiResponse.success(embedding.getReindexAllStatus()));
     }
