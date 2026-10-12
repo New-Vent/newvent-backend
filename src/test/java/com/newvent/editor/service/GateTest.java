@@ -82,15 +82,27 @@ public class GateTest {
 		assertEquals(new Decision.Run(Block.HERO, Op.EDIT, "새 제목"), d);
 	}
 
+	// ★★ 전에는 "혜택 항목 추가는 거절한다" 였다. 바뀐 이유:
+	//    막으려던 건 모델이 **지어낸** 혜택이지 관리자가 **적어 준** 혜택이 아니다.
+	//    "혜택에 커피쿠폰 추가해" 는 관리자가 지급을 결정한 것이다.
 	@Test
-	@DisplayName("혜택 항목 추가는 거절한다 - 교정하면 모델에게 모순된 지시가 간다")
-	void 혜택_항목_추가는_거절() {
-		Decision d = gate.decide(new RawRoute("ADD", "benefits", "와일드카드"));
-
-		Decision.Reject r = assertInstanceOf(Decision.Reject.class, d);
-		assertEquals(RouterErrorCode.NOT_ALLOWED, r.code());
-		assertTrue(r.message().contains("늘리거나 줄일 수 없습니다"));
+	@DisplayName("혜택 항목 추가는 내용을 적어 주면 ADD 로 통과한다")
+	void 혜택_항목_추가는_내용이_있으면_통과() {
+		assertEquals(new Decision.Run(Block.BENEFITS, Op.ADD, "커피쿠폰"),
+				gate.decide(new RawRoute("ADD", "benefits", "커피쿠폰")));
 	}
+
+	// ★ op 이 ADD 로 남아야 한다. EDIT 으로 교정되면 "항목 하나 더" 라는 의도가
+	//   사라져서 아래 단계(프롬프트 · 검증기)가 그걸 알 방법이 없다.
+	@Test
+	@DisplayName("혜택 항목 추가는 EDIT 으로 교정되지 않는다 - 의도가 op 에 남아야 한다")
+	void 혜택_항목_추가는_교정되지_않는다() {
+		Decision.Run r = assertInstanceOf(Decision.Run.class,
+				gate.decide(new RawRoute("ADD", "benefits", "커피쿠폰")));
+
+		assertEquals(Op.ADD, r.op());
+	}
+
 
 	@Test
 	@DisplayName("항목이 폼 값이 아닌 선택 영역은 그대로 추가로 통과")
@@ -142,12 +154,15 @@ public class GateTest {
 				gate.decide(new RawRoute("ADD", "cta", null)));
 	}
 
+	// ★★ 전에는 "혜택 거절은 되묻기보다 먼저" 였다 — 5번이 무조건 거절했으니까.
+	//    5번이 없어진 지금은 6번이 받아서 **되묻는다.** 거절보다 그쪽이 맞다 —
+	//    무엇을 더할지는 관리자가 정할 일이고, 물어보면 정할 수 있다.
 	@Test
-	@DisplayName("혜택 거절은 되묻기보다 먼저 - 두 번 물어보고 거절하면 안 된다")
-	void 혜택_거절은_되묻기보다_먼저() {
+	@DisplayName("내용 없는 혜택 항목 추가는 되묻는다 - 거절하고 끝내지 않는다")
+	void 내용_없는_혜택_추가는_되묻는다() {
 		Decision d = gate.decide(new RawRoute("ADD", "benefits", null));
 
-		assertInstanceOf(Decision.Reject.class, d);
+		assertInstanceOf(Decision.AskBack.class, d);
 	}
 
 	// ----- 6 행 : 그 외 통과 -------

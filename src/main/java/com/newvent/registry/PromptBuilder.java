@@ -322,6 +322,22 @@ public final class PromptBuilder {
      *   그 답을 넘겨 조건문을 **단정문**으로 바꾼다.
      */
     public static String edit(Block b, boolean templateBlock, boolean allowPalette, boolean looksRequest) {
+        return edit(b, templateBlock, allowPalette, looksRequest, false);
+    }
+
+    /**
+     * @param addItem 이번 요청이 **항목 하나를 더하는 것**인가.
+     *
+     * ★★ 왜 생겼나 — 지시가 정면으로 어긋나고 있었다.
+     *   사용자 프롬프트는 "이 목록에 항목을 하나만 더한다" 라고 하는데,
+     *   이 프롬프트는 benefits 같은 블록에 "항목을 새로 만들거나 지우지 마라" 를 넣었다.
+     *   모델은 둘 중 하나를 버리는데 **어느 쪽을 버려도 실패다** —
+     *   금지문을 따르면 원본이 그대로 와서 요청이 반영되지 않고,
+     *   사용자 쪽을 따르면 카드의 값 자리를 지어내 채워 ValueCheck 에 걸린다.
+     *   그래서 "수치를 지어내지 마라" 를 여기서 한 번 더 못 박는다.
+     */
+    public static String edit(Block b, boolean templateBlock, boolean allowPalette,
+                              boolean looksRequest, boolean addItem) {
         if (b.source() == Block.Source.SERVER) {
             throw new IllegalArgumentException(
                     b.key() + " 는 서버 소유입니다. 모델에게 수정시키면 안 됩니다.");
@@ -389,8 +405,17 @@ public final class PromptBuilder {
         //   steps 처럼 모델이 쓰는 블록에는 붙이지 않는다 — 붙이면 다듬기도 막힌다.
         //
         //   ★ if (b == Block.BENEFITS) 로 쓰지 말 것. 레지스트리를 만든 의미가 없어진다.
-        if (b.itemsAreFormValues()) {
+        if (b.itemsAreFormValues() && !addItem) {
             s.add("- 항목을 새로 만들거나 지우지 마라. 개수는 그대로 두고 문장만 다듬는다.");
+        }
+        // ★ 항목 하나를 더하는 요청이면 위 금지문 대신 이것이 나간다.
+        //   "같은 태그 · 같은 class" 가 꼭 있어야 한다 — 없으면 모델이 템플릿 카드
+        //   (.benefit-card) 를 <li> 로 만들어 붙이고 디자인이 깨진다.
+        if (addItem) {
+            s.add("- 이 목록에 항목을 **하나만** 더한다. 기존 항목은 손대지 마라.");
+            s.add("- 더한 항목은 기존 항목과 **같은 태그 · 같은 class** 로 만든다.");
+            s.add("- 더한 항목에 금액 · 수량 · 기간 같은 수치를 지어내 넣지 마라. "
+                    + "관리자가 적어 준 문구에 있는 것만 쓴다.");
         }
 
         s.add("");

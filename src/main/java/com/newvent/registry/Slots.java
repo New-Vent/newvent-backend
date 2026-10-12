@@ -99,12 +99,17 @@ public final class Slots {
      * 돌려주기만 해도 실패로 잡히고, 재시도 4번이 전부 같은 이유로 터진다.
      */
     private static String normalize(String className) {
-        // ★ 모양 변형(v-*) · 팔레트(palette-*)는 비교에서 뺀다.
+        // ★ 모양 변형(v-*) · 팔레트(palette-*) · 테마(theme-*)는 비교에서 뺀다.
         //   수정에서 바꾸라고 허용한 class 다. 넣으면 "모양 바꿔줘" 가 class_changed 로 매번 실패한다.
         //   허용 목록 밖의 것은 정화(BlockValidator.cleanLooks)가 이미 지웠다.
+        // ★★ theme-* 가 빠져 있었다. PromptBuilder.edit 은 백지 hero 에 테마를 고르라고
+        //   **시키는데**(themes = palette && !templateBlock), 모델이 시킨 대로 붙이면
+        //   여기서 CLASS_CHANGED 하드 실패가 나고 4회 재시도가 전부 같은 이유로 터졌다.
+        //   관리자에게는 "요청을 반영하지 못했습니다" 만 나갔다 — "전체 색감을 빨간색으로" 가
+        //   그래서 안 됐다(QA 실측). 시키는 것과 막는 것이 어긋나 있었다.
         return new TreeSet<>(List.of(className.trim().split("\\s+"))).stream()
                 .filter(s -> !s.isEmpty())
-                .filter(s -> !Variant.looksLike(s) && !Palette.looksLike(s))
+                .filter(s -> !Variant.looksLike(s) && !Palette.looksLike(s) && !Theme.looksLike(s))
                 .collect(Collectors.joining(" "));
     }
 
