@@ -24,6 +24,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
  * ★ 이벤트 소유 관리자만 볼 수 있다. 작업을 찾기 전에 확인한다.
  */
 @Tag(name = "페이지 생성 작업", description = "생성 시작이 돌려준 jobId 로 진행 상황을 보고 중단한다. "
+        + "이벤트를 만든 관리자만 부를 수 있다 (아니면 403 COMMON403-0, 이벤트가 없거나 휴지통에 있으면 404 EVENT404-0). "
         + "작업은 서버 메모리에 30분만 남아 그 뒤나 서버 재시작 후에는 404 (GEN404-0). "
         + "jobId 가 이 이벤트의 작업이 아니어도 404 (GEN404-0)")
 @RestController

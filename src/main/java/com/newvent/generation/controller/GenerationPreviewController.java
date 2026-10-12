@@ -21,7 +21,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
  * 만들어진 페이지를 본다. **editor 가 준비될 때까지 쓰는 임시 엔드포인트다.**
  *
  */
-@Tag(name = "생성 페이지 미리보기", description = "에디터가 준비될 때까지 쓰는 임시 API")
+@Tag(name = "생성 페이지 미리보기", description = "에디터가 준비될 때까지 쓰는 임시 API. "
+        + "이벤트를 만든 관리자만 볼 수 있다 (아니면 403 COMMON403-0)")
 @RestController
 @RequestMapping("/api/admin/events/{eventId}/preview")
 public class GenerationPreviewController {

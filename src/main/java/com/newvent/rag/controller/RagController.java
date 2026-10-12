@@ -42,7 +42,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
  * ★ eventId 를 받는 API 는 이벤트 소유 관리자만 부를 수 있다 (EventOwnerCheck).
  *   품질 추이 · 전체 재색인은 이벤트 하나에 묶이지 않아 관리자면 누구나 부른다.
  */
-@Tag(name = "RAG", description = "이벤트 버전 HTML 을 블록 단위로 잘라 임베딩해 두고 비슷한 예시를 찾는다. "
+@Tag(name = "RAG", description = "이벤트 버전 HTML 을 블록 단위로 잘라 임베딩해 두고 비슷한 예시를 찾는다. 관리자만 쓸 수 있다. "
+        + "eventId 를 받는 API 는 이벤트를 만든 관리자만 부를 수 있다 (아니면 403 COMMON403-0, 이벤트가 없거나 휴지통에 있으면 404 EVENT404-0). "
+        + "주간 품질 추이·전체 재색인은 이벤트 하나에 묶이지 않아 관리자면 누구나 부른다. "
         + "검색 미리보기·프롬프트 추천은 eventId 의 이벤트를 빼고 찾고, 거리(distance)가 0.5 보다 먼 결과는 버린다.")
 @Validated
 @RestController
