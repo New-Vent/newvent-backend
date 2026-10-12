@@ -74,7 +74,7 @@ OpenAPI 가 절대 못 적는 것들입니다.
 | 요청·응답 **DTO 필드 추가·삭제** | **없음** — 스키마 자동. 필드 뜻이 자명하지 않으면 `@Schema(description = "…")` |
 | **응답 필드의 의미**가 바뀜 (예: `thumbnailUrl` → `thumbnailHtml`) | `@Schema` + **프론트에 알리기**. PR 「참고 사항」에 적습니다 |
 | `*ErrorCode` enum 에 **코드 추가·문구 변경** | [`error-codes.md`](error-codes.md) — 재추출 명령이 문서 맨 위에 있습니다 |
-| **인가 규칙** 변경 (`SecurityConfig`) | `SecurityConfig` 클래스 javadoc + [`api-design.md`](api-design.md) §5·§6 |
+| **인가 규칙** 변경 (`SecurityConfig`·소유자 검사 추가) | `SecurityConfig` javadoc + [`api-design.md`](api-design.md) §5·§6 + **그 경로의 `@Tag`·`@Operation`** — Swagger 가 403 을 안 알려주면 프론트가 처리하지 않습니다 |
 | **소유자 검사** 추가·제거 | [`api-design.md`](api-design.md) §6 |
 
 ### 도메인 규칙
@@ -82,7 +82,7 @@ OpenAPI 가 절대 못 적는 것들입니다.
 | 코드에서 한 일 | 고칠 문서 |
 | --- | --- |
 | 이벤트 **상태 전이** 규칙 변경 | [`api-design.md`](api-design.md) §1 |
-| `closingSoon` **창(3일) 변경** | §2 — ⚠️ **구현이 두 곳입니다**(`Event` · `PublicEventService`). 둘 다 고치세요 |
+| `closingSoon` **창(3일) 변경** | §2 — ⚠️ **세 곳입니다**(`Event` · `PublicEventService` · `EventSummaryResponse` 의 `@Schema`). 전부 고치세요 |
 | `Slot` enum 에 **슬롯 추가** | [`decisions/0001`](decisions/0001-슬롯은-보여줄-때-채운다.md) 비고 + 채우는 경로 전부 확인 |
 | `result_data` 의 **`status` 값 추가** | §10 — 집계(`rewardCount`·`pendingCount`)에 어떻게 들어가는지 같이 |
 | **멤버십 등급** 산정·재계산 시점 변경 | §9 |
@@ -127,4 +127,5 @@ OpenAPI 가 절대 못 적는 것들입니다.
 | 직접 편집, 템플릿 라이브러리, `/e/{id}` 공개 페이지 | jetleetop |
 | 관리자 휴지통·게시·알림, 공개 이벤트 API, 회원·멤버십 등급 | kug6109 |
 | LLM 호출 계층(`infra/llm`), CI/CD, 인프라 | kwondoha |
+| 참여·추첨·참여 설정 (`participation/`) | tnqlsqkr · Yudong Kim (공동) |
 | RAG 관련 | kyd4947 |
