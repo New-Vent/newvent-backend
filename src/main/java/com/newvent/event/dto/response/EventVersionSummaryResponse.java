@@ -22,7 +22,9 @@ public record EventVersionSummaryResponse(
         @Schema(description = "이어서 작업한 원본 버전 번호. 처음 만든 버전이면 null")
         Integer sourceVersionNo,
         @Schema(description = "이 버전을 만든 수정 요청 원문(요약 아님). 연결된 요청이 없으면 null")
-        String requestContent
+        String requestContent,
+        @Schema(description = "LLM 수정으로 생성된 변경 요약. 요약이 없는 버전이면 null")
+        String changeSummary
 ) {
     public static EventVersionSummaryResponse from(EventVersion version, Event event) {
         ChatMessage message = version.getRequestMessage();
@@ -39,9 +41,8 @@ public record EventVersionSummaryResponse(
                 .published(published)
                 .sourceVersionNo(version.getSourceVersion() == null
                         ? null : version.getSourceVersion().getVersionNo())
-
-                // TODO: 수정 내용 요약 방식을 결정하면 별도 필드로 제공한다.
                 .requestContent(message == null ? null : message.getContent())
+                .changeSummary(version.getChangeSummary())
                 .build();
     }
 }

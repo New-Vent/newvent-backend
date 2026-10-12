@@ -42,14 +42,16 @@ class ParticipationStatusApiTest {
     @Test
     void 사용자토큰으로_조회하면_토큰의사용자ID를전달한다() throws Exception {
         when(participationStatusService.getStatus(1L, 7L))
-                .thenReturn(new ParticipationStatusResponse(false, true, null));
+                .thenReturn(new ParticipationStatusResponse(false, true, null, "BASIC"));
 
         mockMvc.perform(get(PATH)
                         .header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.user(7L))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.participated").value(false))
                 .andExpect(jsonPath("$.data.canParticipate").value(true))
-                .andExpect(jsonPath("$.data.unavailableReason").value((Object) null));
+                .andExpect(jsonPath("$.data.unavailableReason").value((Object) null))
+                // 화면이 어떤 입력을 받을지 이 값으로 고른다
+                .andExpect(jsonPath("$.data.gameCode").value("BASIC"));
 
         verify(participationStatusService).getStatus(1L, 7L);
     }
@@ -59,7 +61,8 @@ class ParticipationStatusApiTest {
         when(participationStatusService.getStatus(1L, 7L))
                 .thenReturn(new ParticipationStatusResponse(
                         true, false,
-                        ParticipationUnavailableReason.ALREADY_PARTICIPATED
+                        ParticipationUnavailableReason.ALREADY_PARTICIPATED,
+                        "BASIC"
                 ));
 
         mockMvc.perform(get(PATH)
@@ -76,7 +79,8 @@ class ParticipationStatusApiTest {
         when(participationStatusService.getStatus(1L, 7L))
                 .thenReturn(new ParticipationStatusResponse(
                         false, false,
-                        ParticipationUnavailableReason.INSUFFICIENT_GRADE
+                        ParticipationUnavailableReason.INSUFFICIENT_GRADE,
+                        "BASIC"
                 ));
 
         mockMvc.perform(get(PATH)
@@ -86,6 +90,23 @@ class ParticipationStatusApiTest {
                 .andExpect(jsonPath("$.data.canParticipate").value(false))
                 .andExpect(jsonPath("$.data.unavailableReason")
                         .value("INSUFFICIENT_GRADE"));
+    }
+
+    @Test
+    void 참여설정이없으면_NOT_CONFIGURED와_gameCode_null을반환한다() throws Exception {
+        when(participationStatusService.getStatus(1L, 7L))
+                .thenReturn(new ParticipationStatusResponse(
+                        false, false,
+                        ParticipationUnavailableReason.NOT_CONFIGURED,
+                        null
+                ));
+
+        mockMvc.perform(get(PATH)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(AuthUser.user(7L))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.canParticipate").value(false))
+                .andExpect(jsonPath("$.data.unavailableReason").value("NOT_CONFIGURED"))
+                .andExpect(jsonPath("$.data.gameCode").value((Object) null));
     }
 
     @Test
