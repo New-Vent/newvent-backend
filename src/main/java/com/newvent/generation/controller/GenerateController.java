@@ -21,6 +21,9 @@ import com.newvent.generation.service.GenerateCommand;
 import com.newvent.generation.service.GenerationService;
 import com.newvent.generation.service.GenerationService.StartResult;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 /**
  * 생성 시작.
  *
@@ -28,6 +31,8 @@ import com.newvent.generation.service.GenerationService.StartResult;
  *
  * ★ 응답에 원본 예외나 스택을 절대 담지 않는다 — `REQ-LLM-36`
  */
+@Tag(name = "페이지 생성", description = "이벤트 페이지를 템플릿이나 AI 로 만든다. 생성은 비동기라 시작만 하고, "
+        + "진행 상황은 페이지 생성 작업 API 로 폴링한다.")
 @RestController
 @RequestMapping("/api/admin/events/{eventId}/generate")
 public class GenerateController {
@@ -43,6 +48,17 @@ public class GenerateController {
         this.library = library;
     }
 
+    @Operation(
+            summary = "페이지 생성 시작",
+            description = "202 와 jobId 를 돌려주고 생성은 서버에서 계속 돈다. 이벤트를 만든 관리자만 할 수 있다 (아니면 403 COMMON403-0). "
+                    + "templateCode 를 보내지 않으면 이벤트에 붙은 템플릿으로, 빈 문자열이면 requestText 로 AI 가 만든다. "
+                    + "템플릿 경로에서는 모델을 부르지 않는다. 둘을 같이 보내면 요청문이 버려지므로 400 (GEN400-3). "
+                    + "AI 경로에서 requestText 가 비면 400 (GEN400-0), 500자를 넘으면 400. "
+                    + "요청문에 개인정보가 보이면 바로 ASK_BACK 으로 끝나고, 확인한 뒤 privacyConfirmationJobId·privacyConfirmed 를 담아 "
+                    + "다시 보낸다 (확인 요청이 없거나 만료 409 FILTER409-0, 내용이 다르면 409 FILTER409-2). "
+                    + "이벤트가 없으면 404 (EVENT404-0), 템플릿이 없거나 고를 수 없으면 404 (EVENT404-1), "
+                    + "종료된 이벤트는 409 (GEN409-1), 이 이벤트에서 생성·채팅 수정이 돌고 있으면 409 (GEN409-0), "
+                    + "AI 경로의 일일 호출 상한을 넘으면 429 (LLM429-0)")
     @PostMapping
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<GenerateStartResponse>> start(
