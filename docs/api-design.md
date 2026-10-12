@@ -274,8 +274,10 @@ API 가 참여 설정을 보지 않아서, 설정이 없는 이벤트에 `canPar
 | 2 | 등급 미달 | `INSUFFICIENT_GRADE` | `403 PARTICIPATION403-0` |
 | 3 | 설정이 하나가 아님 | `NOT_CONFIGURED` | `409 PARTICIPATION409-1` |
 
-**설정이 "하나" 여야 합니다.** 없으면 참여할 수 없고, 둘이면 어느 방식으로 참여할지 정할
-근거가 없어서 없는 것과 같이 다룹니다 (`configs.size() == 1`).
+**설정이 "하나" 여야 하고, 그 내용도 유효해야 합니다.** 없거나 둘이면 어느 방식으로
+참여할지 정할 근거가 없어서 없는 것과 같이 다루고(`configs.size() == 1`), 하나라도
+**모양이 틀리면** 역시 참여 불가입니다 — 상태 API 가 `validateConfig` 를 그대로 부릅니다.
+단일성만 보면 "설정은 있는데 쓸 수 없는" 경우에 여전히 거짓말을 합니다.
 
 > `NOT_CONFIGURED` 는 **사용자가 고칠 수 없는 사유**입니다. "등급이 부족해요" 처럼 사용자
 > 탓으로 읽히면 안 되고, 화면에서는 "준비 중" 으로 보여주고 버튼을 숨기는 쪽이 맞습니다.
@@ -294,6 +296,46 @@ GET /api/admin/events/{eventId}/participation-config
 **참여 기록이 한 건이라도 있으면 바꿀 수 없습니다** (`409 PARTICIPATION409-3`).
 이미 저장된 `result_data` 가 그때의 방식을 전제합니다 — `BASIC` 으로 참여한 기록이 있는데
 `LUCKY_POUCH` 로 바꾸면 그 기록에 `pouchIndex` 가 없습니다.
+
+#### 설정 저장은 이벤트 행을 먼저 잠급니다
+
+`participate` 가 맨 먼저 `findByIdForDraw`(`SELECT … FOR UPDATE`)로 이벤트 행을 잠급니다.
+**설정 저장도 같은 잠금을 잡아야 합니다.** 안 잡으면 "참여 기록이 있으면 거부" 가 뚫립니다.
+
+```
+관리자(설정 변경)            사용자(참여)
+existsByEventId → 0건
+                             findByIdForDraw → 행 잠금
+                             설정 읽기 (옛 방식)
+                             참여 저장 (옛 방식의 result_data)
+changeConfig (새 방식)
+```
+
+**`result_data` 는 `BASIC` 인데 설정은 `LUCKY_POUCH`** 가 됩니다. 그 기록에는 `pouchIndex` 가
+없어서 조회 화면이 설명할 수 없습니다. 같은 행을 잠그면 두 트랜잭션이 직렬화됩니다.
+
+순서는 **권한 → 잠금 → 검증 → 참여 기록 확인** 입니다. 권한을 잠금보다 앞에 두는 이유는
+권한 없는 호출이 잠금 경합을 만들지 않게 하려는 것입니다.
+
+#### `DELAYED` 는 설정이 더 필요합니다
+
+`BASIC` 의 `resultMode` 마다 요구하는 값이 다릅니다.
+
+| `resultMode` | 필요한 값 | 결과 |
+| --- | --- | --- |
+| (없음) | — | `result_data` 가 빈 객체. 참여만 기록합니다 |
+| `IMMEDIATE` | `winProbability`(0~100) · `prizeName` | 참여 즉시 추첨 → `WON` · `LOST` |
+| `GUARANTEED` | `prizeName` | 항상 `WON` |
+| `DELAYED` | `winnerCount`(1 이상) · `announcementAt` · `prizeName` | `PENDING` → 야간 스케줄러가 추첨 |
+
+**`DELAYED` 의 셋이 없으면 야간 스케줄러가 매일 실패합니다.** `DelayedEventDrawService` 가
+그 값들을 읽고 하나라도 없으면 예외를 던지는데, **`log.error` 에만 남고** 관리자는 알 수
+없습니다. 그동안 참여 기록은 `PENDING` 으로 영원히 남아 사용자가 결과를 못 봅니다.
+그래서 **저장 시점에** 막습니다.
+
+`announcementAt` 은 스케줄러와 같은 방식(`OffsetDateTime.parse`, ISO-8601)으로 파싱합니다 —
+저장 때 통과한 값이 스케줄러에서 깨지면 검증이 무의미합니다. **이벤트 종료 이후**여야
+한다는 조건도 같이 봅니다(검증기는 이벤트를 모르므로 서비스가 확인합니다).
 
 **조회는 설정이 없어도 404 가 아닙니다.** `gameCode: null`, `config: {}` 를 줍니다.
 설정 화면은 어차피 빈 폼으로 시작하므로 클라이언트가 분기를 만들 필요가 없습니다.
