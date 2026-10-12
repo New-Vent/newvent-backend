@@ -22,6 +22,12 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     Optional<Event> findByIdAndDeletedAtIsNull(Long eventId);
 
+    // 전체 재색인용. 삭제된 이벤트는 건너뛴다
+    List<Event> findAllByDeletedAtIsNull();
+
+    /** 시드 멱등 가드 — 삭제되지 않은 SEED: 이벤트가 이미 있으면 재실행 시 건너뛴다. */
+    boolean existsByTitleStartingWithAndDeletedAtIsNull(String prefix);
+
     /**
      * 버전을 덧붙이기 전에 이벤트 행을 잠근다 — {@code SELECT … FOR UPDATE}.
      *
@@ -31,6 +37,11 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     Optional<Long> lockForVersionAppend(@Param("eventId") Long eventId);
 
     Optional<Event> findByIdAndDeletedAtIsNotNull(Long eventId);
+
+    // 이 이벤트에 대한 참여 기록이 하나라도 있는지 - 영구 삭제 보호용
+    // SQL 한 번(select exists(...))이고 참여 엔티티는 불러오지 않는다. EXISTS 라서 참여가 많아도 첫 행에서 멈춘다
+    @Query("SELECT EXISTS (SELECT 1 FROM EventParticipation p WHERE p.event.id = :eventId)")
+    boolean hasParticipations(@Param("eventId") Long eventId);
 
     // publishedVersion은 LAZY 연관관계이고 open-in-view: false라, 트랜잭션 안에서 fetch join으로 같이 가져온다.
     @Query("SELECT e FROM Event e LEFT JOIN FETCH e.publishedVersion "
@@ -105,13 +116,14 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             @Param("periodTo") OffsetDateTime periodTo,
             Pageable pageable);
 
-    // 휴지통 목록 - 최근에 삭제된 순서로 보여준다(동률이면 id 내림차순)
+    // 휴지통 목록 - 소유 관리자의 것만, 최근에 삭제된 순서로 보여준다(동률이면 id 내림차순)
     @Query(
             value = "SELECT e FROM Event e LEFT JOIN FETCH e.template LEFT JOIN FETCH e.publishedVersion "
-                    + "WHERE e.deletedAt IS NOT NULL "
+                    + "WHERE e.deletedAt IS NOT NULL AND e.ownerAdmin.id = :adminId "
                     + "ORDER BY e.deletedAt DESC, e.id DESC",
-            countQuery = "SELECT COUNT(e) FROM Event e WHERE e.deletedAt IS NOT NULL")
-    Page<Event> findDeletedEvents(Pageable pageable);
+            countQuery = "SELECT COUNT(e) FROM Event e "
+                    + "WHERE e.deletedAt IS NOT NULL AND e.ownerAdmin.id = :adminId")
+    Page<Event> findDeletedEvents(@Param("adminId") Long adminId, Pageable pageable);
 
     // 카테고리(templateCode)/키워드(이벤트명)/진행상태(progress)는 전달되지 않으면(null) 조건에서 제외한다.
     // progress는 EventProgress.name() 문자열("UPCOMING"/"ONGOING"/"ENDED")을 그대로 받는다.
@@ -196,4 +208,12 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     // 관리자 목록 화면 상단 카운트 — 상태별로 묶어서 한 번에 센다(삭제된 건 제외).
     @Query("SELECT e.status, COUNT(e) FROM Event e WHERE e.deletedAt IS NULL GROUP BY e.status")
     List<Object[]> countGroupedByStatus();
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT e
+        FROM Event e
+        WHERE e.id = :eventId
+        """)
+    Optional<Event> findByIdForDraw(@Param("eventId") Long eventId);
 }

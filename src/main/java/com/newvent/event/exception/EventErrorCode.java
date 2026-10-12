@@ -27,6 +27,9 @@ public enum EventErrorCode implements ErrorCode {
     // 종료일시가 지난 채로 게시하면 곧바로 자동 종료되어 수정·재게시가 막힌다. 시작일은 검사하지 않는다(진행 중 이벤트 게시·재게시)
     EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN(HttpStatus.CONFLICT, "EVENT409-8",
             "종료일시가 지난 이벤트는 게시할 수 없습니다. 이벤트 기간을 수정한 뒤 다시 게시해주세요."),
+    // 영구 삭제하면 event_participations 가 ON DELETE CASCADE 로 함께 지워지므로, 참여 기록이 있으면 막는다
+    PARTICIPATED_EVENT_PERMANENT_DELETE_FORBIDDEN(HttpStatus.CONFLICT, "EVENT409-9",
+            "참여 기록이 있는 이벤트는 영구 삭제할 수 없습니다. 참여한 사용자의 참여·당첨 기록이 함께 사라지기 때문입니다."),
     BUILTIN_TEMPLATE_IMMUTABLE(HttpStatus.FORBIDDEN, "EVENT403-0", "기본 제공 템플릿은 변경할 수 없습니다."),
     INVALID_TEMPLATE_STRUCTURE(HttpStatus.BAD_REQUEST, "EVENT400-3", "템플릿의 필수 블록이나 슬롯 구조를 확인해주세요.");
 
