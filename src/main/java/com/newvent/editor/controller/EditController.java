@@ -24,6 +24,9 @@ import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 /**
  * 채팅 수정 시작.
  *
@@ -31,6 +34,9 @@ import com.newvent.event.repository.EventRepository;
  *
  * ★ 응답에 원본 예외나 스택을 절대 담지 않는다
  */
+@Tag(name = "채팅 수정", description = "만들어진 이벤트 페이지를 요청문으로 고친다. 수정은 비동기라 시작만 하고, "
+        + "진행 상황은 받은 jobId 로 페이지 생성 작업 API 를 폴링한다. "
+        + "이벤트를 만든 관리자만 할 수 있다 (아니면 403 COMMON403-0)")
 @RestController
 @RequestMapping("/api/admin/events/{eventId}/edit")
 public class EditController {
@@ -43,6 +49,18 @@ public class EditController {
         this.events = events;
     }
 
+    @Operation(
+            summary = "채팅 수정 시작",
+            description = "마지막 버전을 요청문대로 고치는 작업을 시작하고 202 로 jobId 를 준다. 성공하면 새 버전이 생긴다. "
+                    + "blocks 로 고칠 영역을 고르면 그 영역만 고치고, 없으면 요청문으로 영역까지 정한다. "
+                    + "요청문이 비면 400 (GEN400-0), 500자를 넘거나 영역이 네 개를 넘으면 400, "
+                    + "고를 수 없는 영역이면 400 (EDIT400-0). "
+                    + "무엇을 고칠지 알아내지 못하거나 요청문에 개인정보가 보이면 작업이 ASK_BACK 으로 끝나고, "
+                    + "개인정보는 확인한 뒤 privacyConfirmationJobId·privacyConfirmed 를 실어 다시 보낸다 "
+                    + "(확인 요청이 없거나 만료 409 FILTER409-0, 그 사이 버전이 바뀌면 409 FILTER409-1, 내용이 다르면 409 FILTER409-2). "
+                    + "이벤트가 없으면 404 (EVENT404-0), 고칠 페이지가 아직 없으면 404 (EDIT404-0), "
+                    + "종료된 이벤트는 409 (GEN409-1), 이 이벤트에서 생성·채팅 수정이 돌고 있으면 409 (EDIT409-0), "
+                    + "일일 호출 상한을 넘으면 429 (LLM429-0)")
     @PostMapping
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<EditStartResponse>> start(
