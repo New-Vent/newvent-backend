@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
 import com.newvent.event.domain.EventVersion;
+import com.newvent.generation.domain.ChatMessage;
 
 import lombok.Builder;
 
@@ -16,9 +17,12 @@ public record EventVersionSummaryResponse(
         boolean checkpoint,
         boolean published,
         Integer sourceVersionNo,
+        String requestContent,
         String changeSummary
 ) {
     public static EventVersionSummaryResponse from(EventVersion version, Event event) {
+        ChatMessage message = version.getRequestMessage();
+
         boolean published = event.getStatus() == EventStatus.PUBLISHED
                 && event.getPublishedVersion() != null
                 && version.getId().equals(event.getPublishedVersion().getId());
@@ -31,6 +35,7 @@ public record EventVersionSummaryResponse(
                 .published(published)
                 .sourceVersionNo(version.getSourceVersion() == null
                         ? null : version.getSourceVersion().getVersionNo())
+                .requestContent(message == null ? null : message.getContent())
                 .changeSummary(version.getChangeSummary())
                 .build();
     }
