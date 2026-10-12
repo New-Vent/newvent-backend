@@ -337,7 +337,9 @@ public class GenerationService {
         // ★ 저장 직전에 껍데기를 보장한다 — 래퍼 · 유의사항.
         //   백지는 템플릿이 없으므로 테마를 고를 근거가 없다 → null.
         //   event.css 의 :root 기본값이 쓰인다. 무스타일이 아니다.
-        return PageShell.plant(plantPeriodSlot(res.html()), null);    }
+        //   동작(data-behavior)도 여기서 서버가 심는다 — 모델 출력의 것은 정화가 이미 지웠다
+        return PageShell.plant(plantBehaviors(cmd, plantSlots(res.html())), null);
+    }
 
     /**
      * 이벤트 값과 어긋나는지 본다.
