@@ -1,6 +1,5 @@
 package com.newvent.participation.service;
 
-import java.math.BigDecimal;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -130,11 +129,10 @@ public class ParticipationValidator {
 
             validateProbability(pouch.get("winProbability"));
 
-            Object prizeValue = pouch.get("prizeName");
-
-            if (!(prizeValue instanceof String prizeName) || prizeName.isBlank()) {
-                throw invalidConfig();
-            }
+            ParticipationConfigReader.readPrizeName(
+                pouch.get("prizeName"),
+                this::invalidConfig
+            );
         }
 
         if (input.pouchIndex() == null
@@ -147,46 +145,31 @@ public class ParticipationValidator {
         return Map.of("pouchIndex", input.pouchIndex());
     }
 
-    // 숫자를 정수로 변환하는 공통 로직
-    private int readInteger(Object value) {
-        if (!(value instanceof Number number)) {
-            throw invalidConfig();
-        }
-
-        try {
-            return new BigDecimal(number.toString()).intValueExact();
-        } catch (NumberFormatException | ArithmeticException exception) {
-            throw invalidConfig();
-        }
-    }
-
     // 복주머니 번호: 1 이상
     private int positiveInteger(Object value) {
-        int result = readInteger(value);
-
-        if (result < 1) {
-            throw invalidConfig();
-        }
-
-        return result;
+        return ParticipationConfigReader.readInteger(
+            value,
+            1,
+            Integer.MAX_VALUE,
+            this::invalidConfig
+        );
     }
 
     // 당첨 확률: 0~100
     private void validateProbability(Object value) {
-        int probability = readInteger(value);
-
-        if (probability < 0 || probability > 100) {
-            throw invalidConfig();
-        }
+        ParticipationConfigReader.readInteger(
+            value,
+            0,
+            100,
+            this::invalidConfig
+        );
     }
 
     private ParticipationException invalidInput() {
-        return new ParticipationException(
-                ParticipationErrorCode.INVALID_SUBMITTED_DATA);
+        return new ParticipationException(ParticipationErrorCode.INVALID_SUBMITTED_DATA);
     }
 
     private ParticipationException invalidConfig() {
-        return new ParticipationException(
-                ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED);
+        return new ParticipationException(ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED);
     }
 }

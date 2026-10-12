@@ -275,7 +275,7 @@ public class GenerationService {
 
         // ★ sourceVersionId = null 이다. 생성은 고친 원본이 없다 — 두 번째 생성이어도 그렇다.
         //   기준이 된 버전을 가리키는 건 수정(EditService)의 일이다.
-        VersionStore.Saved saved = versions.save(cmd.eventId(), html, null, job.chatRequestId());
+        VersionStore.Saved saved = versions.save(cmd.eventId(), html, null, null, job.chatRequestId());
 
         // ★ "템플릿 T1" / "백지 생성" 은 event_versions 에 넣을 컬럼이 없어 로그로만 남긴다
         log.info("버전 저장 (event={}, versionId={}, v{}) — {}",

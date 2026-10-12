@@ -97,7 +97,7 @@ class ChatHistoryServiceTest {
         add(e[1], ChatRole.ASSISTANT, "수정을 반영했습니다.", ChatMessageStatus.COMPLETED);
         ChatMessage failed = add(e[1], ChatRole.ADMIN, "실패한 요청", ChatMessageStatus.FAILED);
         versions.saveAndFlush(EventVersion.create(
-                tem.getEntityManager().getReference(Event.class, e[1]), 3, "<p>v3</p>", null, request));
+                tem.getEntityManager().getReference(Event.class, e[1]), 3, "<p>v3</p>", null, null, request));
         tem.clear();
 
         List<ChatMessageResponse> content = history.list(e[1], e[0], 0, 10).content();

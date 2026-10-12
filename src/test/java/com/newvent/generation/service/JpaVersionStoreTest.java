@@ -236,7 +236,7 @@ class JpaVersionStoreTest {
         // version_no 를 직접 1 로 박아 넣는다 — max+1 을 우회한 경합 상황
         EventVersion clash = EventVersion.create(
                 tem.getEntityManager().getReference(Event.class, eventId),
-                1, "<section>충돌</section>", null);
+                1, "<section>충돌</section>", null, null);
 
         assertThrows(DataIntegrityViolationException.class, () -> {
             versions.save(clash);
@@ -280,7 +280,7 @@ class JpaVersionStoreTest {
         Long eventId = seedEvent("여름 이벤트");
         var request = seedRequest(eventId);
 
-        VersionStore.Saved saved = store.save(eventId, "<section>1</section>", null, request.getId());
+        VersionStore.Saved saved = store.save(eventId, "<section>1</section>", null, null, request.getId());
 
         tem.flush();
         tem.clear();
@@ -309,7 +309,7 @@ class JpaVersionStoreTest {
         Long b = seedEvent("이벤트 B");
         var requestOfA = seedRequest(a);
 
-        VersionStore.Saved saved = store.save(b, "<section>b1</section>", null, requestOfA.getId());
+        VersionStore.Saved saved = store.save(b, "<section>b1</section>", null, null, requestOfA.getId());
 
         tem.flush();
         tem.clear();
@@ -322,7 +322,7 @@ class JpaVersionStoreTest {
     void 없는_메시지_id_여도_저장은_성공한다() {
         Long eventId = seedEvent("여름 이벤트");
 
-        VersionStore.Saved saved = store.save(eventId, "<section>1</section>", null, 999_999_999L);
+        VersionStore.Saved saved = store.save(eventId, "<section>1</section>", null, null, 999_999_999L);
 
         assertEquals(1, saved.versionNo());
     }
@@ -332,11 +332,48 @@ class JpaVersionStoreTest {
     void 한_메시지로_버전_둘은_안_된다() {
         Long eventId = seedEvent("여름 이벤트");
         var request = seedRequest(eventId);
-        store.save(eventId, "<section>1</section>", null, request.getId());
+        store.save(eventId, "<section>1</section>", null, null, request.getId());
 
         assertThrows(DataIntegrityViolationException.class, () -> {
-            store.save(eventId, "<section>2</section>", null, request.getId());
+            store.save(eventId, "<section>2</section>", null, null, request.getId());
             tem.flush();
         });
+    }
+
+    @Test
+    void HTML과_변경요약을_DB에_함께_저장한다() {
+        Long eventId = seedEvent("변경 요약 저장 테스트");
+
+        VersionStore.Saved original = store.save(eventId, "<section>원본</section>", null);
+
+        String html = "<section>수정된 내용</section>";
+        String summary = "안내 문구 변경";
+
+        VersionStore.Saved saved = store.save(eventId, html, original.versionId(), summary);
+
+        tem.flush();
+        tem.clear();
+
+        EventVersion version = versions.findById(saved.versionId()).orElseThrow();
+
+        assertEquals(html, version.getHtmlContent());
+        assertEquals(summary, version.getChangeSummary());
+        assertEquals(original.versionId(), version.getSourceVersion().getId());
+        assertEquals(2, version.getVersionNo());
+    }
+
+    @Test
+    void 요약_없이_저장하는_기존_호출도_유지된다() {
+        Long eventId = seedEvent("요약 없는 저장 테스트");
+
+        VersionStore.Saved saved = store.save(eventId, "<section>생성된 내용</section>", null);
+
+        tem.flush();
+        tem.clear();
+
+        EventVersion version = versions.findById(saved.versionId()).orElseThrow();
+
+        assertEquals("<section>생성된 내용</section>", version.getHtmlContent());
+        assertNull(version.getChangeSummary());
     }
 }

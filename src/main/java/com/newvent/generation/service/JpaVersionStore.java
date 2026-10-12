@@ -51,7 +51,8 @@ public class JpaVersionStore implements VersionStore {
 
     @Override
     @Transactional
-    public Saved save(Long eventId, String html, Long sourceVersionId, Long requestMessageId) {
+    public Saved save(Long eventId, String html, Long sourceVersionId,
+                      String changeSummary, Long requestMessageId) {
         // ★ 이 클래스 주석의 "이벤트당 직렬화에 의존한다" 를 여기서 실제로 만든다.
         //   아래 max+1 과 insert 사이에 다른 트랜잭션이 끼어들면
         //   uk_event_versions_event_version_no 로 500 이 난다.
@@ -78,7 +79,7 @@ public class JpaVersionStore implements VersionStore {
                 : chatMessages.findByIdAndEventId(requestMessageId, eventId).orElse(null);
 
         EventVersion saved = versions.save(EventVersion.create(
-                events.getReferenceById(eventId), nextNo, html, source, requestMessage));
+                events.getReferenceById(eventId), nextNo, html, source, changeSummary, requestMessage));
 
         return new Saved(saved.getId(), saved.getVersionNo());
     }
