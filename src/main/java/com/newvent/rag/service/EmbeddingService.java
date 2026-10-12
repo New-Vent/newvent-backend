@@ -95,6 +95,10 @@ public class EmbeddingService {
 		}
 		// 지우기와 저장을 한 트랜잭션으로 묶음. 중간에 실패하면 둘 다 없던 일이 되어 절반만 저장되는 일은 없음.
 		chunks.deleteByEventIdAndVersionId(eventId, versionId);
+		// derived delete 는 행을 읽어 지우기로 표시만 하고 SQL 은 flush 때 나간다.
+		// 같은 키를 다시 넣기 전에 flush 로 삭제를 먼저 반영한다. 안 그러면 flush 때
+		// INSERT 가 DELETE 보다 먼저 나가 유니크 제약을 어긴다.
+		chunks.flush();
 		List<RagChunk> entities = new ArrayList<>(parts.size());
 		for(Chunk p : parts) {
 			float[] vec = embedding.embed(p.content());
