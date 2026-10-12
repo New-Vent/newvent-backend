@@ -1,6 +1,10 @@
 package com.newvent.editor.service;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -68,7 +72,7 @@ class EditServiceTest {
 
         FakeRetry() {
             // ★ Direct 라 reserve() 가 no-op 이다 — 상한 검사가 테스트에 끼어들지 않는다.
-            //   maxRetry = 1 → maxAttempts() = 2. run() 을 덮었으니 값 자체는 쓰이지 않는다
+            //   maxRetry = 1 → maxAttempts() = 2. runEdit() 을 덮었으니 값 자체는 쓰이지 않는다
             super(new LlmCallGateway.Direct(null),
                     new LlmProps(null, null, null, null, 0, 1, 0));
         }
@@ -84,7 +88,7 @@ class EditServiceTest {
         List<String> prompts() { return prompts; }
 
         @Override
-        public RetryService.Result run(LlmCallContext ctx, String system,
+        public RetryService.Result runEdit(LlmCallContext ctx, String system,
                                        String user, HtmlPolicy policy) {
             prompts.add(user);
             onCall.accept(prompts.size());
@@ -108,7 +112,11 @@ class EditServiceTest {
     }
 
     private static RetryService.Result ok(String html) {
-        return new RetryService.Result(true, html, List.of());
+        return ok(html, "영역 내용 수정");
+    }
+
+    private static RetryService.Result ok(String html, String changeSummary) {
+        return new RetryService.Result(true, html, List.of(), changeSummary);
     }
 
     private static RetryService.Result validationFail() {
@@ -176,7 +184,7 @@ class EditServiceTest {
         router = new FakeRouter();
         retry = new FakeRetry();
         jobs = new GenerationJobStore();
-        versions = new VersionStore.InMemory();
+        versions = spy(new VersionStore.InMemory());
         gateway = new CountingGateway();
         service = new EditService(router, retry, versions, new EventGuard.Open(), jobs,
                 LlmCallRecorder.none(), gateway);
@@ -919,5 +927,68 @@ class EditServiceTest {
         service = new EditService(router, retry, versions, new EventGuard.Open(), jobs,
                 LlmCallRecorder.none(), gateway);
         versions.save(EVENT, html, null);
+    }
+
+    @Test
+    void LLM의_변경요약을_저장_메서드에_전달한다() {
+        Long sourceVersionId = versions.latest(EVENT).orElseThrow().versionId();
+        String summary = "제목을 가을 대축제로 변경";
+
+        router.willReturn(new RawRoute("EDIT", "hero", null));
+        retry.willReturn(ok(NEW_HERO, summary));
+
+        GenerationJob job = run("제목을 가을 대축제로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+
+        verify(versions).save(
+            eq(EVENT),
+            anyString(),
+            eq(sourceVersionId),
+            eq(summary));
+    }
+
+    @Test
+    void 여러_영역의_변경요약을_합쳐서_전달한다() {
+        Long sourceVersionId = versions.latest(EVENT).orElseThrow().versionId();
+
+        router.willReturn(
+            new RawRoute("EDIT", "hero", null),
+            new RawRoute("EDIT", "steps", null));
+        retry.willReturn(
+            ok(NEW_HERO, "제목을 가을 대축제로 변경"),
+            ok(NEW_STEPS, "참여 방법에 로그인 안내 반영"));
+
+        GenerationJob job = run("제목과 참여 방법을 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+
+        verify(versions).save(
+            eq(EVENT),
+            anyString(),
+            eq(sourceVersionId),
+            eq("제목을 가을 대축제로 변경; 참여 방법에 로그인 안내 반영"));
+    }
+
+    @Test
+    void 실제로_바뀌지_않은_영역의_요약은_제외한다() {
+        Long sourceVersionId = versions.latest(EVENT).orElseThrow().versionId();
+
+        router.willReturn(
+            new RawRoute("EDIT", "hero", null),
+            new RawRoute("EDIT", "steps", null));
+        retry.willReturn(
+            ok(NEW_HERO, "제목을 가을 대축제로 변경"),
+            ok(SAME_STEPS, "참여 방법 문구 변경"));
+
+        GenerationJob job = run("제목과 참여 방법을 다듬어줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+
+        verify(versions).save(
+            eq(EVENT),
+            anyString(),
+            eq(sourceVersionId),
+            eq("제목을 가을 대축제로 변경"));
     }
 }

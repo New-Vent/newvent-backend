@@ -114,7 +114,7 @@ public class RagSeedDataGenerator {
 			Event event = null;
 			try {
 				event = events.save(Event.createDraft(owner, null, title, start, end, def.grade()));
-				EventVersion version = versions.save(EventVersion.create(event, 1, def.html(), null));
+				EventVersion version = versions.save(EventVersion.create(event, 1, def.html(), null,  null));
 				event.publish(version);
 				event = events.save(event);
 				totalChunks += embedding.reindex(event.getId(), version.getId());
