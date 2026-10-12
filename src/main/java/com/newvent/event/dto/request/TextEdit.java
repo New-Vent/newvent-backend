@@ -14,8 +14,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 public record TextEdit(
         @Schema(description = "블록 안 텍스트 노드의 문서 순서 번호. 0부터 세고 유의사항은 뺀다.")
         int index,
-        @Schema(description = "화면에 보이던 수정 전 문구. 서버의 문구와 다르면 409 (DIRECT_EDIT409-0)")
+        @Schema(description = "화면에 보이던 수정 전 문구. 이미 직접 편집한 문구는 줄바꿈·공백까지 응답 값 그대로 보낸다. "
+                + "서버의 문구와 다르면 409 (DIRECT_EDIT409-0)")
         String before,
+        @Schema(description = "바꿀 문구. 빈 문자열과 줄바꿈을 쓸 수 있다.")
         String after) {
 
     public TextEdit {
