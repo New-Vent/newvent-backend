@@ -9,6 +9,8 @@ import com.newvent.event.exception.DirectEditErrorCode;
 import com.newvent.event.exception.DirectEditException;
 import com.newvent.registry.Block;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * 에디터 직접 편집 요청 DTO.
  *
@@ -23,8 +25,10 @@ import com.newvent.registry.Block;
  * @param blockOrder      블록을 세울 순서. 블록 key 목록 (예: ["hero","steps","benefits"])
  */
 public record DirectEditRequest(
+        @Schema(description = "지금 에디터에 띄운 버전. 새 버전은 이 버전을 이어서 만든다.")
         @NotNull(message = "기준 버전 ID(sourceVersionId)는 필수입니다.")
         Long sourceVersionId,
+        @Schema(description = "고칠 문구 목록. buttonStyle 과 둘 중 하나는 있어야 한다.")
         List<@Valid TextEdit> edits,
         @Valid ButtonStyle buttonStyle,
         List<String> blockOrder) {
