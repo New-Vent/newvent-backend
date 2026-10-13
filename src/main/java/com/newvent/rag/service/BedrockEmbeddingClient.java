@@ -1,6 +1,7 @@
 package com.newvent.rag.service;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,6 +9,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import software.amazon.awssdk.core.SdkBytes;
+import software.amazon.awssdk.core.retry.RetryPolicy;
+import software.amazon.awssdk.core.retry.backoff.EqualJitterBackoffStrategy;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
@@ -36,8 +39,23 @@ public class BedrockEmbeddingClient implements EmbeddingClient {
     }
 
     public BedrockEmbeddingClient(String region, String modelId, int dimension) {
+        // ★ 재시도 3회 + 지터 백오프. 야간 전체 재색인처럼 수백 건 순차 호출하면 스로틀이 필연이라,
+        //   없으면 터진 이벤트는 다음날까지 검색 공백이 생긴다. API 타임아웃 60초 (임베딩 1건 기준 넉넉).
         this.bedrock = BedrockRuntimeClient.builder()
                 .region(Region.of(region))
+                .overrideConfiguration(c -> c
+                        .retryPolicy(RetryPolicy.builder()
+                                .numRetries(3)
+                                .backoffStrategy(EqualJitterBackoffStrategy.builder()
+                                        .baseDelay(Duration.ofMillis(200))
+                                        .maxBackoffTime(Duration.ofSeconds(5))
+                                        .build())
+                                .throttlingBackoffStrategy(EqualJitterBackoffStrategy.builder()
+                                        .baseDelay(Duration.ofMillis(500))
+                                        .maxBackoffTime(Duration.ofSeconds(10))
+                                        .build())
+                                .build())
+                        .apiCallTimeout(Duration.ofSeconds(60)))
                 .build();
         this.modelId = modelId;
         this.dimension = dimension;
