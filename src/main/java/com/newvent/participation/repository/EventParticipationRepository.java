@@ -31,8 +31,9 @@ public interface EventParticipationRepository extends JpaRepository<EventPartici
     // 본인의 전체 참여 기록을 최신순으로 페이징 조회
     @EntityGraph(attributePaths = "event")
     @Query(
-            value = """
-                    SELECT p
+        value = """
+
+            SELECT p
                     FROM EventParticipation p
                     WHERE p.user.id = :userId
                     ORDER BY p.createdAt DESC, p.id DESC
@@ -191,6 +192,183 @@ public interface EventParticipationRepository extends JpaRepository<EventPartici
         nativeQuery = true
     )
     int updatePendingAsLostInBatch(
+        @Param("eventId") Long eventId,
+        @Param("batchSize") int batchSize
+    );
+
+    // 실제 경기 결과가 등록됐고 아직 발표 처리하지 않은 스포츠 이벤트
+    @Query(
+        value = """
+                SELECT DISTINCT e.id
+                FROM events e
+                JOIN event_game_configs c ON c.event_id = e.id
+                JOIN games g ON g.id = c.game_id
+                WHERE g.code = 'SPORTS_PREDICTION'
+                  AND e.deleted_at IS NULL
+                  AND e.status IN ('PUBLISHED', 'ENDED')
+                  AND e.end_date < :now
+                  AND c.config ->> 'winningPrediction' IS NOT NULL
+                  AND NOT jsonb_exists(c.config, 'drawnAt')
+                ORDER BY e.id
+                """,
+        nativeQuery = true
+    )
+    List<Long> findSportsDrawCandidateEventIds(
+        @Param("now") OffsetDateTime now
+    );
+
+    // 혜택 하나의 결과를 최대 batchSize명에게 추가한다.
+    // winnersOnly=true: 아직 처리하지 않은 지급 대상자 중 무작위 당첨.
+    // winnersOnly=false: 남은 참여자의 혜택 결과 처리.
+    //
+    // clearAutomatically는 사용하지 않는다.
+    // 서비스가 마지막에 gameConfig의 drawnAt을 변경해야 한다.
+    @Modifying(flushAutomatically = true)
+    @Query(
+        value = """
+        WITH targets AS (
+            SELECT
+                p.id,
+                (
+                    :target = 'ALL_PARTICIPANTS'
+                    OR (
+                        :target = 'CORRECT_PREDICTIONS'
+                        AND p.submitted_data ->> 'prediction'
+                            = :winningPrediction
+                    )
+                ) AS eligible
+            FROM event_participations p
+            WHERE p.event_id = :eventId
+              AND p.result_data ->> 'status' = 'PENDING'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM jsonb_array_elements(
+                      COALESCE(
+                          p.result_data -> 'rewards',
+                          '[]'::jsonb
+                      )
+                  ) AS r(item)
+                  WHERE r.item ->> 'rewardId' = :rewardId
+              )
+              AND (
+                  :winnersOnly = false
+                  OR (
+                      :target = 'ALL_PARTICIPANTS'
+                      OR (
+                          :target = 'CORRECT_PREDICTIONS'
+                          AND p.submitted_data ->> 'prediction'
+                              = :winningPrediction
+                      )
+                  )
+              )
+            ORDER BY
+                CASE
+                    WHEN :winnersOnly = true THEN random()
+                    ELSE 0
+                END,
+                p.id
+            LIMIT :batchSize
+        ),
+        results AS (
+            SELECT
+                t.id,
+                (
+                    :winnersOnly = true
+                    OR (:selection = 'ALL' AND t.eligible)
+                ) AS won
+            FROM targets t
+        )
+        UPDATE event_participations p
+        SET result_data = jsonb_set(
+            p.result_data,
+            '{rewards}',
+            COALESCE(
+                p.result_data -> 'rewards',
+                '[]'::jsonb
+            ) || jsonb_build_array(
+                jsonb_build_object(
+                    'rewardId', CAST(:rewardId AS text),
+                    'status',
+                        CASE WHEN r.won THEN 'WON' ELSE 'LOST' END
+                )
+                ||
+                CASE WHEN r.won
+                    THEN jsonb_build_object(
+                        'prizeName', CAST(:prizeName AS text)
+                    )
+                    ELSE '{}'::jsonb
+                END
+            )
+        )
+        FROM results r
+        WHERE p.id = r.id
+          AND p.event_id = :eventId
+          AND p.result_data ->> 'status' = 'PENDING'
+        """,
+        nativeQuery = true
+    )
+    int appendSportsRewardInBatch(
+        @Param("eventId") Long eventId,
+        @Param("winningPrediction") String winningPrediction,
+        @Param("rewardId") String rewardId,
+        @Param("target") String target,
+        @Param("selection") String selection,
+        @Param("prizeName") String prizeName,
+        @Param("winnersOnly") boolean winnersOnly,
+        @Param("batchSize") int batchSize
+    );
+
+    // 혜택 중 하나라도 WON이면 최상위 상태를 WON으로 확정한다.
+    // 기존 목록용 prizeName에는 첫 번째 당첨 경품명을 저장한다.
+    @Modifying(flushAutomatically = true)
+    @Query(
+        value = """
+        WITH targets AS (
+            SELECT p.id
+            FROM event_participations p
+            WHERE p.event_id = :eventId
+              AND p.result_data ->> 'status' = 'PENDING'
+            ORDER BY p.id
+            LIMIT :batchSize
+        )
+        UPDATE event_participations p
+        SET result_data =
+            jsonb_set(
+                p.result_data,
+                '{status}',
+                to_jsonb(
+                    CASE WHEN EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements(
+                            p.result_data -> 'rewards'
+                        ) AS r(item)
+                        WHERE r.item ->> 'status' = 'WON'
+                    ) THEN 'WON' ELSE 'LOST' END
+                )
+            )
+            ||
+            COALESCE(
+                (
+                    SELECT jsonb_build_object(
+                        'prizeName', r.item ->> 'prizeName'
+                    )
+                    FROM jsonb_array_elements(
+                        p.result_data -> 'rewards'
+                    ) WITH ORDINALITY AS r(item, position)
+                    WHERE r.item ->> 'status' = 'WON'
+                    ORDER BY r.position
+                    LIMIT 1
+                ),
+                '{}'::jsonb
+            )
+        FROM targets t
+        WHERE p.id = t.id
+          AND p.event_id = :eventId
+          AND p.result_data ->> 'status' = 'PENDING'
+        """,
+        nativeQuery = true
+    )
+    int finalizeSportsResultsInBatch(
         @Param("eventId") Long eventId,
         @Param("batchSize") int batchSize
     );

@@ -124,12 +124,27 @@ public class ParticipationConfigService {
      * ★ 종료일이 없으면 비교할 수 없으니 통과시킨다. 그 경우 스케줄러도 돌지 않는다.
      */
     private void requireAnnouncementAfterEnd(Event event, Game game, Map<String, Object> config) {
-        if (!"BASIC".equals(game.getCode()) || !"DELAYED".equals(String.valueOf(config.get("resultMode")))) {
+        boolean sports = "SPORTS_PREDICTION".equals(game.getCode());
+
+        boolean delayedBasic = "BASIC".equals(game.getCode()) && "DELAYED".equals(config.get("resultMode"));
+
+        if (!sports && !delayedBasic) {
             return;
         }
+
+        if (sports && (config.containsKey("winningPrediction") || config.containsKey("drawnAt"))) {
+            throw new ParticipationException(ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED);
+        }
+
         if (event.getEndDate() == null) {
+            if (sports) {
+                throw new ParticipationException(ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED);
+            }
+
+            // 기존 기본형 동작 유지
             return;
         }
+
         if (!validator.readAnnouncementAt(config).isAfter(event.getEndDate())) {
             throw new ParticipationException(ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED);
         }

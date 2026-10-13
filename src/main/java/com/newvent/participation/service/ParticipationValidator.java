@@ -2,7 +2,6 @@ package com.newvent.participation.service;
 
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +9,7 @@ import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
+import com.newvent.participation.config.SportsPredictionConfig;
 import com.newvent.participation.domain.EventGameConfig;
 import com.newvent.participation.domain.Game;
 import com.newvent.participation.dto.request.ParticipationCreateRequest;
@@ -43,7 +43,7 @@ public class ParticipationValidator {
 
         switch (game.getCode()) {
             case "BASIC" -> validateBasicConfig(config);
-            case "SPORTS_PREDICTION" -> readPredictionOptions(config);
+            case "SPORTS_PREDICTION" -> SportsPredictionConfig.read(config);
             case "PRE_REGISTRATION" -> { }
             case "LUCKY_POUCH" -> readPouchIndexes(config);
             default -> throw unsupported();
@@ -72,7 +72,10 @@ public class ParticipationValidator {
                 validateBasicConfig(config);
                 yield basicInput(input);
             }
-            case "SPORTS_PREDICTION" -> predictionInput(readPredictionOptions(config), input);
+            case "SPORTS_PREDICTION" -> {
+                SportsPredictionConfig sports = SportsPredictionConfig.read(config);
+                yield predictionInput(sports.predictionOptions(), input);
+            }
             case "PRE_REGISTRATION" -> phoneNumberInput(input);
             case "LUCKY_POUCH" -> pouchInput(readPouchIndexes(config), input);
             default -> throw unsupported();
@@ -147,24 +150,6 @@ public class ParticipationValidator {
         } catch (DateTimeParseException exception) {
             throw invalidConfig();
         }
-    }
-
-    /** 예측 선택지. 비어 있거나 빈 문자열이 섞이면 거부한다. */
-    private List<String> readPredictionOptions(Map<String, Object> config) {
-        Object value = config.get("predictionOptions");
-
-        if (!(value instanceof List<?> options)
-                || options.isEmpty()
-                || options.stream().anyMatch(option ->
-                !(option instanceof String text) || text.isBlank())) {
-            throw invalidConfig();
-        }
-
-        List<String> result = new ArrayList<>(options.size());
-        for (Object option : options) {
-            result.add((String) option);
-        }
-        return result;
     }
 
     /**
