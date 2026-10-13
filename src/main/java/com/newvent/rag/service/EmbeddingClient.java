@@ -8,8 +8,16 @@ package com.newvent.rag.service;
  */
 public interface EmbeddingClient {
 
-    /** 텍스트 1건을 벡터로 바꾼다. 빈 입력은 거부한다 */
+    /** 질의용. 텍스트 1건을 벡터로 바꾼다. 빈 입력은 거부한다 */
     float[] embed(String text);
+
+    /**
+     * 문서 색인용. Cohere 권장대로 문서와 질의를 다른 표현으로 만든다.
+     * 기본은 질의용과 같다 (Ollama·Mock은 구분 없음).
+     */
+    default float[] embedDocument(String text) {
+        return embed(text);
+    }
 
     /** 벡터 길이. vector(n) 컬럼과 같아야 한다 */
     int dimension();

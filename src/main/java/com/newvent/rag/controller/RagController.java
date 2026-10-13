@@ -33,6 +33,7 @@ import com.newvent.rag.service.VersionCompareService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * RAG 관리자 API. /api/admin/** 이라 ADMIN 권한이 자동으로 걸림 (SecurityConfig)
@@ -46,6 +47,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
         + "eventId 를 받는 API 는 이벤트를 만든 관리자만 부를 수 있다 (아니면 403 COMMON403-0, 이벤트가 없거나 휴지통에 있으면 404 EVENT404-0). "
         + "주간 품질 추이·전체 재색인은 이벤트 하나에 묶이지 않아 관리자면 누구나 부른다. "
         + "검색 미리보기·프롬프트 추천은 eventId 의 이벤트를 빼고 찾고, 거리(distance)가 0.5 보다 먼 결과는 버린다.")
+@Slf4j
 @Validated
 @RestController
 @RequestMapping("/api/admin/rag")
@@ -64,17 +66,21 @@ public class RagController {
 		this.ownerCheck = ownerCheck;
 	}
 
-    /** 수동 재색인. versionId가 없으면 이벤트 전체. 돌리고 나서 현황을 돌려준다. */
+    /** 수동 재색인. 한 버전만 돌린다. 전체 재색인이 돌고 있으면 409. 돌리고 나서 현황을 돌려준다. */
     @Operation(
             summary = "버전 하나 재색인",
             description = "그 버전의 기존 청크를 지우고 다시 임베딩해 저장한 뒤 이벤트의 색인 현황을 돌려준다. 지우기와 저장은 한 트랜잭션이다. "
                     + "이벤트 전체는 전체 재색인으로 한다. 이 이벤트의 버전이 아니면 404 (EVENT404-3)")
     @PostMapping("/reindex")
-    public ApiResponse<IndexStatusResponse> reindex(@Valid @RequestBody ReindexRequest request,
+    public ResponseEntity<ApiResponse<?>> reindex(@Valid @RequestBody ReindexRequest request,
                                                     @AuthenticationPrincipal AuthUser admin) {
         ownerCheck.requireOwned(request.eventId(), admin);
+        if (embedding.isReindexAllRunning()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiResponse.success(embedding.getReindexAllStatus()));
+        }
         embedding.reindex(request.eventId(), request.versionId());
-        return ApiResponse.success(embedding.getStatus(request.eventId()));
+        return ResponseEntity.ok(ApiResponse.success(embedding.getStatus(request.eventId())));
     }
 
     /** 색인 현황. 전체 버전 중 몇 개가 들어갔는지. */
@@ -155,12 +161,20 @@ public class RagController {
                     + "한 이벤트가 실패해도 다음으로 넘어가고, 결과는 진행 상태 API 로 본다. 한 번에 하나만 돌며 매일 03:00 스케줄러와 자리를 같이 쓴다. "
                     + "이미 돌고 있으면 409 인데, 오류 코드 없이 지금 진행 상태를 본문에 담아 준다.")
     @PostMapping("/reindex/all")
-    public ResponseEntity<ApiResponse<ReindexAllStatus>> reindexAll() {
+    public ResponseEntity<ApiResponse<ReindexAllStatus>> reindexAll(
+            @AuthenticationPrincipal AuthUser admin) {
         if (!embedding.tryClaimReindexSlot()) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ApiResponse.success(embedding.getReindexAllStatus()));
         }
-        embedding.indexAllEventsAsync();
+        log.info("전체 재색인 시작 (adminId={})", admin == null ? null : admin.id());
+        try {
+            embedding.indexAllEventsAsync();
+        } catch (RuntimeException e) {
+            // 제출 거부 등으로 async 본문이 안 돌면 finally 가 안 돌아 플래그가 누수된다. 직접 해제.
+            embedding.releaseReindexSlot();
+            throw e;
+        }
         return ResponseEntity.accepted()
                 .body(ApiResponse.success(embedding.getReindexAllStatus()));
     }

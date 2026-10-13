@@ -3,6 +3,7 @@ package com.newvent.editor.service;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
@@ -945,7 +946,8 @@ class EditServiceTest {
             eq(EVENT),
             anyString(),
             eq(sourceVersionId),
-            eq(summary));
+            eq(summary),
+            isNull());
     }
 
     @Test
@@ -967,7 +969,8 @@ class EditServiceTest {
             eq(EVENT),
             anyString(),
             eq(sourceVersionId),
-            eq("제목을 가을 대축제로 변경; 참여 방법에 로그인 안내 반영"));
+            eq("제목을 가을 대축제로 변경; 참여 방법에 로그인 안내 반영"),
+            isNull());
     }
 
     @Test
@@ -989,7 +992,8 @@ class EditServiceTest {
             eq(EVENT),
             anyString(),
             eq(sourceVersionId),
-            eq("제목을 가을 대축제로 변경"));
+            eq("제목을 가을 대축제로 변경"),
+            isNull());
     }
 
     // ── 페이지 배치 (layout-*) ─────────────────────────────────────

@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -16,6 +18,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
@@ -24,9 +27,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.security.access.AccessDeniedException;
 
+import com.newvent.auth.dto.AuthUser;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventVersion;
+import com.newvent.event.service.EventOwnerCheck;
 import com.newvent.generation.domain.FailureType;
 import com.newvent.generation.domain.LlmCallLog;
 import com.newvent.generation.exception.LlmDailyLimitExceededException;
@@ -52,7 +59,7 @@ public class LlmCallLogServiceTest {
 	private LlmCallLogRepository logs;
 
 	private LlmCallLogService newService() {
-		return new LlmCallLogService(logs, CLOCK, LIMIT);
+		return new LlmCallLogService(logs, CLOCK, LIMIT, mock(EventOwnerCheck.class));
 	}
 
 	// ---------------- 매핑 규칙 ------------------
@@ -250,5 +257,36 @@ public class LlmCallLogServiceTest {
 				"= 2026-09-21 00:00 KST. UTC 자정을 넘기면 일일 상한이 어긋남");
 		assertEquals(Instant.parse("2026-09-21T15:00:00Z"), end.getValue(),
 				"= 2026-09-22 00:00 KST. (start, end) 라 자정 0시는 '오늘'이 아님.");
+	}
+
+	// ---------------- 소유자 검사 ------------------
+	@Test
+	@DisplayName("목록 조회는 eventId 지정 시 소유자를 확인한다.")
+	void 목록_소유자확인() {
+		EventOwnerCheck ownerCheck = mock(EventOwnerCheck.class);
+		LlmCallLogService service = new LlmCallLogService(logs, CLOCK, LIMIT, ownerCheck);
+		when(logs.search(any(), any(), any(), any(), any())).thenReturn(Page.empty());
+		AuthUser admin = AuthUser.admin(1L);
+
+		service.search(7L, null, null, null, 0, 10, admin);
+
+		verify(ownerCheck).requireOwned(eq(7L), eq(admin));
+	}
+
+	@Test
+	@DisplayName("남의 이벤트 로그 상세는 403.")
+	void 상세_남의이벤트_403() {
+		EventOwnerCheck ownerCheck = mock(EventOwnerCheck.class);
+		LlmCallLogService service = new LlmCallLogService(logs, CLOCK, LIMIT, ownerCheck);
+		Event event = mock(Event.class);
+		when(event.getId()).thenReturn(7L);
+		LlmCallLog row = mock(LlmCallLog.class);
+		when(row.getEvent()).thenReturn(event);
+		when(logs.findById(9L)).thenReturn(Optional.of(row));
+		AuthUser other = AuthUser.admin(9L);
+		doThrow(new AccessDeniedException("denied"))
+				.when(ownerCheck).requireOwned(eq(7L), eq(other));
+
+		assertThrows(AccessDeniedException.class, () -> service.detail(9L, other));
 	}
 }

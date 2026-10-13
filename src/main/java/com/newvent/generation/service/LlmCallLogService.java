@@ -17,9 +17,11 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventVersion;
+import com.newvent.event.service.EventOwnerCheck;
 import com.newvent.generation.domain.FailureType;
 import com.newvent.generation.domain.LlmCallLog;
 import com.newvent.generation.dto.LlmCallLogDetailResponse;
@@ -39,17 +41,21 @@ public class LlmCallLogService {
 	private final LlmCallLogRepository logs;
 	private final Clock clock;
 	private final int dailyLimit;
+	private final EventOwnerCheck ownerCheck;
 
 	@Autowired
-	public LlmCallLogService(LlmCallLogRepository logs, Clock clock, LlmProps props) {
-		this(logs, clock, props.dailyLimit());
+	public LlmCallLogService(LlmCallLogRepository logs, Clock clock, LlmProps props,
+			EventOwnerCheck ownerCheck) {
+		this(logs, clock, props.dailyLimit(), ownerCheck);
 	}
 
 	/** 테스트용 — 일일 상한을 직접 준다 */
-    LlmCallLogService(LlmCallLogRepository logs, Clock clock, int dailyLimit) {
+    LlmCallLogService(LlmCallLogRepository logs, Clock clock, int dailyLimit,
+    		EventOwnerCheck ownerCheck) {
     	this.logs = logs;
         this.clock = clock;
         this.dailyLimit = dailyLimit;
+        this.ownerCheck = ownerCheck;
     }
 
     // 매핑 규칙 (한 곳)
@@ -149,7 +155,11 @@ public class LlmCallLogService {
      */
     @Transactional(readOnly = true)
     public PageResponse<LlmCallLogSummaryResponse> search(Long eventId, Boolean callOk,
-            OffsetDateTime from, OffsetDateTime to, int page, int size) {
+            OffsetDateTime from, OffsetDateTime to, int page, int size, AuthUser principal) {
+        // eventId 지정 시 그 이벤트 소유자만 본다. 전체 목록(조건 없음)은 관리자 공용 뷰로 둔다.
+        if (eventId != null) {
+            ownerCheck.requireOwned(eventId, principal);
+        }
         Page<LlmCallLog> result = logs.search(
                 eventId, callOk,
                 from == null ? null : from.toInstant(),
@@ -160,11 +170,12 @@ public class LlmCallLogService {
                 page, size, result.getTotalElements());
     }
 
-    /** 로그 1건 상세. 없으면 404. */
+    /** 로그 1건 상세. 없으면 404, 남의 이벤트면 403. */
     @Transactional(readOnly = true)
-    public LlmCallLogDetailResponse detail(Long id) {
+    public LlmCallLogDetailResponse detail(Long id, AuthUser principal) {
         LlmCallLog log = logs.findById(id)
                 .orElseThrow(() -> new LlmCallLogNotFoundException(id));
+        ownerCheck.requireOwned(log.getEvent().getId(), principal);
         return LlmCallLogDetailResponse.from(log);
     }
 

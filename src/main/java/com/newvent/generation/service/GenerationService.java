@@ -65,6 +65,8 @@ public class GenerationService {
 
     // b3: 현재 생성에서 사용된 RAG 청크 ID들 (Aborted 시 로그 갱신용)
     private String ragChunkIds;
+    // 채팅 내역. 남기지 못해도 생성은 계속된다
+    private final ChatLog chatLog;
 
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -84,15 +86,15 @@ public class GenerationService {
                              VersionStore versions, EventGuard guard, GenerationJobStore jobs,
                              LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering,
                              SimilarityService similarity) {
-        this(retry, templates, versions, guard, jobs, recorder, filtering, similarity, null);
+        this(retry, templates, versions, guard, jobs, recorder, filtering, similarity, ChatLog.NOOP);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public GenerationService(RetryService retry, TemplateService templates,
                              VersionStore versions, EventGuard guard, GenerationJobStore jobs,
                              LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering,
-                             SimilarityService similarity, LlmCallGateway gateway) {
-        this.gateway = gateway;
+                             SimilarityService similarity, ChatLog chatLog) {
+        this.chatLog = chatLog;
         this.filtering = filtering;
         this.similarity = similarity;
         this.retry = retry;
@@ -205,8 +207,17 @@ public class GenerationService {
         GenerationJob job = slot.get();
         job.privacyRequest("generate", null);
         job.privacyConfirmation(input.fingerprint(), input.privacyTypes());
+
+        // ⑦ 채팅 내역 - AI 로 만드는 요청만 남긴다. 템플릿으로 만들기는 대화가 아니라 요청문이 없다.
+        //   개인정보 후보가 감지된 요청(확인 전 되묻기 · 확인 후 재전송)은 원문 대신 표시만 남긴다.
+        if (!cmd.hasTemplate()) {
+            boolean privacy = input.question() != null || cmd.privacyConfirmed();
+            job.chatRequestId(chatLog.request(cmd.eventId(), input.text(), null, privacy));
+        }
+
         if (input.question() != null) {
             job.askBack(input.question());
+            chatLog.finish(job, cmd.eventId(), null);
             jobs.finish(job);
         } else {
             worker.submit(() -> runSafely(job, safeCommand));
@@ -236,7 +247,7 @@ public class GenerationService {
             log.warn("생성 실패 — {}차 시도에서 모델 호출 (event={})", e.attempt(), cmd.eventId(), e);
             // ★ ctxOf() 는 attemptNo 가 항상 1이라, 2차 이후 실패는 실제 시도 행을 못 찾는다.
             //   e.attempt() 로 실패한 시도 번호를 넘겨 그 행의 RAG 정보를 갱신한다.
-            recorder.updateRagInfo(ctxOf(job, cmd).attempt(e.attempt()), ragChunkIds);
+            recorder.updateRagInfo(ctxOf(job, cmd).attempt(e.attempt()), job.ragChunkIds());
             job.fail("페이지 생성 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         } catch (LlmCallException e) {
             // 연결 끊김 · 타임아웃 · 모델 서버 down. 프롬프트를 고쳐도 안 고쳐진다
@@ -246,8 +257,14 @@ public class GenerationService {
             log.error("생성 실패 — 예상치 못한 오류 (event={})", cmd.eventId(), e);
             job.fail("페이지를 만드는 중 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.");
         } finally {
-            // ★ 반드시 비운다. 안 비우면 그 이벤트는 다음 생성을 영원히 못 한다
-            jobs.finish(job);
+            // 채팅 내역을 먼저 끝맺는다. 자리를 비우면 다음 요청이 바로 들어와 메시지 순서가 뒤섞일 수 있다.
+            // 남기다 터져도 자리는 반드시 비운다.
+            try {
+                chatLog.finish(job, cmd.eventId(), "페이지를 만들었습니다.");
+            } finally {
+                // ★ 반드시 비운다. 안 비우면 그 이벤트는 다음 생성을 영원히 못 한다
+                jobs.finish(job);
+            }
         }
     }
 
@@ -266,7 +283,7 @@ public class GenerationService {
 
         // ★ sourceVersionId = null 이다. 생성은 고친 원본이 없다 — 두 번째 생성이어도 그렇다.
         //   기준이 된 버전을 가리키는 건 수정(EditService)의 일이다.
-        VersionStore.Saved saved = versions.save(cmd.eventId(), html, null);
+        VersionStore.Saved saved = versions.save(cmd.eventId(), html, null, null, job.chatRequestId());
 
         // ★ "템플릿 T1" / "백지 생성" 은 event_versions 에 넣을 컬럼이 없어 로그로만 남긴다
         log.info("버전 저장 (event={}, versionId={}, v{}) — {}",
@@ -301,7 +318,7 @@ public class GenerationService {
         // ★ b3: RAG 참고 예시 검색. searchRagChunks 안에서 예외를 다 잡으므로 여기서 터지지 않는다.
         //   빈 리스트면 ragChunkIds=null → 로그에 rag_used=false 로 남는다.
         List<RagChunk> ragChunks = searchRagChunks(cmd);
-        ragChunkIds = chunkIdsOf(ragChunks);
+        job.ragChunkIds(chunkIdsOf(ragChunks));
 
         RetryService.Result res;
         try {
@@ -313,12 +330,12 @@ public class GenerationService {
         } catch (RetryService.Aborted e) {
             // ★ 터진 시도 앞부분을 chunkIds 와 함께 먼저 기록하고 다시 던진다.
             //   runSafely 쪽 기록을 지웠으므로 중복 기록이 아니다.
-            recorder.recordAttempts(ctxOf(job, cmd), e.partial(), ragChunkIds);
+            recorder.recordAttempts(ctxOf(job, cmd), e.partial(), job.ragChunkIds());
             throw e;
         }
 
         // ★ 성공이든 실패든 시도 전부를 남긴다. 저장·취소보다 먼저 — 취소돼도 쓴 토큰은 쓴 것이다
-        recorder.recordAttempts(ctxOf(job, cmd), res, ragChunkIds);
+        recorder.recordAttempts(ctxOf(job, cmd), res, job.ragChunkIds());
 
         job.attempt(res.attempts());
         if (job.checkCancelled()) return null;
