@@ -5,9 +5,16 @@ import java.util.List;
 
 import com.newvent.user.domain.MembershipGrade;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 // 등급 종류 안내용. 산정 기준(점수표·금액·기간)은 일부러 담지 않는다
 // 등급은 별도 고객·과금 시스템이 산정한다는 전제라, 사용자에게는 어떤 등급이 있고 무엇을 뜻하는지만 알려준다.
-public record MembershipGradeResponse(MembershipGrade grade, String name, String description) {
+public record MembershipGradeResponse(
+        MembershipGrade grade,
+        @Schema(description = "화면에 보여 줄 등급 이름", example = "우수")
+        String name,
+        @Schema(description = "등급 설명")
+        String description) {
 
     public static List<MembershipGradeResponse> all() {
         return Arrays.stream(MembershipGrade.values())
