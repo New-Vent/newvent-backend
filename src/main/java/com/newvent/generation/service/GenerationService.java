@@ -89,12 +89,27 @@ public class GenerationService {
         this(retry, templates, versions, guard, jobs, recorder, filtering, similarity, ChatLog.NOOP);
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public GenerationService(RetryService retry, TemplateService templates,
                              VersionStore versions, EventGuard guard, GenerationJobStore jobs,
                              LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering,
                              SimilarityService similarity, ChatLog chatLog) {
+        this(retry, templates, versions, guard, jobs, recorder, filtering, similarity, chatLog, null);
+    }
+
+    public GenerationService(RetryService retry, TemplateService templates,
+                             VersionStore versions, EventGuard guard, GenerationJobStore jobs,
+                             LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering,
+                             SimilarityService similarity, LlmCallGateway gateway) {
+        this(retry, templates, versions, guard, jobs, recorder, filtering, similarity, ChatLog.NOOP, gateway);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public GenerationService(RetryService retry, TemplateService templates,
+                             VersionStore versions, EventGuard guard, GenerationJobStore jobs,
+                             LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering,
+                             SimilarityService similarity, ChatLog chatLog, LlmCallGateway gateway) {
         this.chatLog = chatLog;
+        this.gateway = gateway;
         this.filtering = filtering;
         this.similarity = similarity;
         this.retry = retry;
