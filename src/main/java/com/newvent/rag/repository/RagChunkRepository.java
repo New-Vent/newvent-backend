@@ -24,7 +24,7 @@ import com.newvent.rag.domain.RagChunk;
 public interface RagChunkRepository extends JpaRepository<RagChunk, Long>{
 
 	@Query(value = """
-			select * from rag_chunks c
+			select c.* from rag_chunks c
 			 join events e on e.id = c.event_id
 			 where c.embedding_model = :model
 			   and c.event_id <> :excludeEventId
