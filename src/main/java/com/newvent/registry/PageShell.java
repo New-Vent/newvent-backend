@@ -13,6 +13,7 @@ import java.util.function.Predicate;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.jsoup.nodes.Node;
 
 /**
@@ -299,6 +300,29 @@ public final class PageShell {
      *
      * ★ 루트가 없으면 그대로 돌려준다. 래퍼를 만드는 건 ensureRoot 의 몫이다
      */
+    /**
+     * 페이지 전체 배경 이미지를 루트로 옮긴다.
+     *
+     * ★ 왜 옮기나 — 모델은 **영역 하나**의 HTML 만 쓴다. 루트에는 손이 닿지 않는다.
+     *   그래서 hero 안에 쓰게 하고 서버가 옮긴다. 팔레트 · 테마와 똑같은 길이다.
+     * ★ 맨 앞에 둔다. CSS 가 z-index 로 눌러 두지만, 순서까지 맞춰 두면
+     *   미리보기에서 글자를 가리는 사고가 한 겹 더 막힌다.
+     * ★ 하나만 남긴다. 두 장이 겹치면 어느 쪽이 보이는지 아무도 모른다.
+     * ★ 이미 루트에 있는 것은 그대로 둔다 — 영역 수정 때마다 다시 옮기지 않는다.
+     */
+    private static void hoistPageAsset(Document doc, Element root) {
+        Elements all = doc.body().select("img." + Asset.PAGE.cssClass());
+        if (all.isEmpty()) return;
+
+        Element keep = all.first();
+        for (Element e : all) {
+            if (e != keep) e.remove();
+        }
+        if (keep.parent() != root || keep.elementSiblingIndex() != 0) {
+            root.prependChild(keep);
+        }
+    }
+
     public static String hoistPalette(String fragment) {
         Document doc = parse(fragment);
         Element root = doc.body().selectFirst(ROOT_SELECTOR);
@@ -314,6 +338,7 @@ public final class PageShell {
      *   그 밖                  루트의 팔레트를 그걸로 바꾼다
      */
     private static void hoist(Document doc, Element root) {
+        hoistPageAsset(doc, root);
         String palette = pickFromHero(doc, Palette::looksLike, c -> Palette.find(c).isPresent());
         String theme   = pickFromHero(doc, Theme::looksLike,   c -> Theme.find(c).isPresent());
 

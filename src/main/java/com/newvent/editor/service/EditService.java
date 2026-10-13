@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.newvent.asset.service.AssetUrls;
 import com.newvent.common.exception.code.ErrorCode;
 import com.newvent.editor.exception.EditErrorCode;
 import com.newvent.generation.exception.GenerationErrorCode;
@@ -34,6 +35,8 @@ import com.newvent.generation.service.VersionStore;
 import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmCallException;
 import com.newvent.infra.llm.LlmCallGateway;
+import com.newvent.registry.Asset;
+import com.newvent.registry.AssetEdit;
 import com.newvent.registry.Block;
 import com.newvent.registry.BlockMerge;
 import com.newvent.registry.BlockValidator;
@@ -75,6 +78,10 @@ public class EditService {
     // 채팅 내역. 남기지 못해도 수정은 계속된다
     private final ChatLog chatLog;
 
+    // ★ 이 이벤트에 올라온 이미지 주소. 모델에게 목록을 주고, 돌아온 html 을 그 목록으로 대조한다.
+    //   둘 다 해야 한다 — 안내만 하면 모델이 주소를 지어내고, 대조만 하면 쓸 수 있는 줄 모른다
+    private final AssetUrls assets;
+
     private record Applied(String html, String changeSummary) {}
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -92,14 +99,24 @@ public class EditService {
     public EditService(RouteService router, RetryService retry, VersionStore versions,
                        EventGuard guard, GenerationJobStore jobs, LlmCallRecorder recorder,
                        LlmCallGateway gateway, com.newvent.filtering.FilteringPolicy filtering) {
-        this(router, retry, versions, guard, jobs, recorder, gateway, filtering, ChatLog.NOOP);
+        this(router, retry, versions, guard, jobs, recorder, gateway, filtering, ChatLog.NOOP,
+                AssetUrls.NONE);
+    }
+
+    public EditService(RouteService router, RetryService retry, VersionStore versions,
+                       EventGuard guard, GenerationJobStore jobs, LlmCallRecorder recorder,
+                       LlmCallGateway gateway, com.newvent.filtering.FilteringPolicy filtering,
+                       ChatLog chatLog) {
+        this(router, retry, versions, guard, jobs, recorder, gateway, filtering, chatLog,
+                AssetUrls.NONE);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public EditService(RouteService router, RetryService retry, VersionStore versions,
                        EventGuard guard, GenerationJobStore jobs, LlmCallRecorder recorder,
                        LlmCallGateway gateway, com.newvent.filtering.FilteringPolicy filtering,
-                       ChatLog chatLog) {
+                       ChatLog chatLog, AssetUrls assets) {
+        this.assets = assets;
         this.chatLog = chatLog;
         this.filtering = filtering;
         this.router = router;
@@ -265,6 +282,13 @@ public class EditService {
         }
 
         job.privacyRequest("edit", base.versionId());
+
+        // ★★ 이미지 요청은 여기서 끝난다 — **모델을 한 번도 안 부른다.**
+        //   "1번 이미지를 배경으로" 에는 모델이 더할 판단이 없다(몇 번 · 어떤 역할 · 어느 영역).
+        //   그런데 부르면 영역을 통째로 다시 써서 문구가 같이 바뀌고, 먼저 넣어 둔 다른
+        //   이미지가 사라진다. 안 부르면 그 일이 생기지 않는다. AssetEdit 주석 참고.
+        if (applyAssetEdit(job, cmd, doc, base)) return;
+
         List<Decision.Run> plan = planAll(job, cmd, doc);
         if (plan == null) return;               // 되묻기 · 거절 — job 에 문구가 담겼다
         if (!cmd.hasBlocks()) {
@@ -339,6 +363,45 @@ public class EditService {
         // ★★ 순서가 중요하다 — versionId 를 먼저 넣고 DONE 을 나중에 넣는다
         job.versionId(saved.versionId());
         job.to(GenerationJob.Phase.DONE);
+    }
+
+    /**
+     * 이미지 요청이면 직접 처리하고 true. 아니면 false — 평소 경로로 간다.
+     *
+     * ★ 모호한 요청("이 사진 어울리게 넣어줘")에는 false 가 나온다. 그건 모델이 맡는 게 맞다.
+     * ★ 바뀐 게 없으면 저장하지 않는다. "반영했어요" 가 나가고 화면은 그대로인 게 제일 나쁘다 —
+     *   평소 경로의 "조용한 실패" 검사와 같은 자세다.
+     */
+    private boolean applyAssetEdit(GenerationJob job, EditCommand cmd, String doc,
+                                   VersionStore.Snapshot base) {
+        List<Asset.Ref> uploaded = assets.assetsOf(cmd.eventId());
+        Optional<AssetEdit.Plan> parsed = AssetEdit.parse(cmd.requestText(), uploaded.size());
+        if (parsed.isEmpty()) return false;
+
+        AssetEdit.Plan step = parsed.get();
+        String after = AssetEdit.apply(doc, step, uploaded);
+        if (unchanged(doc, after)) {
+            log.info("이미지 수정 — 바뀐 게 없다 (event={}, {})", cmd.eventId(), step);
+            job.fail(step.remove()
+                    ? "그 자리에는 이미지가 없어요."
+                    : "이미지를 넣지 못했어요. 영역을 바꿔서 다시 말씀해 주세요.");
+            return true;
+        }
+
+        job.to(GenerationJob.Phase.VALIDATING);
+        after = PageShell.settle(after);
+        job.to(GenerationJob.Phase.SAVING);
+
+        String summary = (step.remove() ? "이미지 제거 — " : "이미지 배치 — ")
+                + step.block().key() + " " + step.role().cssClass();
+        VersionStore.Saved saved =
+                versions.save(cmd.eventId(), after, base.versionId(), summary, job.chatRequestId());
+        log.info("이미지 수정 저장 (event={}, versionId={}, v{}, source=v{}) — 모델 호출 0회",
+                cmd.eventId(), saved.versionId(), saved.versionNo(), base.versionNo());
+
+        job.versionId(saved.versionId());
+        job.to(GenerationJob.Phase.DONE);
+        return true;
     }
 
     /**
@@ -573,6 +636,10 @@ public class EditService {
         //   어긋난 지시를 받은 모델은 그대로 두거나 지어낸다 — 둘 다 실패다
         boolean addItem = step.op() == Op.ADD && !before.isBlank();
 
+        // ★ 한 번만 읽는다. 프롬프트에 주는 목록과 검증기가 대조하는 목록이
+        //   **같아야** 한다 — 두 번 읽으면 그 사이에 삭제된 이미지를 안내하게 된다
+        List<Asset.Ref> uploaded = assets.assetsOf(cmd.eventId());
+
         RetryService.Result res;
         try {
             res = retry.runEdit(ctx,
@@ -582,12 +649,15 @@ public class EditService {
                     //   그래서 "더 화려하게" 에 모델이 이모지만 붙이고 모양은 안 바꿨다.
                     // ★★ addItem 을 넘긴다. 안 넘기면 "항목을 새로 만들거나 지우지 마라" 가
                     //   그대로 나가서, 사용자 프롬프트의 "하나만 더한다" 와 정면으로 어긋난다
+                    // ★★ 올라온 이미지 목록을 같이 넘긴다. 비면 안내가 한 줄도 안 나간다
                     PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks(),
-                            step.op() == Op.STYLE, addItem),
+                            step.op() == Op.STYLE, addItem, uploaded),
                     userPrompt(cmd, step, before),
                     // ★ 항목을 하나 더하는 요청이면 검증기에 그렇게 알린다. 안 알리면
                     //   ITEM_ADDED 로 4회가 전부 터지고 관리자는 이유를 못 듣는다
-                    HtmlPolicy.edit(block, before, cmd.requestText(), addItem));
+                    // ★★ **같은 목록**을 검증기에도 준다. 여기 없는 src 는 <img> 째로 떨어진다 —
+                    //   모델이 지어낸 주소나 바깥 주소가 게시되는 걸 막는 유일한 지점이다
+                    HtmlPolicy.edit(block, before, cmd.requestText(), addItem, uploaded));
         } catch (RetryService.Aborted e) {
             // ★ 터진 시도의 실패 행은 문이 남겼다. 그 앞의 시도들은 아직 아무도 안 남겼다.
             //   ctx 가 여기 있으므로 여기서 남긴다 — runSafely 로 올라가면 못 남긴다

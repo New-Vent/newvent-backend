@@ -338,6 +338,19 @@ public final class PromptBuilder {
      */
     public static String edit(Block b, boolean templateBlock, boolean allowPalette,
                               boolean looksRequest, boolean addItem) {
+        return edit(b, templateBlock, allowPalette, looksRequest, addItem, List.of());
+    }
+
+    /**
+     * @param assets 이 이벤트에 올라온 이미지. 비면 이미지 안내가 한 줄도 안 나간다.
+     *
+     * ★★ 모델은 그림을 **볼 수 없다**(LlmClient.Request 는 문자열 둘이다).
+     *   그런데 배치는 보는 일이 아니라 **이름 고르는 일**이다 — 어디 둘지는 관리자가 말한다.
+     *   그래서 변형 · 팔레트 · 테마와 같은 길로 간다: 서버가 목록을 주고 모델이 하나 고른다.
+     *   자리 · 크기 · 잘림 · 덮개 · 글자색은 전부 CSS 가 쥔다(95-assets/01-assets.css).
+     */
+    public static String edit(Block b, boolean templateBlock, boolean allowPalette,
+                              boolean looksRequest, boolean addItem, List<Asset.Ref> assets) {
         if (b.source() == Block.Source.SERVER) {
             throw new IllegalArgumentException(
                     b.key() + " 는 서버 소유입니다. 모델에게 수정시키면 안 됩니다.");
@@ -430,6 +443,14 @@ public final class PromptBuilder {
         s.add("");
         addInline(s);
 
+        // ★ 올린 이미지가 있을 때만. 없으면 한 줄도 안 나가야 한다 —
+        //   "이미지를 넣을 수 있다" 만 알려 주면 모델이 주소를 지어낸다.
+        List<String> assetLines = Asset.promptLines(b, assets);
+        if (!assetLines.isEmpty()) {
+            s.add("");
+            for (String line : assetLines) s.add(line);
+        }
+
         if (looks) {
             s.add("");
             if (looksRequest) {
@@ -471,6 +492,12 @@ public final class PromptBuilder {
             // ★ 생성(addLooks)과 같은 순서다 — 구조(테마)를 먼저 정하고 색(팔레트)을 얹는다
             if (themes) {
                 s.add("- 페이지 전체 분위기: 아래 중 하나를 <section> 의 class 에 붙인다 (하나만). 페이지 전체에 적용된다.");
+                // ★★ 색만 바꿔 달라는데 분위기까지 바뀌면 **페이지가 통째로 달라진다.**
+                //   테마는 색뿐 아니라 글꼴 · 모서리 · 장식까지 쥔다(20-themes).
+                //   "전체 색을 파란색으로" 한 번에 레이아웃이 바뀌어서 관리자가 놀랐다(실제 화면).
+                //   바로 아래 팔레트 목록과 나란히 놓여 있어서 모델이 둘 다 고른다 — 갈라 줘야 한다.
+                s.add("  ★ **색만** 바꿔 달라는 요청이면 분위기는 그대로 둔다. 여기서 고르지 마라. "
+                        + "분위기는 \"느낌을 바꿔줘\" · \"더 고급스럽게\" 처럼 생김새를 말할 때만 바꾼다.");
                 for (Theme t : Theme.blankThemes()) {
                     s.add("    " + t.cssClass() + " : " + t.desc());
                 }
@@ -620,6 +647,24 @@ public final class PromptBuilder {
         // ★ 페이지 전체 색감은 hero 의 STYLE 로 보낸다. 팔레트를 고르는 자리가 hero 다
         //   (Palette · PageShell.hoistPalette). 이 예시가 없으면 "알 수 없는 영역" 으로 떨어진다.
         s.add("\"전체 색감을 가을 느낌으로 바꿔줘\"");
+        s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null}]}");
+        s.add("");
+        // ★★ 올린 이미지를 넣는 요청. **문구가 아니라 겉모양이라 STYLE 이다.**
+        //   이 예시가 없으면 "1번 이미지를 배경으로 깔아줘" 가 라우터에서 통째로 떨어져
+        //   "요청을 이해하지 못했습니다" 가 나간다 (실측). 올리기 · 정화기 · 프롬프트를
+        //   다 깔아 놓고도 **라우터만 몰라서** 한 발짝도 못 가던 자리다.
+        // ★ content 는 null 이다. "1번" 은 페이지에 쓸 문구가 아니다 —
+        //   요청 원문은 [관리자 요청] 으로 수정 모델에게 그대로 간다 (EditService.userPrompt).
+        // ★ 영역을 안 말하면 hero 다. 배경을 까는 자리는 대개 맨 위다.
+        s.add("\"1번 이미지를 배경으로 깔아줘\"");
+        s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null}]}");
+        s.add("");
+        s.add("\"참여 버튼 영역 배경에 2번 이미지를 넣어줘\"");
+        s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"cta\",\"content\":null}]}");
+        s.add("");
+        // ★ 페이지 전체 배경도 target 은 hero 다. 모델은 hero 안에 <img> 를 쓰고,
+        //   저장 직전 서버가 루트로 옮긴다(PageShell.hoistPageAsset) — 팔레트 · 테마와 같은 길.
+        s.add("\"1번 이미지를 페이지 전체 배경으로 깔아줘\"");
         s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null}]}");
         s.add("");
         s.add("\"제목 바꾸고 참여방법도 더 친절하게 다듬어줘\"");
