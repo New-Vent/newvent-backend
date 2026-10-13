@@ -20,6 +20,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Event extends BaseTimeEntity {
 
+    // REQ-EVT-15: 기획 확정 전 임시값. 관리자·공개 화면과 마감임박 알림이 모두 이 값을 쓴다
     public static final Duration CLOSING_SOON_WINDOW = Duration.ofDays(3);
 
     @Id

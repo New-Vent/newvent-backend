@@ -24,9 +24,6 @@ import com.newvent.registry.Slots;
 @Service
 public class PublicEventService {
 
-    // REQ-EVT-15: 종료 며칠 전부터 "마감 임박"으로 표시할지는 기획 확정 전이라 3일로 임시 지정
-    private static final int CLOSING_SOON_DAYS = 3;
-
     private final EventRepository eventRepository;
 
     public PublicEventService(EventRepository eventRepository) {
@@ -74,17 +71,9 @@ public class PublicEventService {
         return published == null ? null : ThumbnailHtml.of(event, published.getHtmlContent());
     }
 
-    // 마감임박은 이미 시작한(진행중) 이벤트에만 표시한다 — 시작 전 이벤트가 종료일만 가까워서
-    // closingSoon=true로 잘못 뜨는 것을 막는다 (리뷰 반영: tnqlsqkr).
+    // 관리자 화면과 같은 기준을 써야 해서 계산은 Event.closingSoon 에만 둔다
     public boolean isClosingSoon(Event event, OffsetDateTime now) {
-        if (event.getStartDate() != null && now.isBefore(event.getStartDate())) {
-            return false;
-        }
-        if (event.getEndDate() == null) {
-            return false;
-        }
-        return !now.isAfter(event.getEndDate())
-                && !now.plusDays(CLOSING_SOON_DAYS).isBefore(event.getEndDate());
+        return event.closingSoon(now);
     }
 
     @Transactional(readOnly = true)
