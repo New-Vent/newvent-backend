@@ -13,8 +13,8 @@ import java.util.function.Predicate;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
-import org.jsoup.select.Elements;
 import org.jsoup.nodes.Node;
+import org.jsoup.select.Elements;
 
 /**
  * 저장되는 조각이 **혼자서도 성립하도록** 서버가 보장하는 것들.
