@@ -359,20 +359,28 @@ public class GenerationService {
         Document doc = Jsoup.parseBodyFragment(html);
         doc.outputSettings().prettyPrint(false);
 
-        if (!doc.body().select(Slot.PERIOD.selector()).isEmpty()) {
-            return doc.body().html();      // 이미 있으면 두 번 심지 않는다
-        }
-
-        Element hero = doc.body().selectFirst(Block.HERO.selector());
-        Element host = (hero != null) ? hero : doc.body();
-
-        // ★ 내용은 비워 둔다. 값은 보여줄 때 Slots.fill() 이 채운다
-        if (doc.body().select(Slot.PERIOD.selector()).isEmpty()) {
-            host.appendElement("p").attr("data-slot", Slot.PERIOD.key());
-        }
-
+        // ★★ 전에는 여기서 period 가 있으면 **통째로** 반환했다. 그래서 period 는 있고
+        //   cta-link 는 없는 문서가 생기면 cta-link 를 영영 못 심었다. 두 슬롯은
+        //   서로 모르는 자리이므로 각자 판단해야 한다 — 아래 두 메서드가 각각
+        //   "이미 있으면 안 심는다" 를 스스로 본다.
+        plantPeriod(doc);
         plantCtaLink(doc);
         return doc.body().html();
+    }
+
+    /**
+     * 기간 슬롯을 hero 안에 심는다.
+     *
+     * ★ 내용은 비워 둔다. 값은 보여줄 때 {@code Slots.fill()} 이 채운다 —
+     *   저장할 때 넣으면 기간을 고쳐도 화면이 안 바뀐다.
+     */
+    private void plantPeriod(Document doc) {
+        if (!doc.body().select(Slot.PERIOD.selector()).isEmpty()) {
+            return;                        // 이미 있으면 두 번 심지 않는다
+        }
+        Element hero = doc.body().selectFirst(Block.HERO.selector());
+        Element host = (hero != null) ? hero : doc.body();
+        host.appendElement("p").attr("data-slot", Slot.PERIOD.key());
     }
 
     /**

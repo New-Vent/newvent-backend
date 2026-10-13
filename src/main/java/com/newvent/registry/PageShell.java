@@ -73,7 +73,12 @@ public final class PageShell {
 
     private PageShell() {}
 
-    /** 게시된 HTML 조각을 독립적인 문서로 감싼다. 조각의 스크립트와 마크업은 그대로 유지한다. */
+    /**
+     * 게시된 HTML 조각을 독립적인 문서로 감싼다. 조각의 스크립트와 마크업은 그대로 유지한다.
+     *
+     * ★ 참여 버튼을 따라가는 스크립트를 넣는다 ({@link #CTA_SCRIPT}).
+     *   이 페이지는 공유 링크 전용이라 프론트 앱이 없다 — 여기에 없으면 아무도 못 넣는다.
+     */
     public static String standalone(String fragment, String title) {
         String safeTitle = new Element("title").text(title).outerHtml();
         return "<!DOCTYPE html>\n<html lang=\"ko\">\n<head>\n"
@@ -82,8 +87,35 @@ public final class PageShell {
                 + safeTitle + "\n"
                 + "<link rel=\"stylesheet\" href=\"/assets/event.css\">\n"
                 + "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&amp;display=swap\">\n"
-                + "</head>\n<body>\n" + fragment + "\n</body>\n</html>";
+                + "</head>\n<body>\n" + fragment + "\n" + CTA_SCRIPT + "\n</body>\n</html>";
     }
+
+    /**
+     * 참여 버튼을 눌렀을 때 참여 화면으로 보낸다.
+     *
+     * ★ 왜 필요한가 — 템플릿 5종의 참여 버튼은 {@code <button>} 이다 ({@code <a>} 는 0개).
+     *   {@code Slots} 가 {@code <button>} 에는 href 를 못 붙여서 {@code data-href} 로 쓰는데,
+     *   그걸 읽어 주는 코드가 이 페이지에 <b>없었다.</b> 그래서 눌러도 아무 일도 안 났다.
+     *   {@code <a href>} 는 브라우저가 알아서 가므로 이 스크립트가 필요 없다.
+     *
+     * ★ 이벤트 위임이다. 블록이 다시 그려져도 리스너를 다시 달 필요가 없고,
+     *   템플릿이 가진 자기 스크립트(데모 토스트)와 충돌하지 않는다 — 둘 다 실행되고 이동이 이긴다.
+     *
+     * ★ 슬롯이 붙은 버튼만 본다. {@code .btn} 전부를 잡으면 템플릿의 응원 투표 버튼
+     *   (sp-vote-btn)처럼 페이지 안에서만 동작하는 버튼까지 페이지를 떠나게 만든다.
+     *
+     * ★ 주소가 없으면 아무것도 하지 않는다 — 참여를 받지 않는 이벤트에서는 서버가
+     *   버튼 자체를 떼지만({@link #dropBlock}), 구버전 HTML 에 대비해 여기서도 막는다.
+     */
+    private static final String CTA_SCRIPT = """
+            <script>
+            document.addEventListener('click', function (e) {
+              var btn = e.target.closest('[data-slot="cta-link"][data-href]');
+              if (!btn || btn.tagName === 'A') return;
+              var href = btn.getAttribute('data-href');
+              if (href) window.location.assign(href);
+            });
+            </script>""";
 
     /**
      * 승인 문구를 읽을 수 있는지 확인한다. **시작할 때 부른다.**
