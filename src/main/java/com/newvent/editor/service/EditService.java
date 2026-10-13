@@ -22,6 +22,7 @@ import com.newvent.common.exception.code.ErrorCode;
 import com.newvent.editor.exception.EditErrorCode;
 import com.newvent.generation.exception.GenerationErrorCode;
 import com.newvent.generation.exception.LlmDailyLimitExceededException;
+import com.newvent.generation.service.ChatLog;
 import com.newvent.generation.service.EventGuard;
 import com.newvent.generation.service.GenerationJob;
 import com.newvent.generation.service.GenerationJobStore;
@@ -71,6 +72,8 @@ public class EditService {
 
     private final LlmCallGateway gateway;
     private final com.newvent.filtering.FilteringPolicy filtering;
+    // 채팅 내역. 남기지 못해도 수정은 계속된다
+    private final ChatLog chatLog;
 
     private record Applied(String html, String changeSummary) {}
 
@@ -86,10 +89,18 @@ public class EditService {
         this(router, retry, versions, guard, jobs, recorder, gateway, new com.newvent.filtering.FilteringPolicy());
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public EditService(RouteService router, RetryService retry, VersionStore versions,
                        EventGuard guard, GenerationJobStore jobs, LlmCallRecorder recorder,
                        LlmCallGateway gateway, com.newvent.filtering.FilteringPolicy filtering) {
+        this(router, retry, versions, guard, jobs, recorder, gateway, filtering, ChatLog.NOOP);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EditService(RouteService router, RetryService retry, VersionStore versions,
+                       EventGuard guard, GenerationJobStore jobs, LlmCallRecorder recorder,
+                       LlmCallGateway gateway, com.newvent.filtering.FilteringPolicy filtering,
+                       ChatLog chatLog) {
+        this.chatLog = chatLog;
         this.filtering = filtering;
         this.router = router;
         this.retry = retry;
@@ -171,8 +182,16 @@ public class EditService {
         GenerationJob job = slot.get();
         job.privacyRequest("edit", snapshot.versionId());
         job.privacyConfirmation(input.fingerprint(), input.privacyTypes());
+
+        // ⑦ 채팅 내역 - 관리자가 고른 영역이 있으면 같이 남기고, 없으면 라우터가 정한 뒤 채운다.
+        // 개인정보 후보가 감지된 요청(확인 전 되묻기 · 확인 후 재전송)은 원문 대신 표시만 남긴다.
+        boolean privacy = input.question() != null || cmd.privacyConfirmed();
+        job.chatRequestId(chatLog.request(cmd.eventId(), input.text(),
+                cmd.hasBlocks() ? String.join(",", cmd.blocks()) : null, privacy));
+
         if (input.question() != null) {
             job.askBack(input.question());
+            chatLog.finish(job, cmd.eventId(), null);
             jobs.finish(job);
         } else {
             worker.submit(() -> runSafely(job, safeCommand));
@@ -214,8 +233,14 @@ public class EditService {
             log.error("수정 실패 — 예상치 못한 오류 (event={})", cmd.eventId(), e);
             job.fail("페이지를 고치는 중 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.");
         } finally {
-            // ★ 반드시 비운다. 안 비우면 그 이벤트는 다음 작업을 영원히 못 한다
-            jobs.finish(job);
+            // ★ 채팅 내역을 먼저 끝맺는다. 자리를 비우면 다음 요청이 바로 들어와 메시지 순서가 뒤섞일 수 있다.
+            //   남기다 터져도 자리는 반드시 비운다.
+            try {
+                chatLog.finish(job, cmd.eventId(), "수정을 반영했습니다.");
+            } finally {
+                // ★ 반드시 비운다. 안 비우면 그 이벤트는 다음 작업을 영원히 못 한다
+                jobs.finish(job);
+            }
         }
     }
 
@@ -242,6 +267,11 @@ public class EditService {
         job.privacyRequest("edit", base.versionId());
         List<Decision.Run> plan = planAll(job, cmd, doc);
         if (plan == null) return;               // 되묻기 · 거절 — job 에 문구가 담겼다
+        if (!cmd.hasBlocks()) {
+            // 관리자가 영역을 안 골랐으면 라우터가 정한 영역을 채팅 내역에 남긴다
+            chatLog.target(job.chatRequestId(), plan.stream().map(r -> r.block().key()).distinct()
+                    .collect(java.util.stream.Collectors.joining(",")));
+        }
         if (job.checkCancelled()) return;
 
         // ★ 모델을 부르는 연산만 센다. DELETE 는 모델을 안 부른다 —
@@ -300,7 +330,8 @@ public class EditService {
         job.to(GenerationJob.Phase.SAVING);
 
         String changeSummary = String.join("; ", summaries);
-        VersionStore.Saved saved = versions.save(cmd.eventId(), doc, base.versionId(), changeSummary);
+        VersionStore.Saved saved =
+                versions.save(cmd.eventId(), doc, base.versionId(), changeSummary, job.chatRequestId());
         log.info("수정 저장 (event={}, versionId={}, v{}, source=v{}) — 연산 {}개",
                 cmd.eventId(), saved.versionId(), saved.versionNo(),
                 base.versionNo(), plan.size());
