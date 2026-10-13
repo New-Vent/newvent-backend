@@ -18,7 +18,6 @@ import com.newvent.event.dto.request.ButtonStyle;
 import com.newvent.event.dto.request.TextEdit;
 import com.newvent.event.exception.DirectEditErrorCode;
 import com.newvent.event.exception.DirectEditException;
-import com.newvent.registry.Block;
 import com.newvent.registry.Slot;
 
 /**
@@ -78,7 +77,7 @@ public final class DirectEditor {
      * <p>
      * 규칙:
      * 1. [data-block] 내부의 텍스트 노드를 문서 순서로 수집 (공백만 있는 노드 제외)
-     * 2. data-block="notices" 및 서버가 미리보기에 채우는 period 슬롯은 수집에서 제외
+     * 2. 유의사항은 관리자 직접 편집을 허용하고, 서버가 채우는 period 슬롯은 제외
      * 3. index로 찾아 before와 대조, 불일치 시 409 Conflict 예외 발생
      * 4. TextNode.text(after)로 치환하여 자동 이스케이프 (XSS 방지)
      *
@@ -210,7 +209,7 @@ public final class DirectEditor {
     }
 
     private static List<TextNode> collectTextNodes(Document doc) {
-        // Empty text nodes do not survive HTML parsing. Recreate the node in its retained holder.
+        // 빈 텍스트 노드는 다시 읽으면 사라지므로, 남아 있는 문구 요소 안에 복원한다.
         for (Element el : doc.select("span[id^=" + TEXT_ID_PREFIX + "]")) {
             if (el.childNodeSize() == 0) el.appendChild(new TextNode(""));
         }
@@ -221,7 +220,6 @@ public final class DirectEditor {
         }
 
         NodeTraversor.traverse(new NodeVisitor() {
-            private int noticeDepth = 0;
             private int periodDepth = 0;
             private int blockDepth = 0;
 
@@ -233,12 +231,9 @@ public final class DirectEditor {
                     }
                     if (el.hasAttr("data-block")) {
                         blockDepth++;
-                        if (el.is(Block.NOTICES.selector())) {
-                            noticeDepth++;
-                        }
                     }
                 } else if (node instanceof TextNode tn) {
-                    if (blockDepth > 0 && noticeDepth == 0 && periodDepth == 0) {
+                    if (blockDepth > 0 && periodDepth == 0) {
                         if (!isIgnoredParent(tn) && (!tn.isBlank() || marked(tn))) {
                             result.add(tn);
                         }
@@ -253,9 +248,6 @@ public final class DirectEditor {
                         periodDepth--;
                     }
                     if (el.hasAttr("data-block")) {
-                        if (el.is(Block.NOTICES.selector())) {
-                            noticeDepth--;
-                        }
                         blockDepth--;
                     }
                 }

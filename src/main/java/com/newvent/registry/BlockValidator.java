@@ -572,6 +572,13 @@ public class BlockValidator {
 
     	Element copy = src.clone();
     	emptyText(copy);
+        // 직접 편집용 문구 ID는 복제본마다 새로 부여해 원본과 충돌하지 않게 한다.
+        Set<String> usedIds = Slots.idsOf(doc.body().html());
+        for (Element holder : copy.select("span[id^=nv-direct-text-]")) {
+            String id = holder.id() + "-copy";
+            while (!usedIds.add(id)) id += "-next";
+            holder.attr("id", id);
+        }
     	src.parent().appendChild(copy);
     	return doc.body().html();
     }
