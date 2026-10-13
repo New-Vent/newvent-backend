@@ -40,6 +40,24 @@ public interface RagChunkRepository extends JpaRepository<RagChunk, Long>{
 			@Param("maxDistance") double maxDistance,
 			@Param("limit") int limit);
 
+	// 기획용 전역 검색. SEED 제외를 푼 것 빼고 findSimilar 과 같다.
+	// 지금은 시드 29건이 유일한 데이터라 제외하면 빈 목록이 나온다 (실데이터 쌓이면 제외로 전환).
+	@Query(value = """
+		select c.* from rag_chunks c
+		 join events e on e.id = c.event_id
+		 where c.embedding_model = :model
+		   and c.event_id <> :excludeEventId
+		   and e.deleted_at is null
+		   and c.embedding <=> cast(:query as vector) <= :maxDistance
+		 order by c.embedding <=> cast(:query as vector)
+		 limit :limit
+		""", nativeQuery = true)
+	List<RagChunk> findSimilarIncludingSeed(@Param("query") String query,
+		@Param("model") String model,
+		@Param("excludeEventId") long excludeEventId,
+		@Param("maxDistance") double maxDistance,
+		@Param("limit") int limit);
+
 	// 같은 버전을 다시 색인할 때 묵은 청크를 지우는 용도
 	void deleteByEventIdAndVersionId(Long eventId, Long versionId);
 

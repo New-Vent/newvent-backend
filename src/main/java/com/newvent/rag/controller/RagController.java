@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
+import com.newvent.event.exception.EventErrorCode;
+import com.newvent.event.exception.EventException;
 import com.newvent.event.service.EventOwnerCheck;
 import com.newvent.rag.dto.request.ReindexRequest;
 import com.newvent.rag.dto.response.IndexStatusResponse;
@@ -114,14 +116,16 @@ public class RagController {
     @Operation(
             summary = "프롬프트 추천",
             description = "비슷한 청크를 채팅창에 넣을 요청문 초안으로 바꿔 준다. prompt 는 블록 작성 가이드 뒤에 예시 문구를 붙인 것이다. "
-                    + "프론트는 하나를 골라 채팅창에 그대로 넣는다. query 가 공백이면 빈 목록이다.")
+                    + "프론트는 하나를 골라 채팅창에 그대로 넣는다. query 가 공백이면 빈 목록이다. "
+                    + "eventId 를 빼면 기획 모드 — 만들기 화면에서 이벤트 생기기 전에 부른다 (SEED 포함).")
     @GetMapping("/recommend-prompts")
     public ApiResponse<List<PromptCandidate>> recommendPrompts(
-            @RequestParam Long eventId,
+            @RequestParam(required = false) Long eventId,
             @RequestParam String query,
             @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK,
             @AuthenticationPrincipal AuthUser admin) {
-        ownerCheck.requireOwned(eventId, admin);
+        // eventId 없으면 기획 모드 — 소유 검사할 이벤트가 없으므로 건너뛴다
+        if (eventId != null) ownerCheck.requireOwned(eventId, admin);
         return ApiResponse.success(similarity.recommendPrompts(eventId, query, topK));
     }
 
@@ -130,15 +134,25 @@ public class RagController {
             summary = "비슷한 버전 찾기",
             description = "같은 이벤트 안에서 기준 버전(versionId)과 비슷한 다른 버전을 similarity 가 큰 순서로 보여 준다. "
                     + "기준 버전의 청크 벡터를 그대로 쓰므로 임베딩을 새로 부르지 않고, 기준 버전이 색인되지 않았으면 빈 목록이다. "
-                    + "이 이벤트의 버전이 아니면 404 (EVENT404-3)")
+                    + "이 이벤트의 버전이 아니면 404 (EVENT404-3). "
+                    + "versionId 대신 query 를 주면 기획 모드 — 텍스트를 벡터로 바꿔 모든 이벤트와 비교하고 eventTitle 과 함께 돌려준다. "
+                    + "둘 다 없거나 둘 다 있으면 400 (EVENT400-4).")
     @GetMapping("/similar-versions")
     public ApiResponse<List<VersionSimilarityResponse>> similarVersions(
-            @RequestParam Long eventId,
-            @RequestParam Long versionId,
+            @RequestParam(required = false) Long eventId,
+            @RequestParam(required = false) Long versionId,
+            @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK,
             @AuthenticationPrincipal AuthUser admin) {
-        ownerCheck.requireOwned(eventId, admin);
-        return ApiResponse.success(comparing.similarVersions(eventId, versionId, topK));
+        // 기준 버전 모드(eventId+versionId)와 기획 모드(query) 중 하나만. versionId 단독은 소유 확인이 안 돼 막는다
+        boolean hasVersion = eventId != null && versionId != null;
+        boolean hasQuery = query != null && !query.isBlank();
+        if (hasVersion == hasQuery) throw new EventException(EventErrorCode.INVALID_SIMILAR_QUERY);
+        if (hasVersion) {
+            ownerCheck.requireOwned(eventId, admin);
+            return ApiResponse.success(comparing.similarVersions(eventId, versionId, topK));
+        }
+        return ApiResponse.success(comparing.similarVersionsByQuery(query.strip(), topK));
     }
 
     /** 주간 품질 추이. 호출 건수·RAG 사용 건수·청크 수를 주별로 묶어 보여준다. */

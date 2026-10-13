@@ -62,6 +62,21 @@ public class SimilarityService {
 		return new SearchPreviewResponse(eventId, query, topK, results);
 	}
 
+	/**
+	 * 기획용 전역 검색. SEED 포함, 자기 제외 없음 — 만들기 화면에서 이벤트 생기기 전에 쓴다.
+	 * 생성 주입(search) 과 달리 운영 제외 규칙을 풀었으므로 편집 화면에서는 쓰지 않는다.
+	 */
+	@Transactional(readOnly = true)
+	public List<RagChunk> searchPlanning(String query, int topK){
+		if(query == null || query.isBlank()) {
+			return List.of();
+		}
+		int limit = topK <= 0 ? RagConstants.DEFAULT_TOP_K : topK;
+		float[] q = embedding.embed(query);
+		return chunks.findSimilarIncludingSeed(Vectors.toDb(q), embedding.modelName(),
+			-1L, RagConstants.MAX_DISTANCE, limit);
+	}
+
 	/** 벡터가 이미 계산된 경우 쓰는 내부 검색. search() 와 미리보기가 공유한다 */
 	@Transactional(readOnly = true)
 	List<RagChunk> searchWithVector(Long eventId, float[] queryVector, int topK) {
@@ -77,8 +92,14 @@ public class SimilarityService {
 	 * 프론트는 이 중 하나를 고르면 채팅창에 그대로 넣음
 	 */
 	@Transactional(readOnly = true)
+	/**
+	 * eventId 가 null 이면 기획 모드 — 자기 제외 없이 SEED 포함 전역에서 찾는다.
+	 * 만들기 화면에서 이벤트 생기기 전에 부른다. search() (생성 주입용)는 손대지 않는다.
+	 */
 	public List<PromptCandidate> recommendPrompts(Long eventId, String query, int topK){
-		List<RagChunk> hits = search(eventId, query, topK);
+		List<RagChunk> hits = (eventId == null)
+			? searchPlanning(query, topK)
+			: search(eventId, query, topK);
 		List<PromptCandidate> out = new ArrayList<>(hits.size());
 		for (RagChunk h : hits) {
 			// ★ 색인된 블록은 llmBlocks() 뿐 shape() 이 비어 있지 않음
