@@ -367,11 +367,6 @@ public class RagSeedDataGenerator {
 		return sb.append("</div>").toString();
 	}
 
-	/** page() 의 마지막 인자로 등급까지 넘기기 위한 오버로드가 필요 없도록, 등급은 SeedDefinition 쪽에서 받는다. */
-	private static SeedDefinition withGrade(String title, String html, MembershipGrade grade) {
-		return new SeedDefinition(title, html, grade);
-	}
-
 	static String sec(String block, String inner) {
 		return "<section data-block=\"" + block + "\">" + inner + "</section>";
 	}

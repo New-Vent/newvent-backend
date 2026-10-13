@@ -94,6 +94,12 @@ public final class GenerationJob {
     public Long chatRequestId() { return chatRequestId; }
     public void chatRequestId(Long id) { this.chatRequestId = id; }
 
+    // 이번 생성에서 참고한 RAG 청크 ID들. 로그 기록용이라 작업에 둔다 (싱글톤 필드에 두면 작업이 겹칠 때 섞인다)
+    private volatile String ragChunkIds;
+
+    public String ragChunkIds() { return ragChunkIds; }
+    public void ragChunkIds(String ids) { this.ragChunkIds = ids; }
+
     public PrivacyRequest privacyRequest() { return privacyRequest; }
     public boolean privacyConfirmationRequired() { return privacyFingerprint != null; }
     public String privacyFingerprint() { return privacyFingerprint; }

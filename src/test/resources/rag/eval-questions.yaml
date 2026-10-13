@@ -2,16 +2,16 @@ questions:
   # ── 일반 질의 ──
   - query: "신규 가입 혜택"
     expectedBlock: benefits
-  - query: "참여 방법"
+  - query: "참여 절차를 순서대로 알려줘"
     expectedBlock: steps
   # 주의: 시드 hero에는 기간 문구가 없어서 시드 기준으로는 실패할 수 있음
   - query: "이벤트 기간"
     expectedBlock: hero
   - query: "참여 버튼 문구"
     expectedBlock: cta
-  - query: "할인 쿠폰"
+  - query: "쓸 수 있는 할인 쿠폰 종류와 사용 조건이 뭐야?"
     expectedBlock: benefits
-  - query: "경품 응모 방법"
+  - query: "경품 응모 절차를 단계별로 설명해줘"
     expectedBlock: steps
   - query: "이벤트 제목 추천"
     expectedBlock: hero
@@ -35,17 +35,17 @@ questions:
     expectedBlock: benefits
   - query: "출석 버튼 눌러 복주머니 열기"
     expectedBlock: steps
-  - query: "최우수 쿠폰팩"
+  - query: "최우수 등급 쿠폰팩 구성이 어떻게 돼?"
     expectedBlock: benefits
   - query: "타임딜 마감 시간"
     expectedBlock: highlight
-  - query: "사전예약 방법"
+  - query: "사전예약 신청은 어떻게 해?"
     expectedBlock: steps
   - query: "경품 응모하기"
     expectedBlock: cta
   - query: "참여 대상 등급"
     expectedBlock: audience
-  - query: "요금제 비교표"
+  - query: "A형과 B형 요금제는 뭐가 달라?"
     expectedBlock: compare
   - query: "연차에 따라 단계별 보상이 지급되는 방식"
     expectedBlock: intro
@@ -65,7 +65,7 @@ questions:
     expectedBlock: steps
   - query: "재고 소진 시 종료"
     expectedBlock: hero
-  - query: "스코어 맞히기"
+  - query: "스코어 맞히면 어떤 경품을 받아?"
     expectedBlock: benefits
   - query: "응원왕 투표"
     expectedBlock: hero

@@ -35,10 +35,16 @@ public class RagReindexJob {
         }
         log.info("야간 전체 재색인 시작");
         // 스케줄 스레드를 잡아 두지 않고 @Async 로 넘긴다. 완료·실패 로그는 발사 쪽에서 찍는다.
-        embeddingService.indexAllEventsAsync().whenComplete((result, ex) -> {
-            if (ex != null) {
-                log.error("야간 전체 재색인 실패", ex);
-            }
-        });
+        try {
+            embeddingService.indexAllEventsAsync().whenComplete((result, ex) -> {
+                if (ex != null) {
+                    log.error("야간 전체 재색인 실패", ex);
+                }
+            });
+        } catch (RuntimeException e) {
+            // 제출 거부 등으로 async 본문이 안 돌면 finally 가 안 돌아 플래그가 누수된다. 직접 해제.
+            embeddingService.releaseReindexSlot();
+            throw e;
+        }
     }
 }
