@@ -93,13 +93,57 @@ class ParticipationConfigServiceTest {
     }
 
     @Test
-    @DisplayName("참여 기록이 있으면 바꿀 수 없다 — 저장된 결과가 그때의 방식을 전제한다")
-    void 참여기록이있으면_거부한다() {
+    @DisplayName("참여 기록이 있으면 결과를 뒤집는 값은 바꿀 수 없다 — 확률은 참여자가 보고 참여한 값이다")
+    void 참여기록이있으면_결과를뒤집는값은_거부한다() {
         when(ownerCheck.requireOwned(1L, ADMIN)).thenReturn(event());
         lockEvent();
         Optional<Game> basic = Optional.of(game("BASIC"));
         when(gameRepository.findByCode("BASIC")).thenReturn(basic);
         when(participationRepository.existsByEventId(1L)).thenReturn(true);
+
+        EventGameConfig existing = EventGameConfig.create(event(), game("BASIC"), BASIC_CONFIG);
+        when(configRepository.findAllByEventId(1L)).thenReturn(List.of(existing));
+
+        Map<String, Object> changed = Map.of(
+                "resultMode", "IMMEDIATE", "winProbability", 90, "prizeName", "데이터 5GB");
+
+        ParticipationException exception = assertThrows(
+                ParticipationException.class,
+                () -> service.save(1L, ADMIN, "BASIC", changed));
+
+        assertEquals(ParticipationErrorCode.PARTICIPATION_CONFIG_LOCKED, exception.getErrorCode());
+        verify(configRepository, never()).save(any(EventGameConfig.class));
+    }
+
+    @Test
+    @DisplayName("★ 참여 기록이 있어도 경품명은 고칠 수 있다 — 오타를 영원히 못 고치는 게 전의 문제였다")
+    void 참여기록이있어도_경품명은_고칠수있다() {
+        when(ownerCheck.requireOwned(1L, ADMIN)).thenReturn(event());
+        lockEvent();
+        Optional<Game> basic = Optional.of(game("BASIC"));
+        when(gameRepository.findByCode("BASIC")).thenReturn(basic);
+        when(participationRepository.existsByEventId(1L)).thenReturn(true);
+
+        EventGameConfig existing = EventGameConfig.create(event(), game("BASIC"), BASIC_CONFIG);
+        when(configRepository.findAllByEventId(1L)).thenReturn(List.of(existing));
+
+        Map<String, Object> fixed = Map.of(
+                "resultMode", "IMMEDIATE", "winProbability", 30, "prizeName", "데이터 10GB");
+
+        ParticipationConfigResponse result = service.save(1L, ADMIN, "BASIC", fixed);
+
+        assertEquals("데이터 10GB", result.config().get("prizeName"));
+    }
+
+    @Test
+    @DisplayName("참여 기록이 있는데 설정이 아예 없으면 거부한다 — 성립하지 않는 상태다")
+    void 참여기록만있고_설정이없으면_거부한다() {
+        when(ownerCheck.requireOwned(1L, ADMIN)).thenReturn(event());
+        lockEvent();
+        Optional<Game> basic = Optional.of(game("BASIC"));
+        when(gameRepository.findByCode("BASIC")).thenReturn(basic);
+        when(participationRepository.existsByEventId(1L)).thenReturn(true);
+        when(configRepository.findAllByEventId(1L)).thenReturn(List.of());
 
         ParticipationException exception = assertThrows(
                 ParticipationException.class,
