@@ -51,19 +51,29 @@ public class EventService {
     private final GenerationJobStore generationJobStore;
     private final Clock clock;
 
+    /**
+     * 게시 HTML 을 만드는 데 쓴다 (슬롯 채우기).
+     *
+     * ★ 순환이 아니다 — PublicEventService 는 EventService 를 모른다.
+     *   관리자 상세와 공개 상세가 **같은 HTML** 을 내려면 이 한 곳을 공유해야 한다.
+     */
+    private final PublicEventService publicEventService;
+
     public EventService(
             EventRepository eventRepository,
             EventTemplateRepository eventTemplateRepository,
             EventVersionRepository eventVersionRepository,
             AdminRepository adminRepository,
             GenerationJobStore generationJobStore,
-            Clock clock) {
+            Clock clock,
+            PublicEventService publicEventService) {
         this.eventRepository = eventRepository;
         this.eventTemplateRepository = eventTemplateRepository;
         this.eventVersionRepository = eventVersionRepository;
         this.adminRepository = adminRepository;
         this.generationJobStore = generationJobStore;
         this.clock = clock;
+        this.publicEventService = publicEventService;
     }
 
     /** 검색어(name)가 숫자뿐이면 이름이 맞는 것과 ID 가 같은 것을 함께 찾는다. */
@@ -310,7 +320,13 @@ public class EventService {
     }
 
     private EventDetailResponse detail(Event event, Long adminId) {
-        return EventDetailResponse.from(event, closingSoon(event), event.ownedBy(adminId));
+        return EventDetailResponse.from(
+                event,
+                // ★ 공개 상세와 **같은 함수**를 쓴다. 관리자가 보는 것과 사용자가 보는 것이
+                //   달라지면 안 된다 — 전에는 슬롯이 빈 생 조각이라 기간도 참여 주소도 없었다.
+                publicEventService.publishedHtmlOf(event),
+                closingSoon(event),
+                event.ownedBy(adminId));
     }
 
     private static void requireOwner(Event event, Long adminId) {
