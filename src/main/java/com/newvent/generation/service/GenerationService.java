@@ -338,7 +338,10 @@ public class GenerationService {
         //   백지는 템플릿이 없으므로 테마를 고를 근거가 없다 → null.
         //   event.css 의 :root 기본값이 쓰인다. 무스타일이 아니다.
         //   동작(data-behavior)도 여기서 서버가 심는다 — 모델 출력의 것은 정화가 이미 지웠다
-        return PageShell.plant(plantBehaviors(cmd, plantSlots(res.html())), null);
+        String html = plantBehaviors(cmd, plantSlots(res.html()));
+        var layout = com.newvent.registry.Layout.requestedBy(cmd.requestText());
+        if (layout.isPresent()) html = PageShell.pickLayout(html, layout.get());
+        return PageShell.plant(html, null);
     }
 
     /**

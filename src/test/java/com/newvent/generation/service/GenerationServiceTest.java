@@ -363,6 +363,76 @@ class GenerationServiceTest {
                 "기간 슬롯이 hero 밖에 붙었습니다. 템플릿 5종과 같은 자리여야 합니다.");
     }
 
+    // ── 페이지 배치 (layout-*) ─────────────────────────────────────
+
+    /** 내용 영역 넷(intro · benefits · steps · faq) — 벤토를 걸 수 있는 최소다. heroClass 는 모델이 고른 것 */
+    private static String generatedWide(String heroClass) {
+        return "<section data-block=\"hero\"" + (heroClass.isEmpty() ? "" : " class=\"" + heroClass + "\"")
+                + "><h1>봄맞이 데이터 대방출</h1><p>걱정 없이</p></section>"
+                + "<section data-block=\"intro\"><p>올봄 데이터를 마음껏</p></section>"
+                + "<section data-block=\"benefits\"><ul><li>데이터 10GB</li><li>쿠폰</li></ul></section>"
+                + "<section data-block=\"steps\"><ol><li>앱 열기</li><li>버튼 누르기</li></ol></section>"
+                + "<section data-block=\"faq\"><details><summary>언제까지인가요</summary><p>이달 말까지</p></details>"
+                + "<details><summary>누가 참여하나요</summary><p>모든 고객</p></details></section>"
+                + "<section data-block=\"cta\"><a href=\"#\" class=\"btn\">참여하기</a></section>";
+    }
+
+    private org.jsoup.nodes.Element generatedRoot(String requestText, String html) {
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(html)));
+        GenerationJob job = await(started(service.start(blank(1L, requestText))));
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        var root = Jsoup.parseBodyFragment(savedHtml(1L)).body().selectFirst(".ev-container");
+        assertNotNull(root, "페이지 루트가 없습니다: " + savedHtml(1L));
+        return root;
+    }
+
+    private static List<String> layoutsOf(org.jsoup.nodes.Element root) {
+        return root.classNames().stream().filter(c -> c.startsWith("layout-")).toList();
+    }
+
+    @Test
+    @DisplayName("★ 요청문이 페이지 배치를 직접 말했으면 모델이 안 골라도 서버가 건다")
+    void 요청문이_말한_배치는_서버가_건다() {
+        var root = generatedRoot("벤토 그리드 배치의 봄 이벤트 페이지", generatedWide(""));
+
+        assertEquals(List.of("layout-bento"), layoutsOf(root), root.className());
+        assertTrue(root.selectFirst("[data-block=hero]").classNames().stream().noneMatch(c -> c.startsWith("layout-")),
+                "배치는 루트로 옮긴다 — hero 에 남으면 안 된다");
+    }
+
+    @Test
+    @DisplayName("요청문이 말한 배치가 모델이 고른 것보다 앞선다")
+    void 요청문이_모델보다_앞선다() {
+        var root = generatedRoot("좌우 분할 화면으로 봄 이벤트를 만들어줘", generatedWide("layout-bento"));
+
+        assertEquals(List.of("layout-split"), layoutsOf(root), root.className());
+    }
+
+    @Test
+    @DisplayName("요청문이 배치를 말하지 않았으면 모델이 고른 것을 쓴다")
+    void 말하지_않았으면_모델이_고른다() {
+        var root = generatedRoot("봄맞이 데이터 이벤트", generatedWide("layout-wide"));
+
+        assertEquals(List.of("layout-wide"), layoutsOf(root), root.className());
+    }
+
+    @Test
+    @DisplayName("★ 내용 영역이 모자라면 말한 배치라도 걸지 않는다 — 격자가 빈다")
+    void 영역이_모자라면_배치를_걸지_않는다() {
+        // GENERATED 의 내용 영역은 benefits 하나다. 벤토는 넷이 있어야 한다
+        var root = generatedRoot("벤토 그리드 배치의 여름 이벤트 페이지", GENERATED);
+
+        assertEquals(List.of(), layoutsOf(root), root.className());
+    }
+
+    @Test
+    @DisplayName("★ 영역을 두고 한 '배치' 는 페이지 배치가 아니다 — 생성에서도 걸리지 않는다")
+    void 영역_배치_요청은_페이지_배치를_걸지_않는다() {
+        var root = generatedRoot("봄 이벤트 페이지를 만들고 혜택을 2열로 배치해줘", generatedWide(""));
+
+        assertEquals(List.of(), layoutsOf(root), root.className());
+    }
+
     @Test
     @DisplayName("★ cta-link 는 기존 버튼에 속성만 붙인다 — 문구와 태그는 그대로")
     void cta링크는_속성만_붙인다() {

@@ -569,6 +569,14 @@ public class BlockValidator {
                 if (ok) themeKept = true;
                 else el.removeClass(c);
             }
+            // 페이지 배치(layout-*)도 테마와 같은 규칙이다
+            boolean layoutKept = false;
+            for (String c : List.copyOf(el.classNames())) {
+                if (isRoot || !Layout.looksLike(c)) continue;
+                boolean ok = b == Block.HERO && !layoutKept && Layout.find(c).isPresent();
+                if (ok) layoutKept = true;
+                else el.removeClass(c);
+            }
             if (el.classNames().isEmpty()) el.removeAttr("class");
         }
     }

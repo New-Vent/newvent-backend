@@ -476,6 +476,13 @@ public final class PromptBuilder {
                 for (Theme t : Theme.blankThemes()) {
                     s.add("    " + t.cssClass() + " : " + t.desc());
                 }
+                s.add("- 페이지 배치: 영역들이 페이지에 놓이는 자리를 바꿔 달라는 요청이면 "
+                        + "아래 중 하나를 <section> 의 class 에 붙인다 (하나만). 페이지 전체에 적용된다.");
+                for (Layout l : Layout.all()) {
+                    s.add("    " + l.cssClass() + " : " + l.desc());
+                }
+                s.add("  ★ 페이지 배치만 바꿔 달라는 요청이면 layout-* 하나만 붙인다. "
+                        + "이 영역의 배치(v-hero-*) · 페이지 분위기(theme-*) · 색감(palette-*)은 지금 그대로 둔다.");
             }
             if (palette) {
                 s.add("- 페이지 전체 색감: 아래 중 하나 (하나만). 페이지 전체에 적용된다.");
@@ -547,6 +554,12 @@ public final class PromptBuilder {
         for (Palette p : Palette.all()) {
             if (p == Palette.BASE) continue;     // 생성에는 되돌릴 원래 색이 없다
             s.add("    " + p.cssClass() + " : " + p.desc());
+        }
+        // ★ 배치는 맨 뒤다 — 꼴(테마) · 색(팔레트)을 정한 뒤 자리를 정한다.
+        //   조건(영역 수)은 적지 않는다. 모자라면 서버가 기본으로 되돌린다(PageShell.settleLayout)
+        s.add("- 페이지 배치: hero 의 class 에 아래 중 하나를 붙인다 (하나만). 영역들이 페이지에 놓이는 자리다.");
+        for (Layout l : Layout.all()) {
+            s.add("    " + l.cssClass() + " : " + l.desc());
         }
     }
 
@@ -622,6 +635,11 @@ public final class PromptBuilder {
         // ★ 페이지 전체 색감은 hero 의 STYLE 로 보낸다. 팔레트를 고르는 자리가 hero 다
         //   (Palette · PageShell.hoistPalette). 이 예시가 없으면 "알 수 없는 영역" 으로 떨어진다.
         s.add("\"전체 색감을 가을 느낌으로 바꿔줘\"");
+        s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null}]}");
+        s.add("");
+        // ★ 페이지 배치도 hero 의 STYLE 이다 — 고르는 자리가 hero 다 (Layout · PageShell.settleLayout).
+        //   "혜택을 벤토로" 처럼 영역을 말하면 그 영역의 STYLE 이다(v-*-bento). 영역이 없을 때만 hero
+        s.add("\"페이지 전체를 벤토 그리드 배치로 바꿔줘\"");
         s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null}]}");
         s.add("");
         s.add("\"제목 바꾸고 참여방법도 더 친절하게 다듬어줘\"");

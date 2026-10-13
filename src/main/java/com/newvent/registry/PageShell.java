@@ -374,6 +374,81 @@ public final class PageShell {
             }
             root.addClass(theme);
         }
+        settleLayout(doc, root, pickFromHero(doc, Layout::looksLike, c -> Layout.find(c).isPresent()));
+    }
+
+    public static String layoutBlocked(String fragment, Layout layout) {
+        Document doc = parse(fragment);
+        Element root = doc.body().selectFirst(ROOT_SELECTOR);
+        if (root == null) return "페이지가 아직 없습니다.";
+
+        boolean template = false;
+        int content = 0;
+        for (Element sec : root.select("> section[data-block]")) {
+            Block b = Block.find(sec.attr("data-block")).orElse(null);
+            if (b == null || b == Block.NOTICES) continue;
+            if (sec.hasClass("ev-block")) template = true;
+            if (b != Block.HERO && b != Block.CTA) content++;
+        }
+        String current = root.classNames().stream().filter(Layout::looksLike).findFirst()
+                .orElse(Layout.DEFAULT.cssClass());
+        if (current.equals(layout.cssClass())) return "이미 그 배치입니다.";
+        if (layout == Layout.DEFAULT) return null;
+        if (template) return "템플릿으로 만든 페이지는 배치를 바꿀 수 없습니다. 색감은 바꿀 수 있습니다.";
+        if (content < layout.minContentBlocks()) {
+            return "이 배치는 내용 영역이 " + layout.minContentBlocks() + "개 이상일 때 쓸 수 있습니다. "
+                    + "지금은 " + content + "개입니다. 영역을 추가한 뒤 다시 요청해 주세요.";
+        }
+        return null;
+    }
+
+    /**
+     * 배치를 고른다 — hero 에 그 class 하나만 붙인다. 루트로 옮기는 것은 저장 직전의 {@link #settle} · {@link #plant} 다.
+     * hero 의 다른 class(모양 변형)와 문구는 건드리지 않는다.
+     */
+    public static String pickLayout(String fragment, Layout layout) {
+        Document doc = parse(fragment);
+        Element hero = doc.body().selectFirst(Block.HERO.selector());
+        if (hero == null) return fragment;
+        for (String c : List.copyOf(hero.classNames())) {
+            if (Layout.looksLike(c)) hero.removeClass(c);
+        }
+        hero.addClass(layout.cssClass());
+        return doc.body().html();
+    }
+
+    /**
+     * 페이지 배치(layout-*)를 루트에 하나만 남긴다. 팔레트와 같은 규칙에 조건 둘이 더 붙는다.
+     *   새 배치가 없으면      루트는 그대로 (이번 수정이 배치를 안 건드렸다)
+     *   layout-stack 이면     루트의 배치를 지운다 (기본 = class 없음)
+     *   그 밖                 루트의 배치를 그걸로 바꾼다
+     *
+     * ★ 조건은 **매번** 다시 본다 — 고를 때만 보면 나중에 영역을 지워서 격자가 비어도 남는다
+     *   템플릿 페이지        배치를 걸지 않는다. 템플릿 블록(.ev-block)은 자기 디자인이 있다
+     *   내용 영역이 모자람   기본으로 되돌린다 ({@link Layout#minContentBlocks})
+     */
+    private static void settleLayout(Document doc, Element root, String picked) {
+        if (picked != null) {
+            for (String c : List.copyOf(root.classNames())) {
+                if (Layout.looksLike(c)) root.removeClass(c);
+            }
+            if (!picked.equals(Layout.DEFAULT.cssClass())) root.addClass(picked);
+        }
+
+        // 유의사항은 세지 않는다
+        boolean template = false;
+        int content = 0;
+        for (Element sec : root.select("> section[data-block]")) {
+            Block b = Block.find(sec.attr("data-block")).orElse(null);
+            if (b == null || b == Block.NOTICES) continue;
+            if (sec.hasClass("ev-block")) template = true;
+            if (b != Block.HERO && b != Block.CTA) content++;
+        }
+        for (String c : List.copyOf(root.classNames())) {
+            if (!Layout.looksLike(c)) continue;
+            Layout l = Layout.find(c).orElse(null);
+            if (l == null || template || content < l.minContentBlocks()) root.removeClass(c);
+        }
     }
 
     /**
