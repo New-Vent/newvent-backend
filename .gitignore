@@ -42,3 +42,6 @@ src/main/resources/application-local.yaml
 .env
 *.log
 .smoke/
+
+# 로컬에서 올린 이미지 (application-dev.yaml 의 asset.dir)
+.assets/

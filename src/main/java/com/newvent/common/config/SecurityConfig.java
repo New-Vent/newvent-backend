@@ -87,6 +87,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/public/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/public/events/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/e/*").permitAll()
+                        // ★ 올린 이미지는 로그인 없이 보여야 한다 — 게시된 페이지에 <img src> 로 박힌다.
+                        //   GET 만 연다. 업로드 · 삭제는 /api/admin/… 쪽이고 그대로 인증이 필요하다
+                        .requestMatchers(HttpMethod.GET, "/api/public/assets/*").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/users/**").hasRole("USER")
                         .requestMatchers("/api/**").hasAnyRole("USER", "ADMIN")
