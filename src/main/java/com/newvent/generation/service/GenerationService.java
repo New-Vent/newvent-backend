@@ -57,9 +57,6 @@ public class GenerationService {
     // 채팅 내역. 남기지 못해도 생성은 계속된다
     private final ChatLog chatLog;
 
-    // b3: 현재 생성에서 사용된 RAG 청크 ID들 (Aborted 시 로그 갱신용)
-    private String ragChunkIds;
-
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "generation");
@@ -239,7 +236,7 @@ public class GenerationService {
             log.warn("생성 실패 — {}차 시도에서 모델 호출 (event={})", e.attempt(), cmd.eventId(), e);
             // ★ ctxOf() 는 attemptNo 가 항상 1이라, 2차 이후 실패는 실제 시도 행을 못 찾는다.
             //   e.attempt() 로 실패한 시도 번호를 넘겨 그 행의 RAG 정보를 갱신한다.
-            recorder.updateRagInfo(ctxOf(job, cmd).attempt(e.attempt()), ragChunkIds);
+            recorder.updateRagInfo(ctxOf(job, cmd).attempt(e.attempt()), job.ragChunkIds());
             job.fail("페이지 생성 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         } catch (LlmCallException e) {
             // 연결 끊김 · 타임아웃 · 모델 서버 down. 프롬프트를 고쳐도 안 고쳐진다
@@ -310,7 +307,7 @@ public class GenerationService {
         // ★ b3: RAG 참고 예시 검색. searchRagChunks 안에서 예외를 다 잡으므로 여기서 터지지 않는다.
         //   빈 리스트면 ragChunkIds=null → 로그에 rag_used=false 로 남는다.
         List<RagChunk> ragChunks = searchRagChunks(cmd);
-        ragChunkIds = chunkIdsOf(ragChunks);
+        job.ragChunkIds(chunkIdsOf(ragChunks));
 
         RetryService.Result res;
         try {
@@ -322,12 +319,12 @@ public class GenerationService {
         } catch (RetryService.Aborted e) {
             // ★ 터진 시도 앞부분을 chunkIds 와 함께 먼저 기록하고 다시 던진다.
             //   runSafely 쪽 기록을 지웠으므로 중복 기록이 아니다.
-            recorder.recordAttempts(ctxOf(job, cmd), e.partial(), ragChunkIds);
+            recorder.recordAttempts(ctxOf(job, cmd), e.partial(), job.ragChunkIds());
             throw e;
         }
 
         // ★ 성공이든 실패든 시도 전부를 남긴다. 저장·취소보다 먼저 — 취소돼도 쓴 토큰은 쓴 것이다
-        recorder.recordAttempts(ctxOf(job, cmd), res, ragChunkIds);
+        recorder.recordAttempts(ctxOf(job, cmd), res, job.ragChunkIds());
 
         job.attempt(res.attempts());
         if (job.checkCancelled()) return null;

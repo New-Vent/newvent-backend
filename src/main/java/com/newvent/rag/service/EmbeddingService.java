@@ -101,7 +101,7 @@ public class EmbeddingService {
 		chunks.flush();
 		List<RagChunk> entities = new ArrayList<>(parts.size());
 		for(Chunk p : parts) {
-			float[] vec = embedding.embed(p.content());
+			float[] vec = embedding.embedDocument(p.content());
 			entities.add(RagChunk.create(version.getEvent(), version, p.blockKey(),
 					p.chunkIndex(), p.content(), embedding.modelName(), vec, Instant.now()));
 		}
@@ -227,6 +227,8 @@ public class EmbeddingService {
 			WeekAgg v = e.getValue();
 			out.add(new QualityTrendResponse(e.getKey(), v.totalCalls(), v.ragUsedCalls(), v.chunkCount()));
 		}
+		// 집계원이 둘이라 청크만 있는 주가 뒤에 붙는다. 차트가 지그재그가 되지 않게 날짜순으로 정렬.
+		out.sort(java.util.Comparator.comparing(QualityTrendResponse::weekStart));
 		return out;
 	}
 

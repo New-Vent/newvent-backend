@@ -29,7 +29,7 @@ import com.newvent.rag.repository.RagChunkRepository;
 @Service
 public class VersionCompareServiceImpl implements VersionCompareService {
 
-	/** 버전당 후보 청크 조회 상한. topK(최대 10) * 3 을 넘지 않게 고정한다 */
+	/** 버전당 후보 청크 조회 상한. 직접 호출 시에만 meaningful — HTTP 경로는 topK ≤ 10이라 30을 넘지 않는다 */
 	private static final int MAX_CANDIDATES_PER_CHUNK = 60;
 
 	private final EventVersionRepository versions;

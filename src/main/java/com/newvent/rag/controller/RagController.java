@@ -33,6 +33,7 @@ import com.newvent.rag.service.VersionCompareService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * RAG 관리자 API. /api/admin/** 이라 ADMIN 권한이 자동으로 걸림 (SecurityConfig)
@@ -46,6 +47,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
         + "eventId 를 받는 API 는 이벤트를 만든 관리자만 부를 수 있다 (아니면 403 COMMON403-0, 이벤트가 없거나 휴지통에 있으면 404 EVENT404-0). "
         + "주간 품질 추이·전체 재색인은 이벤트 하나에 묶이지 않아 관리자면 누구나 부른다. "
         + "검색 미리보기·프롬프트 추천은 eventId 의 이벤트를 빼고 찾고, 거리(distance)가 0.5 보다 먼 결과는 버린다.")
+@Slf4j
 @Validated
 @RestController
 @RequestMapping("/api/admin/rag")
@@ -159,11 +161,13 @@ public class RagController {
                     + "한 이벤트가 실패해도 다음으로 넘어가고, 결과는 진행 상태 API 로 본다. 한 번에 하나만 돌며 매일 03:00 스케줄러와 자리를 같이 쓴다. "
                     + "이미 돌고 있으면 409 인데, 오류 코드 없이 지금 진행 상태를 본문에 담아 준다.")
     @PostMapping("/reindex/all")
-    public ResponseEntity<ApiResponse<ReindexAllStatus>> reindexAll() {
+    public ResponseEntity<ApiResponse<ReindexAllStatus>> reindexAll(
+            @AuthenticationPrincipal AuthUser admin) {
         if (!embedding.tryClaimReindexSlot()) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ApiResponse.success(embedding.getReindexAllStatus()));
         }
+        log.info("전체 재색인 시작 (adminId={})", admin == null ? null : admin.id());
         try {
             embedding.indexAllEventsAsync();
         } catch (RuntimeException e) {

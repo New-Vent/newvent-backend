@@ -56,11 +56,21 @@ public class BedrockEmbeddingClient implements EmbeddingClient {
 
     @Override
     public float[] embed(String text) {
+        return embedWithInputType(text, "search_query");
+    }
+
+    /** 문서 색인용. 질의용 벡터와 다른 공간에 두어 매칭 정밀도를 올린다. */
+    @Override
+    public float[] embedDocument(String text) {
+        return embedWithInputType(text, "search_document");
+    }
+
+    private float[] embedWithInputType(String text, String inputType) {
         if (text == null || text.isBlank()) {
             throw new IllegalArgumentException("임베딩 입력이 비어 있습니다.");
         }
 
-        String body = titan ? titanBody(text) : cohereBody(text);
+        String body = titan ? titanBody(text) : cohereBody(text, inputType);
         String out;
         try {
             InvokeModelResponse res = bedrock.invokeModel(InvokeModelRequest.builder()
@@ -109,13 +119,11 @@ public class BedrockEmbeddingClient implements EmbeddingClient {
         }
     }
 
-    private String cohereBody(String text) {
+    private String cohereBody(String text, String inputType) {
         try {
             ObjectNode root = M.createObjectNode();
             root.putArray("texts").add(text);
-            // ★ 문서·질의 구분 없이 search_query 로 통일한다.
-            //   나눌 이유는 있지만 평가용이라 하나로 간다. 점수가 안 나오면 여기를 본다.
-            root.put("input_type", "search_query");
+            root.put("input_type", inputType);
             root.putArray("embedding_types").add("float");
             return M.writeValueAsString(root);
         } catch (Exception e) {

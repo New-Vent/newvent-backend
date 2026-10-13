@@ -17,10 +17,11 @@ import com.newvent.rag.service.RagChunkingService.Chunk;
 /** 시드 정의 검증. DB 없이 돈다 — 실제 RagChunkingService 로 청킹까지 확인한다. */
 class RagSeedDefinitionsTest {
 
-    // V14 ck_rag_chunks_block_key 와 같은 값이어야 한다. 어긋나면 적재가 터진다.
+    // V19 ck_rag_chunks_block_key 와 같은 값이어야 한다. 어긋나면 적재가 터진다.
     private static final Set<String> ALLOWED_BLOCKS = Set.of(
-            "hero", "highlight", "intro", "benefits", "compare",
-            "audience", "steps", "faq", "notices", "cta");
+            "hero", "highlight", "intro", "stats", "benefits",
+            "prize", "coupon", "compare", "audience", "steps",
+            "schedule", "faq", "notices", "cta");
 
     private final RagChunkingService chunking = new RagChunkingService();
 

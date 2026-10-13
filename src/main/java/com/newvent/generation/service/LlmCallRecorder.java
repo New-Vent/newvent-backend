@@ -107,8 +107,7 @@ public class LlmCallRecorder {
     private static void warn(LlmCallContext ctx, RuntimeException e) {
         // ★ WARN 이다. 사용량 집계가 비는 건 조용히 지나가면 안 된다
         log.warn("호출 로그를 남기지 못했습니다 (event={}, request={}). "
-                + "events 테이블에 그 이벤트 행이 없으면 FK 위반입니다 — 관리자 이벤트가 "
-                + "아직 메모리 저장소에 있습니다.", ctx.eventId(), ctx.requestId(), e);
+                + "events 테이블에 그 이벤트 행이 없으면 FK 위반입니다.", ctx.eventId(), ctx.requestId(), e);
     }
 
     /**
