@@ -42,7 +42,33 @@ public final class AssetEdit {
      * @param remove 빼 달라는 요청인가
      * @param left   제목 옆 그림을 왼쪽에 둘 것인가 (ART 에만 쓴다)
      */
+    /**
+     * @param role  어떤 배치인가. <b>null 이면 "어디 있든"</b> 이라는 뜻이다 —
+     *              "1번 이미지 지워줘" 처럼 자리를 안 말하고 빼 달라는 요청에서 그렇다
+     * @param block 어느 영역인가. role 이 null 이면 같이 null 이다 (페이지 전체를 본다)
+     */
     public record Plan(int index, Asset role, Block block, boolean remove, boolean left) {}
+
+    /**
+     * 읽은 결과. 셋뿐이다.
+     *
+     * ★★ {@link CannotDo} 가 따로 있는 이유 — <b>막힌 조합을 모델에게 넘기면 안 된다.</b>
+     *   "혜택 배경에 1번 이미지" 는 관리자가 **또렷하게** 말한 요청인데 우리가 막아 둔
+     *   조합이다(혜택은 목록이라 사진을 깔면 안 읽힌다). 비켜서면 모델이 받아서
+     *   아무 데나 끼워 넣는다 — 실제로 혜택 카드 하나에 사진이 통째로 들어가
+     *   카드가 늘어나고 옆칸이 텅 비었다.
+     *   할 수 없으면 할 수 없다고 말하는 쪽이 낫다.
+     */
+    public sealed interface Result {
+        /** 이대로 하면 된다 */
+        record Ok(Plan plan) implements Result {}
+
+        /** 또렷한 요청이지만 할 수 없다. 관리자에게 그대로 보여 줄 문구다 */
+        record CannotDo(String message) implements Result {}
+
+        /** 이미지 요청이 아니거나 모호하다 — 평소 경로(모델)로 보낸다 */
+        record NotMine() implements Result {}
+    }
 
     // ★ "1번" · "2 번" · "3번째" 를 모두 받는다. 띄어쓰기는 관리자마다 다르다
     private static final Pattern NUMBER = Pattern.compile("(\\d+)\\s*번");
@@ -76,6 +102,9 @@ public final class AssetEdit {
     private static final Pattern REMOVE = Pattern.compile("없애|빼\\b|빼 |빼줘|빼 줘|지워|삭제|제거");
     private static final Pattern LEFT = Pattern.compile("왼쪽|좌측|왼편");
 
+    /** ★ 오른쪽은 기본 자리라 class 를 안 붙인다. "제목 옆 그림" 으로 읽는 단서로만 쓴다 */
+    private static final Pattern RIGHT = Pattern.compile("오른쪽|우측|오른편|옆에|옆 ");
+
     /**
      * 요청문을 계획으로. <b>확실할 때만</b> 값을 돌려준다.
      *
@@ -87,26 +116,69 @@ public final class AssetEdit {
      * @param assetCount 이 이벤트에 올라온 이미지 수
      */
     public static Optional<Plan> parse(String request, int assetCount) {
-        if (request == null || request.isBlank()) return Optional.empty();
+        return read(request, assetCount) instanceof Result.Ok ok ? Optional.of(ok.plan()) : Optional.empty();
+    }
+
+    /** {@link #parse} 와 같되, 막힌 조합을 {@link Result.CannotDo} 로 구분해 준다 */
+    public static Result read(String request, int assetCount) {
+        if (request == null || request.isBlank()) return new Result.NotMine();
         String t = request.toLowerCase(Locale.ROOT);
 
         // ★ 이미지 얘기라는 신호가 하나는 있어야 한다. 없으면 "배경" 이라는 말만 보고
         //   엉뚱한 요청("배경색을 바꿔줘")을 가로챈다
-        if (!t.contains("이미지") && !t.contains("사진") && !t.contains("그림")) return Optional.empty();
-
-        Asset role = findRole(t);
-        if (role == null) return Optional.empty();
+        if (!t.contains("이미지") && !t.contains("사진") && !t.contains("그림")) return new Result.NotMine();
 
         boolean remove = REMOVE.matcher(t).find();
+        boolean left = LEFT.matcher(t).find();
         int index = findIndex(t);
-        if (index == 0 && !remove) return Optional.empty();
-        if (index > assetCount) return Optional.empty();
+
+        Asset role = findRole(t);
+        // ★ 자리를 가리키는 말만 있어도 "제목 옆 그림" 으로 읽는다.
+        //   "왼쪽에 1번 이미지를 추가해줘" 에는 역할 단어가 없지만 뜻은 또렷하다 —
+        //   비켜서면 모델이 받아서 제목 위에 겹쳐 놓는다(실측).
+        if (role == null && (left || RIGHT.matcher(t).find())) role = Asset.ART;
+
+        // ★★ 빼는 요청은 역할이 없어도 된다. "1번 이미지 지워줘" 는 어디 있든 그걸 빼라는 뜻이다.
+        //   비켜서면 라우터가 DELETE 로 읽어서 "hero 영역은 필수라 지울 수 없습니다" 가 나간다 —
+        //   관리자는 이미지를 빼 달라고 했는데 영역을 지우려 한 것이다(실측).
+        if (role == null && remove && index > 0) {
+            if (index > assetCount) return new Result.CannotDo(missing(index, assetCount));
+            return new Result.Ok(new Plan(index, null, null, true, false));
+        }
+        if (role == null) return new Result.NotMine();
+
+        if (index == 0 && !remove) return new Result.NotMine();
+        if (index > assetCount) return new Result.CannotDo(missing(index, assetCount));
 
         Block block = findBlock(t);
+        // ★ 영역을 또렷하게 말했는데 그 역할을 못 쓰는 경우에만 막힌 것으로 본다.
+        //   영역을 안 말했으면 기본 자리로 보내는 게 맞다 — 그건 막힌 게 아니다.
+        if (block != null && !role.allowedOn(block)) return new Result.CannotDo(cannotDo(role, block));
         if (block == null) block = defaultBlock(role);
-        if (!role.allowedOn(block)) return Optional.empty();
+        if (!role.allowedOn(block)) return new Result.NotMine();
 
-        return Optional.of(new Plan(index, role, block, remove, LEFT.matcher(t).find()));
+        return new Result.Ok(new Plan(index, role, block, remove, left));
+    }
+
+    /**
+     * ★ 왜 안 되는지와 **대신 할 수 있는 것**을 같이 말한다.
+     *   "안 됩니다" 만 들으면 관리자는 같은 말을 다르게 바꿔 가며 계속 시도한다.
+     */
+    private static String cannotDo(Asset role, Block block) {
+        List<Asset> usable = Asset.of(block);
+        String can = usable.isEmpty()
+                ? "이 영역에는 이미지를 넣을 수 없어요."
+                : "넣을 수 있는 건 " + usable.stream().map(Asset::desc)
+                        .reduce((a, b) -> a + " · " + b).orElse("") + " 예요.";
+        return shortName(block) + " 영역에는 " + role.desc() + "을(를) 쓸 수 없어요. " + can;
+    }
+
+    /**
+     * ★ desc() 는 모델에게 주는 설명이라 한 문장이 길다. 관리자에게는 앞머리만 보여 준다 —
+     *   EditService 의 삭제 · 요약 문구가 쓰는 방식과 같다.
+     */
+    private static String shortName(Block b) {
+        return b.desc().split("[—.,]")[0].strip();
     }
 
     /**
@@ -121,6 +193,19 @@ public final class AssetEdit {
      */
     public static String apply(String pageHtml, Plan plan, List<Asset.Ref> assets) {
         Document doc = Jsoup.parseBodyFragment(pageHtml);
+
+        // ★ 자리를 안 말하고 빼 달라는 요청 — 그 주소를 쓰는 이미지를 **페이지 전체에서** 뺀다.
+        //   한 장을 배경과 그림 두 자리에 쓴 경우도 있으니 하나만 지우면 안 된다.
+        if (plan.role() == null) {
+            String url = assets.get(plan.index() - 1).url();
+            boolean hit = false;
+            for (Element img : doc.body().select("img[src=\"" + url + "\"]")) {
+                img.remove();
+                hit = true;
+            }
+            return hit ? doc.body().html() : pageHtml;
+        }
+
         Element section = doc.selectFirst("section[data-block=\"" + plan.block().key() + "\"]");
         if (section == null) return pageHtml;
 
@@ -239,6 +324,12 @@ public final class AssetEdit {
     /** 영역을 안 말했을 때. 역할마다 가장 흔한 자리 하나다 */
     private static Block defaultBlock(Asset role) {
         return role == Asset.ICON ? Block.BENEFITS : Block.HERO;
+    }
+
+    private static String missing(int index, int assetCount) {
+        return assetCount == 0
+                ? "아직 올린 이미지가 없어요. 입력칸 옆 + 로 먼저 올려 주세요."
+                : index + "번 이미지가 없어요. 지금 " + assetCount + "장 올라와 있어요.";
     }
 
     private static int findIndex(String t) {

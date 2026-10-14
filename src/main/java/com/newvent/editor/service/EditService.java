@@ -375,10 +375,18 @@ public class EditService {
     private boolean applyAssetEdit(GenerationJob job, EditCommand cmd, String doc,
                                    VersionStore.Snapshot base) {
         List<Asset.Ref> uploaded = assets.assetsOf(cmd.eventId());
-        Optional<AssetEdit.Plan> parsed = AssetEdit.parse(cmd.requestText(), uploaded.size());
-        if (parsed.isEmpty()) return false;
+        AssetEdit.Result read = AssetEdit.read(cmd.requestText(), uploaded.size());
 
-        AssetEdit.Plan step = parsed.get();
+        // ★★ 막힌 조합은 **모델에게 안 넘긴다.** 또렷하게 말한 요청이라 모델이 받으면
+        //   어떻게든 끼워 넣는다 — 혜택 카드 하나에 사진이 통째로 들어가 레이아웃이 깨졌다.
+        //   할 수 없으면 할 수 없다고 말하는 쪽이 낫다
+        if (read instanceof AssetEdit.Result.CannotDo no) {
+            job.fail(no.message());
+            return true;
+        }
+        if (!(read instanceof AssetEdit.Result.Ok ok)) return false;
+
+        AssetEdit.Plan step = ok.plan();
         String after = AssetEdit.apply(doc, step, uploaded);
         if (unchanged(doc, after)) {
             log.info("이미지 수정 — 바뀐 게 없다 (event={}, {})", cmd.eventId(), step);
@@ -392,8 +400,11 @@ public class EditService {
         after = PageShell.settle(after);
         job.to(GenerationJob.Phase.SAVING);
 
-        String summary = (step.remove() ? "이미지 제거 — " : "이미지 배치 — ")
-                + step.block().key() + " " + step.role().cssClass();
+        // ★ 자리를 안 말하고 뺀 경우에는 role · block 이 없다 (AssetEdit.Plan 참고)
+        String summary = step.role() == null
+                ? step.index() + "번 이미지 제거"
+                : (step.remove() ? "이미지 제거 — " : "이미지 배치 — ")
+                        + step.block().key() + " " + step.role().cssClass();
         VersionStore.Saved saved =
                 versions.save(cmd.eventId(), after, base.versionId(), summary, job.chatRequestId());
         log.info("이미지 수정 저장 (event={}, versionId={}, v{}, source=v{}) — 모델 호출 0회",

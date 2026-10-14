@@ -203,12 +203,34 @@ public enum Asset {
             // ★ 쓸 수 있는 배치 이름이 하나도 안 남았으면 <img> 를 **지운다.**
             //   class 만 떼면 자리를 못 잡는 맨 이미지가 본문 사이에 원본 크기로 끼어든다.
             //   관리자가 다시 한마디 하면 제자리에 들어가니, 틀린 자리보다 없는 편이 낫다.
-            if (!kept) img.remove();
+            if (!kept || !placed(img, section)) img.remove();
             else {
                 img.addClass(BASE);
                 paintable(img, refs);
             }
         }
+    }
+
+    /**
+     * 이 이미지가 **자리를 잡았는가.**
+     *
+     * ★★ 아이콘만 자리를 탄다. CSS 가 크기를 주는 규칙이 `.benefit-icon > .ev-asset-icon`
+     *   처럼 **자리 안에 있을 때만** 걸린다. 밖에 있으면 규칙이 하나도 안 걸려서
+     *   원본 크기 그대로 박힌다 — 실제로 혜택 카드 하나가 사진 높이만큼 늘어나고
+     *   옆칸이 텅 비었다.
+     * ★ 빈 자리가 있으면 거기로 옮긴다. 없으면 false — 호출하는 쪽이 지운다.
+     *   틀린 자리에 큼직하게 박히느니 없는 편이 낫다.
+     * ★ 나머지 배치는 CSS 가 영역 기준으로 자리를 잡으므로 어디 있든 된다.
+     */
+    private static boolean placed(Element img, Element section) {
+        if (!img.hasClass(ICON.cssClass())) return true;
+        if (img.parent() != null && img.parent().is(".benefit-icon, .step-icon")) return true;
+
+        Element holder = section.selectFirst(".benefit-icon:not(:has(img)), .step-icon:not(:has(img))");
+        if (holder == null) return false;
+        holder.empty();
+        holder.appendChild(img);
+        return true;
     }
 
     /**

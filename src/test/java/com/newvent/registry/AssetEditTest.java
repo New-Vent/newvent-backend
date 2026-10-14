@@ -2,6 +2,8 @@ package com.newvent.registry;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -176,6 +178,100 @@ class AssetEditTest {
 
         assertTrue(d.selectFirst("img.ev-asset-bg").hasClass("ev-asset-on-light"));
         assertEquals("벚꽃", d.selectFirst("img.ev-asset-bg").attr("alt"));
+    }
+
+    /* ── 역할 단어가 없는 요청 ──────────────────────────────────── */
+
+    // ★★ 제보: "왼쪽에 1번이미지를 추가해줘" 가 제목 위에 겹쳐 놓였다.
+    //   역할 단어("그림")가 없어서 비켜섰고, 모델이 받아서 아무 자리에 꽂은 것이다.
+    //   자리를 가리키는 말만 있어도 뜻은 또렷하다 — "제목 옆 그림" 으로 읽는다.
+    @Test
+    @DisplayName("★ 자리를 가리키는 말만 있어도 제목 옆 그림으로 읽는다")
+    void 자리만_말해도() {
+        AssetEdit.Plan left = AssetEdit.parse("왼쪽에 1번이미지를 추가해줘", 2).orElseThrow();
+        assertEquals(Asset.ART, left.role());
+        assertTrue(left.left());
+
+        AssetEdit.Plan right = AssetEdit.parse("오른쪽에 2번 이미지 넣어줘", 2).orElseThrow();
+        assertEquals(Asset.ART, right.role());
+        assertFalse(right.left());
+    }
+
+    // ★★ 제보: "1번이미지 지워줘" 에 "hero 영역은 필수라 지울 수 없습니다" 가 나갔다.
+    //   역할 단어가 없어 비켜섰고, 라우터가 DELETE 로 읽어 **영역을** 지우려 한 것이다.
+    //   빼 달라는 요청은 자리를 안 말해도 된다 — 그 이미지를 페이지 어디서든 뺀다.
+    @Test
+    @DisplayName("★ 자리를 안 말해도 그 이미지를 페이지 전체에서 뺀다")
+    void 자리를_안_말한_빼기() {
+        String page = "<div class=\"ev-container\"><section data-block=\"hero\">"
+                + "<img class=\"ev-asset ev-asset-bg\" src=\"" + U1 + "\">"
+                + "<img class=\"ev-asset ev-asset-art\" src=\"" + U2 + "\">"
+                + "<h1>봄맞이 축제</h1></section></div>";
+
+        AssetEdit.Plan plan = AssetEdit.parse("1번이미지 지워줘", 2).orElseThrow();
+        assertNull(plan.role(), "자리를 안 말했으면 role 이 없다");
+
+        Document d = Jsoup.parseBodyFragment(AssetEdit.apply(page, plan, REFS));
+        assertEquals(0, d.select("img[src=" + U1 + "]").size());
+        assertEquals(1, d.select("img[src=" + U2 + "]").size(), "빼라고 안 한 건 남아야 합니다");
+        assertEquals("봄맞이 축제", d.selectFirst("h1").text());
+    }
+
+    @Test
+    @DisplayName("역할도 자리도 없으면 비켜선다")
+    void 역할도_자리도_없으면() {
+        assertTrue(AssetEdit.parse("1번 이미지를 추가해줘", 2).isEmpty());
+        assertTrue(AssetEdit.parse("왼쪽 정렬로 바꿔줘", 2).isEmpty());
+    }
+
+    /* ── 막힌 조합 ──────────────────────────────────────────────── */
+
+    // ★★ 제보: "1번 이미지를 혜택 배경으로" 했더니 혜택 카드 하나에 사진이 통째로 들어가
+    //   카드가 늘어나고 옆칸이 텅 비었다. 막힌 조합인데 비켜서니 모델이 받아서 끼워 넣은 것이다.
+    //   또렷하게 말한 요청은 **모델에게 넘기지 말고** 할 수 없다고 말해야 한다.
+    @Test
+    @DisplayName("★ 막힌 조합은 모델에게 넘기지 않고 이유를 말한다")
+    void 막힌_조합() {
+        AssetEdit.Result r = AssetEdit.read("1번 이미지를 혜택 배경으로 넣어줘", 2);
+
+        assertInstanceOf(AssetEdit.Result.CannotDo.class, r);
+        String message = ((AssetEdit.Result.CannotDo) r).message();
+        assertTrue(message.contains("혜택"), message);
+        // ★ 대신 할 수 있는 것을 같이 말한다 — 안 그러면 같은 말을 바꿔 가며 계속 시도한다
+        assertTrue(message.contains("아이콘"), message);
+    }
+
+    @Test
+    @DisplayName("없는 번호도 이유를 말한다")
+    void 없는_번호() {
+        assertInstanceOf(AssetEdit.Result.CannotDo.class, AssetEdit.read("5번 이미지를 배경으로", 2));
+        assertInstanceOf(AssetEdit.Result.CannotDo.class, AssetEdit.read("1번 이미지를 배경으로", 0));
+    }
+
+    // ★ 영역을 안 말한 건 막힌 게 아니다 — 기본 자리로 보낸다
+    @Test
+    @DisplayName("영역을 안 말하면 막힌 게 아니다")
+    void 영역을_안_말하면() {
+        assertInstanceOf(AssetEdit.Result.Ok.class, AssetEdit.read("1번 이미지를 배경으로", 2));
+        assertInstanceOf(AssetEdit.Result.NotMine.class, AssetEdit.read("혜택 배경색을 파랗게", 2));
+    }
+
+    // ★★ 제보와 같은 뿌리: 아이콘이 자리를 못 잡으면 CSS 규칙이 하나도 안 걸려
+    //   원본 크기로 박힌다. 빈 자리로 옮기고, 자리가 없으면 지운다.
+    @Test
+    @DisplayName("★ 자리를 못 잡은 아이콘은 자리로 옮기거나 지운다")
+    void 자리를_못_잡은_아이콘() {
+        String outside = "<section data-block=\"benefits\"><ul><li>커피 쿠폰</li></ul>"
+                + "<img class=\"ev-asset-icon\" src=\"" + U1 + "\"></section>";
+        assertEquals(0, Jsoup.parseBodyFragment(BlockValidator.sanitizeGenerated(outside, REFS))
+                .select("img").size());
+
+        String withHolder = "<section data-block=\"benefits\"><ul>"
+                + "<li><span class=\"benefit-icon\">🎁</span>커피</li></ul>"
+                + "<img class=\"ev-asset-icon\" src=\"" + U1 + "\"></section>";
+        Document d = Jsoup.parseBodyFragment(BlockValidator.sanitizeGenerated(withHolder, REFS));
+        assertEquals(1, d.select(".benefit-icon img").size());
+        assertEquals(0, d.select("section > img").size());
     }
 
     /* ── 안전망 ─────────────────────────────────────────────────── */
