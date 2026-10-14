@@ -19,13 +19,11 @@ import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.exception.EventNotFoundException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.generation.service.PeriodText;
+import com.newvent.registry.PageShell;
 import com.newvent.registry.Slots;
 
 @Service
 public class PublicEventService {
-
-    // REQ-EVT-15: 종료 며칠 전부터 "마감 임박"으로 표시할지는 기획 확정 전이라 3일로 임시 지정
-    private static final int CLOSING_SOON_DAYS = 3;
 
     private final EventRepository eventRepository;
 
@@ -56,7 +54,17 @@ public class PublicEventService {
         return event.getEndDate() == null || !now.isAfter(event.getEndDate());
     }
 
-    //사용자에게 내려보낼 게시 HTML
+    /**
+     * 사용자에게 내려보낼 게시 HTML.
+     *
+     * ★ 참여 링크를 채운다. 전에는 <b>항상 null</b> 이어서 cta-link 슬롯이 끝까지 비어 있었다 —
+     *   관리자가 디자인한 「참여하기」 버튼이 아무 데도 가지 않는 장식이었다.
+     *   주소는 {@link ParticipationLink} 한 곳에서만 만든다.
+     *
+     * ★ 참여 버튼 블록은 그대로 둔다. <b>버튼은 항상 있는 것으로 본다</b> —
+     *   Block.CTA 가 required=true 라 LLM 이 빠뜨릴 수 없고, 서버도 떼지 않는다.
+     *   그 버튼이 실제로 참여까지 가는지는 호스트(프론트)가 클릭을 받아 정한다.
+     */
     public String publishedHtmlOf(Event event) {
         EventVersion published = event.getPublishedVersion();
         if (published == null) {
@@ -65,7 +73,19 @@ public class PublicEventService {
         return Slots.fill(
                 published.getHtmlContent(),
                 PeriodText.of(event.getStartDate(), event.getEndDate()),
-                null);
+                ParticipationLink.of(event.getId()));
+    }
+
+    // 공개 페이지 문서 — /e/{id} · 공개 상세 API 공통. 게시 버전이 없으면 null
+    public String publishedPageOf(Event event) {
+        String html = publishedHtmlOf(event);
+        return html == null ? null : pageOf(event, html);
+    }
+
+    // 슬롯을 채운 조각을 완전한 문서로 감싼다 — 공개 페이지 · 관리자 미리보기 공통 (PageShell.standalone)
+    // 종료일은 여기서 넣는다. 저장본에는 굳히지 않는다
+    public String pageOf(Event event, String fragment) {
+        return PageShell.standalone(fragment, event.getTitle(), event.getEndDate());
     }
 
      // 목록 썸네일용 HTML, 슬롯은 publishedHtmlOf 와 같은 규칙으로 채운 뒤 자른다(기간이 hero 안에 있다)
@@ -74,17 +94,9 @@ public class PublicEventService {
         return published == null ? null : ThumbnailHtml.of(event, published.getHtmlContent());
     }
 
-    // 마감임박은 이미 시작한(진행중) 이벤트에만 표시한다 — 시작 전 이벤트가 종료일만 가까워서
-    // closingSoon=true로 잘못 뜨는 것을 막는다 (리뷰 반영: tnqlsqkr).
+    // 관리자 화면과 같은 기준을 써야 해서 계산은 Event.closingSoon 에만 둔다
     public boolean isClosingSoon(Event event, OffsetDateTime now) {
-        if (event.getStartDate() != null && now.isBefore(event.getStartDate())) {
-            return false;
-        }
-        if (event.getEndDate() == null) {
-            return false;
-        }
-        return !now.isAfter(event.getEndDate())
-                && !now.plusDays(CLOSING_SOON_DAYS).isBefore(event.getEndDate());
+        return event.closingSoon(now);
     }
 
     @Transactional(readOnly = true)

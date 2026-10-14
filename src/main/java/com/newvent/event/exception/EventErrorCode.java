@@ -31,7 +31,8 @@ public enum EventErrorCode implements ErrorCode {
     PARTICIPATED_EVENT_PERMANENT_DELETE_FORBIDDEN(HttpStatus.CONFLICT, "EVENT409-9",
             "참여 기록이 있는 이벤트는 영구 삭제할 수 없습니다. 참여한 사용자의 참여·당첨 기록이 함께 사라지기 때문입니다."),
     BUILTIN_TEMPLATE_IMMUTABLE(HttpStatus.FORBIDDEN, "EVENT403-0", "기본 제공 템플릿은 변경할 수 없습니다."),
-    INVALID_TEMPLATE_STRUCTURE(HttpStatus.BAD_REQUEST, "EVENT400-3", "템플릿의 필수 블록이나 슬롯 구조를 확인해주세요.");
+    INVALID_TEMPLATE_STRUCTURE(HttpStatus.BAD_REQUEST, "EVENT400-3", "템플릿의 필수 블록이나 슬롯 구조를 확인해주세요."),
+    INVALID_SIMILAR_QUERY(HttpStatus.BAD_REQUEST, "EVENT400-4", "기준 버전과 검색어 중 하나만 보내주세요.");
 
     private final HttpStatus httpStatus;
     private final String code;

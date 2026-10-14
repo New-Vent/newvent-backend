@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.admin.domain.Admin;
 import com.newvent.admin.repository.AdminRepository;
+import com.newvent.asset.service.AssetCleanup;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventProgress;
@@ -49,7 +50,17 @@ public class EventService {
     private final EventVersionRepository eventVersionRepository;
     private final AdminRepository adminRepository;
     private final GenerationJobStore generationJobStore;
+    // ★ 이벤트를 영구 삭제할 때 올린 이미지 파일도 같이 치운다 (AssetCleanup 주석 참고)
+    private final AssetCleanup assetCleanup;
     private final Clock clock;
+
+    /**
+     * 게시 HTML 을 만드는 데 쓴다 (슬롯 채우기).
+     *
+     * ★ 순환이 아니다 — PublicEventService 는 EventService 를 모른다.
+     *   관리자 상세와 공개 상세가 **같은 HTML** 을 내려면 이 한 곳을 공유해야 한다.
+     */
+    private final PublicEventService publicEventService;
 
     public EventService(
             EventRepository eventRepository,
@@ -57,13 +68,17 @@ public class EventService {
             EventVersionRepository eventVersionRepository,
             AdminRepository adminRepository,
             GenerationJobStore generationJobStore,
-            Clock clock) {
+            AssetCleanup assetCleanup,
+            Clock clock,
+            PublicEventService publicEventService) {
         this.eventRepository = eventRepository;
         this.eventTemplateRepository = eventTemplateRepository;
         this.eventVersionRepository = eventVersionRepository;
         this.adminRepository = adminRepository;
         this.generationJobStore = generationJobStore;
+        this.assetCleanup = assetCleanup;
         this.clock = clock;
+        this.publicEventService = publicEventService;
     }
 
     /** 검색어(name)가 숫자뿐이면 이름이 맞는 것과 ID 가 같은 것을 함께 찾는다. */
@@ -201,6 +216,12 @@ public class EventService {
             throw new EventException(EventErrorCode.PARTICIPATED_EVENT_PERMANENT_DELETE_FORBIDDEN);
         }
         eventRepository.delete(event);
+
+        // ★★ 행은 on delete cascade 로 같이 사라지지만 **디스크의 파일은 안 사라진다.**
+        //   아무도 가리키지 않는 파일이 박스에 쌓인다 — 한 이벤트에 3MB × 20장이면 60MB 다.
+        // ★ 삭제 뒤에 부른다. 파일을 먼저 지우면, 뒤에서 트랜잭션이 되돌아갈 때
+        //   **살아 있는 이벤트의 이미지가 사라진다.** 고아 파일보다 그쪽이 훨씬 나쁘다.
+        assetCleanup.deleteAllOf(id);
     }
 
     // 게시(DRAFT→PUBLISHED) 및 재게시(PUBLISHED 상태에서 다른 버전으로 교체)
@@ -310,7 +331,13 @@ public class EventService {
     }
 
     private EventDetailResponse detail(Event event, Long adminId) {
-        return EventDetailResponse.from(event, closingSoon(event), event.ownedBy(adminId));
+        return EventDetailResponse.from(
+                event,
+                // ★ 공개 상세와 **같은 함수**를 쓴다. 관리자가 보는 것과 사용자가 보는 것이
+                //   달라지면 안 된다 — 전에는 슬롯이 빈 생 조각이라 기간도 참여 주소도 없었다.
+                publicEventService.publishedHtmlOf(event),
+                closingSoon(event),
+                event.ownedBy(adminId));
     }
 
     private static void requireOwner(Event event, Long adminId) {

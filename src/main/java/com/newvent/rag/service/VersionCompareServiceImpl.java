@@ -74,6 +74,49 @@ public class VersionCompareServiceImpl implements VersionCompareService {
 		//   버전 수만큼 SELECT 가 나간다(N+1). findAllById 한 방으로 끝낸다.
 		//   (native 쿼리에는 join fetch 를 못 붙이므로 배치 로딩으로 해결한다.
 		//    getId() 는 프록시에서 DB 없이 꺼내지므로 여기서 쿼리는 안 나간다)
+		return toVersionResponses(best, byId, limit);
+	}
+
+	@Transactional(readOnly = true)
+	@Override
+	public List<VersionSimilarityResponse> similarVersionsByQuery(String query, int topK) {
+		if (query == null || query.isBlank()) {
+			return List.of();
+		}
+		int limit = topK <= 0 ? RagConstants.DEFAULT_TOP_K : topK;
+		float[] q = embedding.embed(query);
+		// 기획 모드 — 자기 제외 없음, SEED 포함. 만들기 화면에서 이벤트 생기기 전에 쓴다.
+		// 1단계에서 버전별 최소 거리 순으로 상위 버전을 고른 뒤 2단계에서 청크를 가져온다.
+		// 빈 IN 절은 문법 오류라 id 가 없으면 여기서 끝낸다
+		List<Long> versionIds = chunks.findTopVersionIds(Vectors.toDb(q), embedding.modelName(),
+			-1L, RagConstants.MAX_DISTANCE, limit);
+		if (versionIds.isEmpty()) {
+			return List.of();
+		}
+		List<RagChunk> hits = chunks.findTopChunksOfVersions(Vectors.toDb(q), embedding.modelName(),
+			versionIds, RagConstants.MAX_DISTANCE);
+		Map<Long, Double> best = new HashMap<>();
+		Map<Long, RagChunk> byId = new HashMap<>();
+		for (RagChunk h : hits) {
+			if (h.getVersion() == null) {
+				continue;
+			}
+			double distance = 1.0 - Vectors.cosine(q, Vectors.fromDb(h.getEmbedding()));
+			best.merge(h.getId(), distance, Math::min);
+			byId.putIfAbsent(h.getId(), h);
+		}
+		if (best.isEmpty()) {
+			return List.of();
+		}
+		return toVersionResponses(best, byId, limit);
+	}
+
+	/**
+	 * 버전 묶음 공통 마무리. best(청크별 최소 거리) 를 버전별로 묶어 유사도 내림차순으로 자른다.
+	 * eventTitle 은 LAZY 라 버전당 SELECT 1건씩 나가지만 topK ≤ 10 이라 10건을 넘지 않는다.
+	 */
+	private List<VersionSimilarityResponse> toVersionResponses(Map<Long, Double> best,
+		Map<Long, RagChunk> byId, int limit) {
 		Map<Long, EventVersion> versionMap = new HashMap<>();
 		versions.findAllById(
 				byId.values().stream().map(h -> h.getVersion().getId()).distinct().toList()
@@ -103,7 +146,8 @@ public class VersionCompareServiceImpl implements VersionCompareService {
 							.map(c -> new ChunkResponse(c.getId(), c.getBlockKey(),
 									c.getChunkIndex(), c.getContent(), best.get(c.getId())))
 							.toList();
-					return new VersionSimilarityResponse(vid, versionMap.get(vid).getVersionNo(), similarity, top);
+					return new VersionSimilarityResponse(vid, versionMap.get(vid).getVersionNo(), similarity, top,
+					versionMap.get(vid).getEvent().getId(), versionMap.get(vid).getEvent().getTitle());
 				})
 				.toList();
 	}

@@ -322,6 +322,7 @@ public class BlockValidator {
      * ★ 대신 이 둘은 고정이다
      *   data-slot  서버가 값을 쓰는 자리. 없어지면 그 이벤트는 영영 못 채운다
      *   id         getElementById 로 직접 찾는다 (#demoTimer · #regCount · #pouchSection)
+     *   behavior   data-behavior 이름 — runtime.js 가 이걸 보고 동작한다
      *              없어지면 타이머가 멈추고, 복제하면 id 중복으로 첫 번째만 잡힌다
      *   class      단, **이름표 붙은 요소의 것만.** 아래 diffClasses 참고
      */
@@ -344,6 +345,24 @@ public class BlockValidator {
                         + "원래 있던 id 를 그대로 두세요.",
                 FailureCode.ID_INVENTED, "id=\"%s\" 를 새로 만들었습니다. "
                         + "id 는 화면 기능이 쓰는 이름이라 임의로 추가하면 안 됩니다.");
+
+        // ★ 동작도 이름표다. 지우면 버튼이 조용히 죽고, 지어내면 서버가 심지 않은 동작이 생긴다
+        diff(Behavior.keysOf(before), Behavior.keysOf(after), f,
+                FailureCode.BEHAVIOR_LOST, "data-behavior=\"%s\" 를 지웠습니다. 버튼의 동작이 이 속성에 걸려 있습니다. "
+                        + "원래 있던 data-behavior 를 그대로 두세요.",
+                FailureCode.BEHAVIOR_INVENTED, "data-behavior=\"%s\" 를 새로 만들었습니다. "
+                        + "동작은 서버만 붙입니다. 원래 있던 것만 그대로 두세요.");
+
+        // ★ 버튼은 늘 수 없다. 수정 정화는 원래 버튼을 지키려고 <button> 을 허용하는데,
+        //   그 틈으로 동작(data-behavior) 없는 버튼이 들어오면 눌러도 아무 일이 없는 버튼이 게시된다.
+        //   줄어드는 것(카드 삭제)은 허용한다. 카드 추가는 서버가 먼저 복제하므로(duplicateCard) 개수가 같다
+        int wasButtons = Jsoup.parseBodyFragment(before == null ? "" : before).select("button").size();
+        int nowButtons = Jsoup.parseBodyFragment(after == null ? "" : after).select("button").size();
+        if (nowButtons > wasButtons) {
+            f.add(Failure.of(FailureCode.BUTTON_INVENTED,
+                    "버튼(<button>)을 새로 만들었습니다. 버튼은 동작이 붙어야 해서 서버만 만듭니다. "
+                            + "원래 있던 버튼만 그대로 두고 문구만 고치세요."));
+        }
 
         diffClasses(Slots.classMap(before), Slots.classMap(after), f);
     }
@@ -414,7 +433,19 @@ public class BlockValidator {
      *   data-slot 을 만들면 서버의 쓰기 지점을 모델이 만드는 셈이 된다 (REQ-LLM-46).
      */
     public static String sanitizeGenerated(String html) {
-        return clean(html, false);
+        return sanitizeGenerated(html, List.of());
+    }
+
+    /**
+     * @param allowedAssets 이 이벤트에 올라온 이미지. 여기 없는 src 는 &lt;img&gt; 째로 지운다.
+     *
+     * ★★ 기본값이 빈 목록이다 — 즉 **이미지를 아예 안 받는다.** 지금 열려 있는 구멍을 막는 쪽이
+     *   기본이어야 한다. Safelist.relaxed 는 img[src] 에 http/https/ftp 를 허용해서,
+     *   모델이 지어낸 바깥 주소가 그대로 게시된다(실측: https://… 통과).
+     *   호출하는 쪽이 목록을 깜빡해도 조용히 열리면 안 된다.
+     */
+    public static String sanitizeGenerated(String html, List<Asset.Ref> allowedAssets) {
+        return clean(html, false, allowedAssets);
     }
 
     /**
@@ -434,7 +465,12 @@ public class BlockValidator {
      *   계약 4-⑤ 도 "CTA 버튼에 onclick 인라인 핸들러를 넣지 않습니다" 로 같은 방향이다.
      */
     public static String sanitizeEdited(String html) {
-        return clean(html, true);
+        return sanitizeEdited(html, List.of());
+    }
+
+    /** @param allowedAssets {@link #sanitizeGenerated(String, Set)} 참고 */
+    public static String sanitizeEdited(String html, List<Asset.Ref> allowedAssets) {
+        return clean(html, true, allowedAssets);
     }
 
     /**
@@ -443,6 +479,10 @@ public class BlockValidator {
      *   순서:  sanitize(모델 출력) → merge   (반대로 하지 말 것)
      */
     private static String clean(String html, boolean keepInteractive) {
+        return clean(html, keepInteractive, List.of());
+    }
+
+    private static String clean(String html, boolean keepInteractive, List<Asset.Ref> allowedAssets) {
         Safelist s = Safelist.relaxed()
                 .addAttributes(":all", "style", "data-block", "class")
                 .addTags("section")
@@ -458,6 +498,14 @@ public class BlockValidator {
                 //   "#" 은 빈 문자열이 되어 어느 프로토콜에도 안 맞고 속성째 제거된다.
                 .addProtocols("a", "href", "#");
 
+        // ★★ 에셋 주소는 **절대 URL** 이어야 한다.
+        //   Safelist 는 img[src] 를 absUrl 로 바꾼 뒤 프로토콜을 보는데, baseUri 가 비어
+        //   있어서 상대 경로("/api/public/assets/…")는 빈 문자열이 되고 속성째 떨어진다.
+        //   바로 위 a[href="#"] 가 특례로 살아 있는 것과 같은 함정이고, "#" 처럼 "/" 를 더하는
+        //   건 안 통한다 — jsoup 은 "#" 만 따로 처리하고 나머지는 "프로토콜:" 로 맞춰 본다.
+        //   그래서 서버가 에셋 주소를 https://… 로 내려 준다(asset.public-base-url).
+        //   대조는 dropForeignImages 가 한다.
+
         if (keepInteractive) {
             s = s.addTags("button", "input")
                  .addAttributes(":all",
@@ -465,8 +513,9 @@ public class BlockValidator {
                          "id",             // getElementById 로 찾는 것들
                          "type",           // <button type="button">
                          "value", "placeholder",
-                         "data-href",      // <button> 일 때 서버가 넣는 링크
-                         "data-demo-msg", "data-state", "data-vote");
+                         "data-href")      // <button> 일 때 서버가 넣는 링크
+                 // ★ 동작(data-behavior)과 그것이 읽는 data-* 만. 목록은 Behavior 가 정한다
+                 .addAttributes(":all", Behavior.ATTRIBUTES.toArray(String[]::new));
         }
         String cleaned = Jsoup.clean(html, "", s, new Document.OutputSettings().prettyPrint(false));
 
@@ -478,8 +527,28 @@ public class BlockValidator {
             if (safe.isEmpty()) el.removeAttr("style");
             else el.attr("style", safe);
         }
+        dropForeignImages(doc, allowedAssets);
         cleanLooks(doc);
+        // ★ 속성은 열었지만 값은 아직 안 봤다 — 목록에 없는 behavior 이름은 여기서 지운다
+        if (keepInteractive) Behavior.sanitize(doc);
         return doc.body().html();
+    }
+
+    /**
+     * 허용 목록에 없는 &lt;img&gt; 를 지운다. **주소를 모델에게 맡기지 않는 줄이다.**
+     *
+     * ★ 통째로 지운다. src 만 떼면 깨진 아이콘이 남고, 그게 그대로 게시된다.
+     * ★ 배치 이름(ev-asset-*)은 Asset.sanitize 가 블록별로 따로 거른다 —
+     *   ev-asset-* 는 v- 도 t- 도 아니라서 cleanLooks 를 그냥 지나간다.
+     */
+    private static void dropForeignImages(Document doc, List<Asset.Ref> allowedAssets) {
+        Set<String> urls = Asset.urls(allowedAssets);
+        for (Element img : doc.body().select("img")) {
+            if (!urls.contains(img.attr("src"))) img.remove();
+        }
+        for (Element sec : doc.body().select("section[data-block]")) {
+            Block.find(sec.attr("data-block")).ifPresent(b -> Asset.sanitize(sec, b, allowedAssets));
+        }
     }
 
     /**
@@ -547,6 +616,14 @@ public class BlockValidator {
                 if (ok) themeKept = true;
                 else el.removeClass(c);
             }
+            // 페이지 배치(layout-*)도 테마와 같은 규칙이다
+            boolean layoutKept = false;
+            for (String c : List.copyOf(el.classNames())) {
+                if (isRoot || !Layout.looksLike(c)) continue;
+                boolean ok = b == Block.HERO && !layoutKept && Layout.find(c).isPresent();
+                if (ok) layoutKept = true;
+                else el.removeClass(c);
+            }
             if (el.classNames().isEmpty()) el.removeAttr("class");
         }
     }
@@ -572,6 +649,13 @@ public class BlockValidator {
 
     	Element copy = src.clone();
     	emptyText(copy);
+        // 직접 편집용 문구 ID는 복제본마다 새로 부여해 원본과 충돌하지 않게 한다.
+        Set<String> usedIds = Slots.idsOf(doc.body().html());
+        for (Element holder : copy.select("span[id^=nv-direct-text-]")) {
+            String id = holder.id() + "-copy";
+            while (!usedIds.add(id)) id += "-next";
+            holder.attr("id", id);
+        }
     	src.parent().appendChild(copy);
     	return doc.body().html();
     }

@@ -338,6 +338,19 @@ public final class PromptBuilder {
      */
     public static String edit(Block b, boolean templateBlock, boolean allowPalette,
                               boolean looksRequest, boolean addItem) {
+        return edit(b, templateBlock, allowPalette, looksRequest, addItem, List.of());
+    }
+
+    /**
+     * @param assets 이 이벤트에 올라온 이미지. 비면 이미지 안내가 한 줄도 안 나간다.
+     *
+     * ★★ 모델은 그림을 **볼 수 없다**(LlmClient.Request 는 문자열 둘이다).
+     *   그런데 배치는 보는 일이 아니라 **이름 고르는 일**이다 — 어디 둘지는 관리자가 말한다.
+     *   그래서 변형 · 팔레트 · 테마와 같은 길로 간다: 서버가 목록을 주고 모델이 하나 고른다.
+     *   자리 · 크기 · 잘림 · 덮개 · 글자색은 전부 CSS 가 쥔다(95-assets/01-assets.css).
+     */
+    public static String edit(Block b, boolean templateBlock, boolean allowPalette,
+                              boolean looksRequest, boolean addItem, List<Asset.Ref> assets) {
         if (b.source() == Block.Source.SERVER) {
             throw new IllegalArgumentException(
                     b.key() + " 는 서버 소유입니다. 모델에게 수정시키면 안 됩니다.");
@@ -397,6 +410,8 @@ public final class PromptBuilder {
                 + (looks ? " 단, 아래 '모양 고르기' 에 있는 class 는 바꿀 수 있다." : ""));
         s.add("- id 를 지우거나 새로 만들지 마라. 화면 기능이 id 로 요소를 찾는다.");
         s.add("- <button> 을 <a> 나 <div> 로 바꾸지 마라.");
+        // ★ 이름 목록은 싣지 않는다 — 모델이 behavior 를 고르게 하면 안 된다. 있는 것을 두라고만 한다
+        s.add("- data-behavior 속성과 data-target 같은 동작 속성은 지우거나 바꾸지 마라. 새로 만들지도 마라.");
         // ★ 이모지 보존을 명시한다. 템플릿 블록 안에 58개가 있고,
         //   그중 일부는 슬롯 옆에 붙어 있다(📅 기간).
         //   지우는 것은 요청받지 않은 변경이고 검증기가 못 잡는다.
@@ -429,6 +444,14 @@ public final class PromptBuilder {
 
         s.add("");
         addInline(s);
+
+        // ★ 올린 이미지가 있을 때만. 없으면 한 줄도 안 나가야 한다 —
+        //   "이미지를 넣을 수 있다" 만 알려 주면 모델이 주소를 지어낸다.
+        List<String> assetLines = Asset.promptLines(b, assets);
+        if (!assetLines.isEmpty()) {
+            s.add("");
+            for (String line : assetLines) s.add(line);
+        }
 
         if (looks) {
             s.add("");
@@ -471,9 +494,22 @@ public final class PromptBuilder {
             // ★ 생성(addLooks)과 같은 순서다 — 구조(테마)를 먼저 정하고 색(팔레트)을 얹는다
             if (themes) {
                 s.add("- 페이지 전체 분위기: 아래 중 하나를 <section> 의 class 에 붙인다 (하나만). 페이지 전체에 적용된다.");
+                // ★★ 색만 바꿔 달라는데 분위기까지 바뀌면 **페이지가 통째로 달라진다.**
+                //   테마는 색뿐 아니라 글꼴 · 모서리 · 장식까지 쥔다(20-themes).
+                //   "전체 색을 파란색으로" 한 번에 레이아웃이 바뀌어서 관리자가 놀랐다(실제 화면).
+                //   바로 아래 팔레트 목록과 나란히 놓여 있어서 모델이 둘 다 고른다 — 갈라 줘야 한다.
+                s.add("  ★ **색만** 바꿔 달라는 요청이면 분위기는 그대로 둔다. 여기서 고르지 마라. "
+                        + "분위기는 \"느낌을 바꿔줘\" · \"더 고급스럽게\" 처럼 생김새를 말할 때만 바꾼다.");
                 for (Theme t : Theme.blankThemes()) {
                     s.add("    " + t.cssClass() + " : " + t.desc());
                 }
+                s.add("- 페이지 배치: 영역들이 페이지에 놓이는 자리를 바꿔 달라는 요청이면 "
+                        + "아래 중 하나를 <section> 의 class 에 붙인다 (하나만). 페이지 전체에 적용된다.");
+                for (Layout l : Layout.all()) {
+                    s.add("    " + l.cssClass() + " : " + l.desc());
+                }
+                s.add("  ★ 페이지 배치만 바꿔 달라는 요청이면 layout-* 하나만 붙인다. "
+                        + "이 영역의 배치(v-hero-*) · 페이지 분위기(theme-*) · 색감(palette-*)은 지금 그대로 둔다.");
             }
             if (palette) {
                 s.add("- 페이지 전체 색감: 아래 중 하나 (하나만). 페이지 전체에 적용된다.");
@@ -545,6 +581,12 @@ public final class PromptBuilder {
         for (Palette p : Palette.all()) {
             if (p == Palette.BASE) continue;     // 생성에는 되돌릴 원래 색이 없다
             s.add("    " + p.cssClass() + " : " + p.desc());
+        }
+        // ★ 배치는 맨 뒤다 — 꼴(테마) · 색(팔레트)을 정한 뒤 자리를 정한다.
+        //   조건(영역 수)은 적지 않는다. 모자라면 서버가 기본으로 되돌린다(PageShell.settleLayout)
+        s.add("- 페이지 배치: hero 의 class 에 아래 중 하나를 붙인다 (하나만). 영역들이 페이지에 놓이는 자리다.");
+        for (Layout l : Layout.all()) {
+            s.add("    " + l.cssClass() + " : " + l.desc());
         }
     }
 
@@ -622,6 +664,29 @@ public final class PromptBuilder {
         s.add("\"전체 색감을 가을 느낌으로 바꿔줘\"");
         s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null}]}");
         s.add("");
+        // ★★ 올린 이미지를 넣는 요청. **문구가 아니라 겉모양이라 STYLE 이다.**
+        //   이 예시가 없으면 "1번 이미지를 배경으로 깔아줘" 가 라우터에서 통째로 떨어져
+        //   "요청을 이해하지 못했습니다" 가 나간다 (실측). 올리기 · 정화기 · 프롬프트를
+        //   다 깔아 놓고도 **라우터만 몰라서** 한 발짝도 못 가던 자리다.
+        // ★ content 는 null 이다. "1번" 은 페이지에 쓸 문구가 아니다 —
+        //   요청 원문은 [관리자 요청] 으로 수정 모델에게 그대로 간다 (EditService.userPrompt).
+        // ★ 영역을 안 말하면 hero 다. 배경을 까는 자리는 대개 맨 위다.
+        s.add("\"1번 이미지를 배경으로 깔아줘\"");
+        s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null}]}");
+        s.add("");
+        s.add("\"참여 버튼 영역 배경에 2번 이미지를 넣어줘\"");
+        s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"cta\",\"content\":null}]}");
+        s.add("");
+        // ★ 페이지 전체 배경도 target 은 hero 다. 모델은 hero 안에 <img> 를 쓰고,
+        //   저장 직전 서버가 루트로 옮긴다(PageShell.hoistPageAsset) — 팔레트 · 테마와 같은 길.
+        s.add("\"1번 이미지를 페이지 전체 배경으로 깔아줘\"");
+        s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null}]}");
+        s.add("");
+        // ★ 페이지 배치도 hero 의 STYLE 이다 — 고르는 자리가 hero 다 (Layout · PageShell.settleLayout).
+        //   "혜택을 벤토로" 처럼 영역을 말하면 그 영역의 STYLE 이다(v-*-bento). 영역이 없을 때만 hero
+        s.add("\"페이지 전체를 벤토 그리드 배치로 바꿔줘\"");
+        s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null}]}");
+        s.add("");
         s.add("\"제목 바꾸고 참여방법도 더 친절하게 다듬어줘\"");
         s.add("{\"ops\":[{\"op\":\"EDIT\",\"target\":\"hero\",\"content\":null},"
                 + "{\"op\":\"EDIT\",\"target\":\"steps\",\"content\":null}]}");
@@ -636,6 +701,59 @@ public final class PromptBuilder {
                 + "{\"op\":\"STYLE\",\"target\":\"steps\",\"content\":null}]}");
         s.add("");
         s.add("JSON 외에는 아무것도 출력하지 마라.");
+        return s.toString();
+    }
+
+    // ── 동작 배치기 ─────────────────────────────────────────────────
+
+    /**
+     * 동작 배치기 — 방금 만든 백지 페이지에 "어떤 동작을 어디에" 둘지 JSON 으로만 고른다 (GenerationService).
+     *
+     * ★ 모델은 HTML · data-behavior 를 쓰지 않는다. 이름을 고르기만 하고, 검증 · 심기는 서버다(BehaviorPlanter.decide · apply)
+     * ★ 이 목록은 Behavior.PLANNABLE 과 짝이다
+     */
+    public static String behaviorPlanner() {
+        StringJoiner s = new StringJoiner("\n");
+        s.add("너는 이벤트 페이지에 동작을 놓는 동작 배치기다. JSON 하나만 출력한다.");
+        s.add("");
+        s.add("동작:");
+        s.add("- \"countdown\"    마감까지 남은 시간 표시");
+        s.add("- \"scroll-to\"    다른 영역으로 내려가는 버튼. block 은 버튼을 둘 영역, target 은 이동할 영역");
+        s.add("- \"participate\"  참여 버튼. 그 영역의 버튼에 붙는다 (보통 cta)");
+        s.add("");
+        s.add("출력 형식:");
+        s.add("{\"actions\":[{\"behavior\":\"<동작>\",\"block\":\"<영역>\",\"target\":<영역 또는 null>}]}");
+        s.add("");
+        s.add("규칙:");
+        s.add("- block · target 은 [페이지 영역] 에 있는 이름만 쓴다.");
+        s.add("- 이벤트 요청문의 분위기에 맞는 동작만 고른다. 필요 없는 동작은 넣지 마라.");
+        s.add("- 마감 · 기간 한정 · 선착순 같은 말이 있으면 hero 에 countdown 을 둔다.");
+        s.add("- 혜택이나 참여 방법이 길면 hero 에 그 영역으로 가는 scroll-to 를 둔다.");
+        s.add("- 참여 버튼(participate)은 cta 에 둔다.");
+        s.add("- 위 목록에 없는 동작(투표 · 복주머니 · 룰렛 같은 게임 등)은 넣지 마라.");
+        s.add("");
+        s.add("예시:");
+        s.add("\"이번 주말까지만 데이터 2배! 선착순 1000명\"");
+        s.add("{\"actions\":[{\"behavior\":\"countdown\",\"block\":\"hero\",\"target\":null},"
+                + "{\"behavior\":\"participate\",\"block\":\"cta\",\"target\":null}]}");
+        s.add("");
+        s.add("\"신규 가입 혜택 3가지와 가입 방법 안내\"");
+        s.add("{\"actions\":[{\"behavior\":\"scroll-to\",\"block\":\"hero\",\"target\":\"benefits\"},"
+                + "{\"behavior\":\"participate\",\"block\":\"cta\",\"target\":null}]}");
+        s.add("");
+        s.add("JSON 외에는 아무것도 출력하지 마라.");
+        return s.toString();
+    }
+
+    /** 동작 배치기의 사용자 메시지 — 페이지 영역과 이벤트 요청문 */
+    public static String behaviorPlannerUser(String requestText, List<Block> present) {
+        StringJoiner names = new StringJoiner(", ");
+        for (Block b : present) if (b != Block.NOTICES) names.add(b.key());
+        StringJoiner s = new StringJoiner("\n");
+        s.add("[페이지 영역] " + names);
+        s.add("");
+        s.add("[이벤트 요청문]");
+        s.add(requestText == null ? "" : requestText.strip());
         return s.toString();
     }
 }

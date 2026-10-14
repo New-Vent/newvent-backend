@@ -1,6 +1,7 @@
 package com.newvent.generation.service;
 
 import com.newvent.event.domain.Event;
+import com.newvent.event.service.ParticipationLink;
 
 /**
  * `new GenerateCommand(...)` 는 테스트에서만 쓴다.**
@@ -93,14 +94,18 @@ public record GenerateCommand(
     }
 
     /**
-     * CTA 버튼에 붙일 참여 링크. **지금은 담을 칸이 없어서 항상 null 이다.**
+     * CTA 버튼에 붙일 참여 링크.
      *
      * ★ `events.url` 을 쓰면 안 된다 — 이벤트 파트 확인 결과 **게시 링크**다.
      *   CTA 에 넣으면 버튼이 자기 페이지를 다시 여는 꼴이 된다.
      *
+     * ★ 전에는 항상 null 이었다. 그래서 미리보기의 CTA 버튼에는 주소가 영영 안 들어갔고,
+     *   관리자는 자기가 만든 버튼이 어디로 가는지 확인할 방법이 없었다.
+     *   값은 {@link ParticipationLink} 한 곳에서만 만든다 — 게시 경로
+     *   ({@code PublicEventService.publishedHtmlOf})와 같은 주소여야 한다.
      */
     private static String ctaUrl(Event event) {
-        return null;
+        return ParticipationLink.of(event.getId());
     }
 
     /** 템플릿을 골랐나. 이 한 줄이 두 경로를 가른다 */

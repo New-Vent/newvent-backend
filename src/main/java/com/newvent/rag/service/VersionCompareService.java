@@ -18,4 +18,10 @@ public interface VersionCompareService {
 	 * 기준 버전이 없거나 타 이벤트 소속이면 404. 기준 버전이 미색인이면 빈 목록.
 	 */
 	List<VersionSimilarityResponse> similarVersions(Long eventId, Long versionId, int topK);
+
+	/**
+	 * 기획용 전역 탐색. 텍스트를 벡터로 바꿔 모든 이벤트의 버전과 비교한다.
+	 * 만들기 화면에서 이벤트 생기기 전에 부른다. SEED 포함 (유일한 데이터라 제외하면 빈 목록).
+	 */
+	List<VersionSimilarityResponse> similarVersionsByQuery(String query, int topK);
 }

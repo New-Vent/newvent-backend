@@ -35,8 +35,12 @@ public class AdminParticipationConfigController {
             description = "이벤트당 하나라서 있으면 덮어쓰고 없으면 만든다. 저장 전에 방식별로 설정을 검증한다 — "
                     + "모양이 맞지 않으면 409 (PARTICIPATION409-1). "
                     + "없거나 비활성인 방식이면 409 (PARTICIPATION409-2). "
-                    + "★ 참여 기록이 한 건이라도 있으면 바꿀 수 없다 (409 PARTICIPATION409-3) — "
-                    + "이미 저장된 결과가 그때의 방식을 전제하기 때문이다. "
+                    + "★ 참여 기록이 있으면 **이미 결정된 결과를 뒤집는 값**은 바꿀 수 없다 "
+                    + "(409 PARTICIPATION409-3) — gameCode · resultMode · winProbability · "
+                    + "winnerCount · predictionOptions · pouches 가 그렇다. "
+                    + "반대로 prizeName(경품명 오타 수정) · announcementAt(일정 연기) 는 "
+                    + "참여 기록이 있어도 바꿀 수 있다 — "
+                    + "그 시점의 참여는 모두 결과 미정(PENDING)이기 때문이다. "
                     + "누가 무엇을 바꿨는지는 서버 로그(INFO)에 남는다.")
     @PutMapping
     public ApiResponse<ParticipationConfigResponse> save(

@@ -109,7 +109,8 @@ public final class Slots {
         //   그래서 안 됐다(QA 실측). 시키는 것과 막는 것이 어긋나 있었다.
         return new TreeSet<>(List.of(className.trim().split("\\s+"))).stream()
                 .filter(s -> !s.isEmpty())
-                .filter(s -> !Variant.looksLike(s) && !Palette.looksLike(s) && !Theme.looksLike(s))
+                .filter(s -> !Variant.looksLike(s) && !Palette.looksLike(s) && !Theme.looksLike(s)
+                        && !Layout.looksLike(s))
                 .collect(Collectors.joining(" "));
     }
 
