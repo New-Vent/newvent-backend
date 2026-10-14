@@ -84,7 +84,7 @@ public class AdminEventController {
 
     @Operation(
             summary = "휴지통 목록",
-            description = "복구·영구 삭제를 소유자만 할 수 있으므로 내 이벤트만 보여 준다. 최근 삭제순이고 항목 모양은 목록과 같다.")
+            description = "복구·영구 삭제를 소유자만 할 수 있으므로 내 이벤트만 보여 준다. 최근 삭제순이고 항목 모양은 목록과 같으며 deletedAt 에 삭제 시각이 담긴다.")
     @GetMapping("/trash")
     public ApiResponse<PageResponse<EventSummaryResponse>> trash(
             @AuthenticationPrincipal AuthUser principal,
