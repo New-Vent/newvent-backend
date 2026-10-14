@@ -1,5 +1,6 @@
 package com.newvent.participation.service;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -47,7 +48,12 @@ final class ParticipationConfigLock {
      *     winProbability     참여자가 보고 참여한 확률이다. 중간에 바꾸면 공정성이 깨진다
      *     winnerCount        같은 이유 — "2명 추첨" 을 보고 참여했다
      *     predictionOptions  선택지를 지우면 그걸 고른 참여 기록이 떠버린다
-     *     pouches            같은 이유
+     *     pouches            같은 이유 — 단, <b>칸 안의 경품명만</b> 바꾸는 것은 통과한다
+     *                        ({@link #pouchPrizeNameOnly} 참고)
+     *
+     * ★ 이 집합은 <b>최상위 키</b>만 본다. 중첩된 값은 특례로 따로 다룬다 —
+     *   복주머니의 경품명이 그 경우다. 방식을 더할 때 경품명이 중첩되어 있다면
+     *   같은 특례가 필요한지 확인해야 한다.
      */
     private static final Set<String> CHANGEABLE_AFTER_PARTICIPATION =
             Set.of("prizeName", "announcementAt");
@@ -67,8 +73,70 @@ final class ParticipationConfigLock {
         if (!Objects.equals(beforeGameCode, afterGameCode)) {
             return false;
         }
-        return changedKeys(before, after).stream()
-                .allMatch(CHANGEABLE_AFTER_PARTICIPATION::contains);
+
+        Map<String, Object> left = before == null ? Map.of() : before;
+        Map<String, Object> right = after == null ? Map.of() : after;
+
+        return changedKeys(left, right).stream()
+                .allMatch(key -> CHANGEABLE_AFTER_PARTICIPATION.contains(key)
+                        || (POUCHES.equals(key) && pouchPrizeNameOnly(left.get(key), right.get(key))));
+    }
+
+    private static final String POUCHES = "pouches";
+
+    /**
+     * 복주머니에서 <b>경품명만</b> 달라졌나.
+     *
+     * ★★ 왜 특례가 필요한가 — 최상위 키만 보면 복주머니는 경품명을 영영 못 고친다
+     *   복주머니의 경품명은 칸 안에 들어 있다:
+     *       {"pouches":[{"pouchIndex":1,"winProbability":30,"prizeName":"…"}, …]}
+     *   그래서 경품명 한 글자만 고쳐도 「바뀐 키 = pouches」 로 잡혀 거부됐다.
+     *   4개 방식 중 복주머니만 이 PR 의 목적(오타 수정)을 못 누리는 상태였다.
+     *
+     * ★ 그렇다고 pouches 를 허용 목록에 넣으면 안 된다. <b>같은 칸에 winProbability 가 있다</b> —
+     *   참여자가 보고 고른 확률이라 바뀌면 공정성이 깨진다. 그래서 칸 구성(번호·확률)이
+     *   그대로이고 경품명만 다를 때에만 통과시킨다.
+     *
+     * ★ 칸을 pouchIndex 로 짝지어 본다. 배열 순서로 비교하면 프론트가 정렬만 바꿔 보내도
+     *   거부되는데, 그건 지금 고치는 버그와 같은 종류다. pouchIndex 가 칸의 신분이다
+     *   (ParticipationValidator.readPouchIndexes 가 1..길이 중복 없음을 보장한다).
+     *
+     * ★ 모양이 조금이라도 수상하면 false 다 — 칸 수가 다르거나, 번호 집합이 다르거나,
+     *   Map·List 가 아니거나. 판단이 안 되는 것은 거부가 안전한 방향이다.
+     */
+    private static boolean pouchPrizeNameOnly(Object before, Object after) {
+        if (!(before instanceof List<?> left) || !(after instanceof List<?> right)
+                || left.size() != right.size()) {
+            return false;
+        }
+
+        Map<Object, Map<?, ?>> leftByIndex = byPouchIndex(left);
+        Map<Object, Map<?, ?>> rightByIndex = byPouchIndex(right);
+
+        if (leftByIndex == null || rightByIndex == null
+                || !leftByIndex.keySet().equals(rightByIndex.keySet())) {
+            return false;
+        }
+
+        return leftByIndex.keySet().stream().allMatch(index ->
+                changedKeysOf(leftByIndex.get(index), rightByIndex.get(index))
+                        .stream().allMatch("prizeName"::equals));
+    }
+
+    /** pouchIndex → 칸. 번호가 없거나 중복이면 null — 짝지을 수 없으면 비교하지 않는다 */
+    private static Map<Object, Map<?, ?>> byPouchIndex(List<?> pouches) {
+        Map<Object, Map<?, ?>> out = new java.util.LinkedHashMap<>();
+
+        for (Object item : pouches) {
+            if (!(item instanceof Map<?, ?> pouch)) {
+                return null;
+            }
+            Object index = pouch.get("pouchIndex");
+            if (index == null || out.put(index, pouch) != null) {
+                return null;
+            }
+        }
+        return out;
     }
 
     /**
@@ -82,6 +150,13 @@ final class ParticipationConfigLock {
         Map<String, Object> left = before == null ? Map.of() : before;
         Map<String, Object> right = after == null ? Map.of() : after;
 
+        return changedKeysOf(left, right).stream()
+                .map(String::valueOf)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    /** 키 타입을 가리지 않는 판본. 복주머니 칸(Map&lt;?,?&gt;)끼리 비교할 때 쓴다 */
+    private static Set<Object> changedKeysOf(Map<?, ?> left, Map<?, ?> right) {
         return java.util.stream.Stream.concat(left.keySet().stream(), right.keySet().stream())
                 .filter(key -> !Objects.equals(left.get(key), right.get(key)))
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());

@@ -113,6 +113,82 @@ class ParticipationConfigLockTest {
                 with(before, "predictionOptions", List.of("HOME_WIN"))));
     }
 
+    // ── 복주머니 — 경품명이 칸 안에 중첩되어 있다 ──────────────────
+
+    /** 칸 둘. 1번 경품명에 오타가 있다 */
+    private static Map<String, Object> pouches(String firstPrize, int firstProbability) {
+        return Map.of("pouches", List.of(
+                Map.of("pouchIndex", 1, "winProbability", firstProbability, "prizeName", firstPrize),
+                Map.of("pouchIndex", 2, "winProbability", 10, "prizeName", "커피 쿠폰")));
+    }
+
+    @Test
+    @DisplayName("★ 복주머니도 경품명은 고칠 수 있다 — 최상위 키만 보면 영영 못 고쳤다")
+    void 복주머니_경품명은_바꿀수있다() {
+        assertTrue(allows("LUCKY_POUCH",
+                pouches("데어터 5GB", 30),
+                pouches("데이터 5GB", 30)));
+    }
+
+    @Test
+    @DisplayName("칸 안의 확률을 바꾸면 거부한다 — 경품명과 같은 칸에 있어도 열어 주지 않는다")
+    void 복주머니_확률변경은_거부한다() {
+        assertFalse(allows("LUCKY_POUCH",
+                pouches("데이터 5GB", 30),
+                pouches("데이터 5GB", 90)));
+    }
+
+    @Test
+    @DisplayName("경품명과 확률을 같이 바꾸면 거부한다 — 묶어서 통과시키지 않는다")
+    void 복주머니_섞어바꾸면_거부한다() {
+        assertFalse(allows("LUCKY_POUCH",
+                pouches("데어터 5GB", 30),
+                pouches("데이터 5GB", 90)));
+    }
+
+    @Test
+    @DisplayName("칸을 더하거나 빼면 거부한다")
+    void 복주머니_칸수변경은_거부한다() {
+        Map<String, Object> added = Map.of("pouches", List.of(
+                Map.of("pouchIndex", 1, "winProbability", 30, "prizeName", "데이터 5GB"),
+                Map.of("pouchIndex", 2, "winProbability", 10, "prizeName", "커피 쿠폰"),
+                Map.of("pouchIndex", 3, "winProbability", 5, "prizeName", "한우세트")));
+
+        assertFalse(allows("LUCKY_POUCH", pouches("데이터 5GB", 30), added));
+    }
+
+    @Test
+    @DisplayName("칸 순서가 바뀌어도 경품명만 다르면 통과한다 — pouchIndex 로 짝짓는다")
+    void 복주머니_순서가바뀌어도_통과한다() {
+        Map<String, Object> reordered = Map.of("pouches", List.of(
+                Map.of("pouchIndex", 2, "winProbability", 10, "prizeName", "커피 쿠폰"),
+                Map.of("pouchIndex", 1, "winProbability", 30, "prizeName", "데이터 5GB")));
+
+        assertTrue(allows("LUCKY_POUCH", pouches("데어터 5GB", 30), reordered));
+    }
+
+    @Test
+    @DisplayName("칸 번호가 달라지면 거부한다 — 어느 칸과 비교할지 정할 수 없다")
+    void 복주머니_번호변경은_거부한다() {
+        Map<String, Object> renumbered = Map.of("pouches", List.of(
+                Map.of("pouchIndex", 1, "winProbability", 30, "prizeName", "데이터 5GB"),
+                Map.of("pouchIndex", 9, "winProbability", 10, "prizeName", "커피 쿠폰")));
+
+        assertFalse(allows("LUCKY_POUCH", pouches("데이터 5GB", 30), renumbered));
+    }
+
+    @Test
+    @DisplayName("모양이 수상하면 거부한다 — 판단이 안 되는 것은 막는 쪽이 안전하다")
+    void 복주머니_모양이틀리면_거부한다() {
+        Map<String, Object> notMaps = Map.of("pouches", List.of("데이터 5GB", "커피 쿠폰"));
+        assertFalse(allows("LUCKY_POUCH", pouches("데이터 5GB", 30), notMaps));
+
+        Map<String, Object> noIndex = Map.of("pouches", List.of(
+                Map.of("winProbability", 30, "prizeName", "데이터 5GB"),
+                Map.of("winProbability", 10, "prizeName", "커피 쿠폰")));
+        assertFalse(allows("LUCKY_POUCH", pouches("데이터 5GB", 30), noIndex));
+    }
+
     @Test
     @DisplayName("허용값과 금지값을 같이 보내면 거부한다 — 묶어서 통과시키지 않는다")
     void 섞어보내면_거부한다() {
