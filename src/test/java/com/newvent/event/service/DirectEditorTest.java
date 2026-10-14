@@ -78,7 +78,7 @@ class DirectEditorTest {
     }
 
     @Test
-    @DisplayName("템플릿 5종 전체에서 data-block 내부 텍스트는 수집되고 notices 블록은 제외된다")
+    @DisplayName("템플릿 5종의 유의사항 문구를 직접 편집할 수 있다")
     void 템플릿5종_텍스트노드_수집_검증() {
         assertEquals(5, TEMPLATES.all().size());
 
@@ -92,11 +92,15 @@ class DirectEditorTest {
             assertTrue(noticeText.contains("유의사항") || noticeText.contains("확인"),
                     template.code() + " notices 텍스트가 비정상적입니다.");
 
-            // notices의 텍스트로 치환 시도 시 모두 실패해야 함 (notices는 수집 목록에 없으므로)
-            List<TextEdit> invalidEdits = List.of(new TextEdit(0, "유의사항", "변조 시도"));
-            DirectEditException ex = assertThrows(DirectEditException.class,
-                    () -> DirectEditor.applyTextEdits(html, invalidEdits));
-            assertEquals(DirectEditErrorCode.BEFORE_TEXT_MISMATCH, ex.getErrorCode());
+            String before = noticesEl.selectFirst("li").text();
+            var target = DirectEditor.editableTexts(html).stream()
+                    .filter(t -> t.before().equals(before)).findFirst().orElseThrow();
+            String edited = DirectEditor.applyTextEdits(html,
+                    List.of(new TextEdit(target.index(), before, "관리자 유의사항\n둘째 줄")));
+            assertEquals("관리자 유의사항\n둘째 줄",
+                    DirectEditor.editableTexts(edited).get(target.index()).before());
+            assertTrue(Jsoup.parseBodyFragment(edited).selectFirst(Block.NOTICES.selector())
+                    .text().contains("관리자 유의사항"));
         }
     }
 

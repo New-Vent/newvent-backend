@@ -8,7 +8,6 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
-import com.newvent.registry.Block;
 import com.newvent.registry.BlockValidator;
 import com.newvent.registry.PageShell;
 import com.newvent.registry.Palette;
@@ -33,8 +32,7 @@ public final class SavedTemplateHtml {
                 .filter(c -> Palette.find(c).isPresent()).limit(1).toList();
 
         Document cleaned = parse(BlockValidator.sanitizeEdited(html));
-        // 유의사항은 현재 서버 승인본으로 다시 붙인다.
-        cleaned.select(Block.NOTICES.selector()).remove();
+        // 관리자 직접 편집한 유의사항도 템플릿에 보존한다. 없는 경우 PageShell이 기본 문구를 넣는다.
         cleaned.select("meta, title, link, base").remove();
         for (String script : scripts) cleaned.body().append(script);
         String result = PageShell.plant(Slots.clear(cleaned.body().html()), null);

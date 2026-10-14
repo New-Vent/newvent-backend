@@ -83,6 +83,7 @@ public enum Variant {
     BENEFITS_CHECKLIST(Block.BENEFITS, Group.LAYOUT, "v-benefits-checklist", "체크 표시 목록"),
     BENEFITS_STRIPE(Block.BENEFITS, Group.LAYOUT, "v-benefits-stripe", "한 줄씩 색이 번갈아 바뀌는 목록"),
     BENEFITS_THREE_COL(Block.BENEFITS, Group.LAYOUT, "v-benefits-three-col", "3열 카드"),
+    BENEFITS_BENTO(Block.BENEFITS, Group.LAYOUT, "v-benefits-bento", "벤토 격자 — 첫 혜택은 큰 칸, 나머지는 작은 칸"),
 
     // ── compare ──
     COMPARE_STRIPED(Block.COMPARE, Group.LAYOUT, "v-compare-striped", "줄무늬 표 (기본)"),
@@ -149,12 +150,14 @@ public enum Variant {
     STATS_INLINE(Block.STATS, Group.LAYOUT, "v-stats-inline", "한 줄에 나란히"),
     STATS_RING(Block.STATS, Group.LAYOUT, "v-stats-ring", "원형 테두리 안 숫자"),
     STATS_BAR(Block.STATS, Group.LAYOUT, "v-stats-bar", "숫자 아래 강조 막대"),
+    STATS_BENTO(Block.STATS, Group.LAYOUT, "v-stats-bento", "벤토 격자 — 첫 숫자는 큰 칸, 나머지는 작은 칸"),
 
     // ── prize ──
     PRIZE_LIST(Block.PRIZE, Group.LAYOUT, "v-prize-list", "등수 목록 (기본)"),
     PRIZE_PODIUM(Block.PRIZE, Group.LAYOUT, "v-prize-podium", "1 · 2 · 3등 단상 (앞의 세 항목)"),
     PRIZE_CARDS(Block.PRIZE, Group.LAYOUT, "v-prize-cards", "경품 카드"),
     PRIZE_RIBBON(Block.PRIZE, Group.LAYOUT, "v-prize-ribbon", "첫 항목에 리본을 단 1등 강조"),
+    PRIZE_BENTO(Block.PRIZE, Group.LAYOUT, "v-prize-bento", "벤토 격자 — 첫 경품은 큰 칸, 나머지는 작은 칸"),
 
     // ── coupon ──
     COUPON_TICKET(Block.COUPON, Group.LAYOUT, "v-coupon-ticket", "양옆이 파인 쿠폰 티켓 (기본)"),
@@ -227,11 +230,15 @@ public enum Variant {
      * ★ 그래서 말하지 않고 지운다. 모델이 골라도 여기서 떨어진다.
      *   event.css 가 li { flex: 0 0 78% } 라서 2개면 둘째 카드가 잘린 채 멈춘다.
      *   시상대(v-prize-podium)도 1 · 2 · 3등 자리를 CSS 가 정해 두어 3개 미만이면 빈다.
+     *   벤토(v-*-bento)는 큰 칸 하나 옆에 작은 칸 둘이 서야 격자가 찬다. 2개면 큰 칸 옆이 반쯤 빈다.
      */
     private static final Map<Variant, Integer> NEEDS_ITEMS = Map.of(
             BENEFITS_CAROUSEL, 3,
             STEPS_CAROUSEL, 3,
-            PRIZE_PODIUM, 3);
+            PRIZE_PODIUM, 3,
+            BENEFITS_BENTO, 3,
+            STATS_BENTO, 3,
+            PRIZE_BENTO, 3);
 
     private final Block block;
     private final Group group;

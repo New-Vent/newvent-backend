@@ -56,9 +56,8 @@
 
 3일은 기획 확정 전 임시값입니다 (REQ-EVT-15).
 
-> ⚠️ 관리자 쪽 판정은 `Event` 엔티티로 옮겼지만 **공개 쪽(`PublicEventService`)에 같은 계산이
-> 남아 있습니다.** 지금은 답이 같지만, 창을 5일로 바꾸면 관리자 화면과 사용자 화면이
-> 달라집니다. 통합이 필요합니다.
+계산은 `Event.closingSoon(now)` 한 곳에만 있고, 공개 쪽(`PublicEventService`)도 이 메서드를 씁니다.
+기간은 `Event.CLOSING_SOON_WINDOW` 이며 마감임박 알림도 같은 값을 씁니다.
 
 ---
 
