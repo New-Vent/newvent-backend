@@ -136,6 +136,19 @@ class PublicEventServiceTest {
     }
 
     @Test
+    @DisplayName("마감임박 기간은 관리자 쪽과 같은 Event.CLOSING_SOON_WINDOW 를 따른다")
+    void 마감임박_기간은_Event_기준() {
+        OffsetDateTime now = OffsetDateTime.parse("2026-10-13T10:00:00+09:00");
+        OffsetDateTime windowEdge = now.plus(Event.CLOSING_SOON_WINDOW);
+        Event atEdge = newEvent(1L, EventStatus.PUBLISHED, now.minusDays(1), windowEdge);
+        Event justOutside = newEvent(2L, EventStatus.PUBLISHED, now.minusDays(1), windowEdge.plusSeconds(1));
+
+        assertTrue(publicEventService.isClosingSoon(atEdge, now));
+        assertFalse(publicEventService.isClosingSoon(justOutside, now));
+        assertEquals(atEdge.closingSoon(now), publicEventService.isClosingSoon(atEdge, now));
+    }
+
+    @Test
     @DisplayName("목록 조회 결과를 카테고리·마감임박 정보와 함께 PageResponse로 반환")
     void 목록조회_성공() {
         OffsetDateTime now = OffsetDateTime.now();
