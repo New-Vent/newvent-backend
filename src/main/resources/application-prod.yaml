@@ -38,3 +38,17 @@ springdoc:
     enabled: false
   swagger-ui:
     enabled: false
+
+# ── 올린 이미지 ─────────────────────────────────────────────
+#
+# ★★ 기본값을 두지 않는다. 이 주소는 **DB 와 게시된 페이지에 박힌다** —
+#   업로드할 때 완성한 주소가 event_assets.url 에 저장되고 <img src> 에 그대로 들어간다.
+#   기본값(http://localhost:8080)으로 조용히 뜨면 그동안 올린 이미지가 전부 못 쓰게 되고,
+#   나중에 고쳐도 이미 저장된 행과 이미 게시된 페이지는 안 고쳐진다.
+#   ProdAssetGuard 가 기동 시점에 한 번 더 본다 (https · 호스트 · 경로 없음).
+#
+# 필요한 환경변수
+#   ASSET_PUBLIC_BASE_URL   서비스 주소. 예) https://newvent.duckdns.org
+#                           ★ 경로 없이 주소만. /api/public/assets 는 서버가 붙인다
+asset:
+  public-base-url: ${ASSET_PUBLIC_BASE_URL}

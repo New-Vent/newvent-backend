@@ -28,6 +28,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.newvent.admin.domain.Admin;
 import com.newvent.admin.repository.AdminRepository;
+import com.newvent.asset.service.AssetCleanup;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventProgress;
@@ -88,6 +89,37 @@ class EventServiceTest {
         verify(eventRepository, never()).flush();
     }
 
+    // ★★ event_assets 는 on delete cascade 라 행은 같이 사라지지만
+    //   **디스크의 파일은 안 사라진다.** 아무도 가리키지 않는 파일이 박스에 쌓인다.
+    @Test
+    @DisplayName("★ 영구 삭제하면 올린 이미지 파일도 같이 치운다")
+    void 영구_삭제는_이미지도_치운다() {
+        Event event = newEvent(1L, EventStatus.DRAFT, now.minusDays(2), now.minusDays(1));
+        ReflectionTestUtils.setField(event, "deletedAt", now);
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.of(event));
+        when(eventRepository.hasParticipations(1L)).thenReturn(false);
+
+        eventService.hardDelete(1L, 1L);
+
+        verify(eventRepository).delete(event);
+        verify(assetCleanup).deleteAllOf(1L);
+    }
+
+    // ★ 참여 기록이 있어 막히는 경우에는 이미지도 그대로 둬야 한다
+    @Test
+    @DisplayName("영구 삭제가 막히면 이미지도 안 지운다")
+    void 막히면_이미지도_안_지운다() {
+        Event event = newEvent(1L, EventStatus.DRAFT, now.minusDays(2), now.minusDays(1));
+        ReflectionTestUtils.setField(event, "deletedAt", now);
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.of(event));
+        when(eventRepository.hasParticipations(1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> eventService.hardDelete(1L, 1L))
+                .isInstanceOf(EventException.class);
+
+        verifyNoInteractions(assetCleanup);
+    }
+
     @Test
     void 관리자_ID가_없으면_삭제를_거절한다() {
         Event event = newEvent(1L, EventStatus.DRAFT, now, now.plusDays(1));
@@ -104,11 +136,18 @@ class EventServiceTest {
     private final EventVersionRepository eventVersionRepository = mock(EventVersionRepository.class);
     private final AdminRepository adminRepository = mock(AdminRepository.class);
     private final GenerationJobStore generationJobStore = mock(GenerationJobStore.class);
+    private final AssetCleanup assetCleanup = mock(AssetCleanup.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-09-16T01:00:00+09:00"), SEOUL);
     private final OffsetDateTime now = OffsetDateTime.now(clock);
+    /**
+     * 게시 HTML 을 만드는 쪽. <b>실제 구현을 쓴다</b> — 상세 응답의 completedHtml 이
+     * 공개 상세와 같은 함수를 지나는지(슬롯이 채워지는지)가 이 테스트의 관심사다.
+     */
+    private final PublicEventService publicEventService = new PublicEventService(eventRepository);
+
     private final EventService eventService =
             new EventService(eventRepository, eventTemplateRepository, eventVersionRepository,
-                    adminRepository, generationJobStore, clock);
+                    adminRepository, generationJobStore, assetCleanup, clock, publicEventService);
 
     @Test
     @DisplayName("목록 조회는 리포지토리 결과를 마감임박과 함께 매핑한다")
@@ -343,6 +382,25 @@ class EventServiceTest {
         assertThat(detail.name()).isEqualTo("지금 긁으면 바로 당첨");
         assertThat(detail.closingSoon()).isTrue();
         assertThat(detail.completedHtml()).contains("지금 긁으면 바로 당첨");
+    }
+
+    @Test
+    @DisplayName("★ completedHtml 은 슬롯이 채워진다 — 전에는 생 조각이라 기간도 참여 주소도 없었다")
+    void 상세의_HTML은_슬롯이채워진다() {
+        Event event = newEvent(3L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "publishedVersion", EventVersion.htmlOnly(
+                "<section data-block=\"hero\"><p data-slot=\"period\">기간</p></section>"
+                + "<section data-block=\"cta\">"
+                + "<button data-slot=\"cta-link\">참여하기</button></section>"));
+        when(eventRepository.findAdminEventById(3L)).thenReturn(Optional.of(event));
+
+        String html = eventService.findAdminEvent(1L, 3L).completedHtml();
+
+        assertThat(html).contains("2026.10.01 ~ 10.31");
+        assertThat(html).contains("data-href=\"/events/3\"");
+        assertThat(html).contains("참여하기");
     }
 
     @Test

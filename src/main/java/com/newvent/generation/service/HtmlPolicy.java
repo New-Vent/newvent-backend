@@ -3,6 +3,7 @@ package com.newvent.generation.service;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.newvent.registry.AssetEdit;
 import com.newvent.registry.Block;
 import com.newvent.registry.BlockValidator;
 import com.newvent.registry.BlockValidator.Failure;
@@ -79,13 +80,27 @@ public interface HtmlPolicy {
 
     /** @param allowOneMore 항목을 하나 더하는 요청인가 (BlockValidator.validateEdited 참고) */
     static HtmlPolicy edit(Block target, String before, String userPrompt, boolean allowOneMore) {
+        return edit(target, before, userPrompt, allowOneMore, java.util.List.of());
+    }
+
+    /**
+     * @param allowedAssets 이 이벤트에 올라온 이미지. 여기 없는 src 는 &lt;img&gt; 째로 지운다.
+     *
+     * ★ 모델이 주소를 지어내거나 바깥 주소를 쓰면 그대로 게시된다 — 정화기가 막는 유일한 지점이다.
+     */
+    static HtmlPolicy edit(Block target, String before, String userPrompt, boolean allowOneMore,
+                           java.util.List<com.newvent.registry.Asset.Ref> allowedAssets) {
         // ★ 람다 캡처를 위해 effectively-final 지역 변수로 받는다
         final String beforeSnap = before;
         final String promptSnap = userPrompt;
+        final java.util.List<com.newvent.registry.Asset.Ref> assetsSnap = allowedAssets;
         return new HtmlPolicy() {
             @Override
             public String clean(String raw) {
-                return BlockValidator.sanitizeEdited(BlockValidator.extract(raw));
+                String cleaned = BlockValidator.sanitizeEdited(BlockValidator.extract(raw), assetsSnap);
+                // ★ 모델이 지운 이미지를 되돌린다. 빼 달라는 요청은 AssetEdit 이 모델 없이
+                //   처리하므로 여기 안 온다 — 여기서 사라진 건 전부 사고다
+                return AssetEdit.restore(beforeSnap, cleaned, target);
             }
 
             @Override

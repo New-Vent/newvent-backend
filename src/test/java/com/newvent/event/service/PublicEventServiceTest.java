@@ -38,6 +38,7 @@ import com.newvent.event.repository.EventRepository;
 class PublicEventServiceTest {
 
     private final EventRepository eventRepository = mock(EventRepository.class);
+
     private final PublicEventService publicEventService = new PublicEventService(eventRepository);
 
     @Test
@@ -226,6 +227,73 @@ class PublicEventServiceTest {
         String html = publicEventService.publishedHtmlOf(event);
 
         assertTrue(html.contains("기간 미정"), "실제: " + html);
+    }
+
+    // ── 참여 버튼 ────────────────────────────────────────────────
+
+    /** 참여 버튼이 있는 게시 조각. 템플릿 5종과 같은 모양이다 — {@code <button>} 이라 data-href 로 받는다. */
+    private static final String WITH_CTA =
+            "<section data-block=\"hero\"><h1>제목</h1></section>"
+            + "<section data-block=\"cta\">"
+            + "<button data-slot=\"cta-link\">참여하기</button></section>";
+
+    @Test
+    @DisplayName("★ 참여 버튼에 참여 화면 주소가 채워진다 — 전에는 항상 null 이라 슬롯이 끝까지 비어 있었다")
+    void 게시HTML_참여주소를_채운다() {
+        Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
+        setPublishedHtml(event, WITH_CTA);
+
+        String html = publicEventService.publishedHtmlOf(event);
+
+        assertTrue(html.contains("data-href=\"/events/7\""),
+                "참여 화면 주소가 들어가야 한다. 실제: " + html);
+        assertTrue(html.contains("참여하기"),
+                "버튼 문구는 그대로 남는다 — Slot.Kind.LINK 는 속성만 건드린다. 실제: " + html);
+    }
+
+    @Test
+    @DisplayName("<a> 면 href 로 채운다 — 백지 생성 결과가 이 모양이다")
+    void 게시HTML_a태그는_href로채운다() {
+        Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
+        setPublishedHtml(event,
+                "<section data-block=\"cta\">"
+                + "<a href=\"#\" class=\"btn\" data-slot=\"cta-link\">지금 참여하기</a></section>");
+
+        String html = publicEventService.publishedHtmlOf(event);
+
+        assertTrue(html.contains("href=\"/events/7\""), "실제: " + html);
+        assertTrue(html.contains("지금 참여하기"), "실제: " + html);
+    }
+
+    @Test
+    @DisplayName("참여 버튼 블록은 서버가 떼지 않는다 — 버튼은 항상 있는 것으로 본다")
+    void 게시HTML_버튼을_떼지않는다() {
+        Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
+        setPublishedHtml(event, WITH_CTA);
+
+        String html = publicEventService.publishedHtmlOf(event);
+
+        assertTrue(html.contains("data-block=\"cta\""), "실제: " + html);
+    }
+
+    // ── 공개 페이지 문서 (PageShell.standalone) ──────────────────────
+
+    @Test
+    @DisplayName("공개 페이지 문서 — 슬롯을 채우고, 타이머에 종료 시각을 묶고, 게시 버전이 없으면 null")
+    void 공개문서() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        setPublishedHtml(event, "<section data-block=\"hero\"><p data-slot=\"period\">기간</p>"
+                + "<span data-behavior=\"countdown\"></span></section>");
+
+        String page = publicEventService.publishedPageOf(event);
+
+        assertTrue(page.startsWith("<!DOCTYPE html>"), page);
+        assertTrue(page.contains("2026.10.01 ~ 10.31"), "기간이 채워져야 한다. 실제: " + page);
+        assertTrue(page.contains("data-until=\"2026-10-31T14:59:59Z\""), page);
+        assertTrue(page.contains("/assets/event-runtime.js"), page);
+        assertNull(publicEventService.publishedPageOf(newEvent(2L, EventStatus.PUBLISHED, null, null)));
     }
 
     // ── 목록 썸네일 (hero 만 잘라내기) ───────────────────────────

@@ -22,3 +22,9 @@ auth:
   cors:
     # Vite 개발 서버 — 사용자 5173, 관리자 5174. 프록시를 거쳐도 브라우저가 보내는 Origin 은 이 주소다
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}
+
+# ★ 로컬은 프로젝트 안에 쌓는다(.gitignore 됨). /data/assets 는 도커 볼륨 자리다
+asset:
+  # ★ ${} 로 둔다. 컨테이너에서도 dev 프로파일로 뜨는데, 거기서는 /app 이 root 소유라
+  #   ./.assets 를 못 만든다 — compose 가 ASSET_DIR=/data/assets 로 덮는다.
+  dir: ${ASSET_DIR:./.assets}

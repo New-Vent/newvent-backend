@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.newvent.asset.service.AssetUrls;
 import com.newvent.common.exception.code.ErrorCode;
 import com.newvent.editor.exception.EditErrorCode;
 import com.newvent.generation.exception.GenerationErrorCode;
@@ -34,10 +35,13 @@ import com.newvent.generation.service.VersionStore;
 import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmCallException;
 import com.newvent.infra.llm.LlmCallGateway;
+import com.newvent.registry.Asset;
+import com.newvent.registry.AssetEdit;
 import com.newvent.registry.Block;
 import com.newvent.registry.BlockMerge;
 import com.newvent.registry.BlockValidator;
 import com.newvent.registry.ColorWords;
+import com.newvent.registry.Layout;
 import com.newvent.registry.PageShell;
 import com.newvent.registry.Palette;
 import com.newvent.registry.PromptBuilder;
@@ -76,6 +80,10 @@ public class EditService {
     // 채팅 내역. 남기지 못해도 수정은 계속된다
     private final ChatLog chatLog;
 
+    // ★ 이 이벤트에 올라온 이미지 주소. 모델에게 목록을 주고, 돌아온 html 을 그 목록으로 대조한다.
+    //   둘 다 해야 한다 — 안내만 하면 모델이 주소를 지어내고, 대조만 하면 쓸 수 있는 줄 모른다
+    private final AssetUrls assets;
+
     private record Applied(String html, String changeSummary) {}
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -93,14 +101,24 @@ public class EditService {
     public EditService(RouteService router, RetryService retry, VersionStore versions,
                        EventGuard guard, GenerationJobStore jobs, LlmCallRecorder recorder,
                        LlmCallGateway gateway, com.newvent.filtering.FilteringPolicy filtering) {
-        this(router, retry, versions, guard, jobs, recorder, gateway, filtering, ChatLog.NOOP);
+        this(router, retry, versions, guard, jobs, recorder, gateway, filtering, ChatLog.NOOP,
+                AssetUrls.NONE);
+    }
+
+    public EditService(RouteService router, RetryService retry, VersionStore versions,
+                       EventGuard guard, GenerationJobStore jobs, LlmCallRecorder recorder,
+                       LlmCallGateway gateway, com.newvent.filtering.FilteringPolicy filtering,
+                       ChatLog chatLog) {
+        this(router, retry, versions, guard, jobs, recorder, gateway, filtering, chatLog,
+                AssetUrls.NONE);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public EditService(RouteService router, RetryService retry, VersionStore versions,
                        EventGuard guard, GenerationJobStore jobs, LlmCallRecorder recorder,
                        LlmCallGateway gateway, com.newvent.filtering.FilteringPolicy filtering,
-                       ChatLog chatLog) {
+                       ChatLog chatLog, AssetUrls assets) {
+        this.assets = assets;
         this.chatLog = chatLog;
         this.filtering = filtering;
         this.router = router;
@@ -266,6 +284,13 @@ public class EditService {
         }
 
         job.privacyRequest("edit", base.versionId());
+
+        // ★★ 이미지 요청은 여기서 끝난다 — **모델을 한 번도 안 부른다.**
+        //   "1번 이미지를 배경으로" 에는 모델이 더할 판단이 없다(몇 번 · 어떤 역할 · 어느 영역).
+        //   그런데 부르면 영역을 통째로 다시 써서 문구가 같이 바뀌고, 먼저 넣어 둔 다른
+        //   이미지가 사라진다. 안 부르면 그 일이 생기지 않는다. AssetEdit 주석 참고.
+        if (applyAssetEdit(job, cmd, doc, base)) return;
+
         List<Decision.Run> plan = planAll(job, cmd, doc);
         if (plan == null) return;               // 되묻기 · 거절 — job 에 문구가 담겼다
         if (!cmd.hasBlocks()) {
@@ -343,11 +368,63 @@ public class EditService {
     }
 
     /**
+     * 이미지 요청이면 직접 처리하고 true. 아니면 false — 평소 경로로 간다.
+     *
+     * ★ 모호한 요청("이 사진 어울리게 넣어줘")에는 false 가 나온다. 그건 모델이 맡는 게 맞다.
+     * ★ 바뀐 게 없으면 저장하지 않는다. "반영했어요" 가 나가고 화면은 그대로인 게 제일 나쁘다 —
+     *   평소 경로의 "조용한 실패" 검사와 같은 자세다.
+     */
+    private boolean applyAssetEdit(GenerationJob job, EditCommand cmd, String doc,
+                                   VersionStore.Snapshot base) {
+        List<Asset.Ref> uploaded = assets.assetsOf(cmd.eventId());
+        AssetEdit.Result read = AssetEdit.read(cmd.requestText(), uploaded.size());
+
+        // ★★ 막힌 조합은 **모델에게 안 넘긴다.** 또렷하게 말한 요청이라 모델이 받으면
+        //   어떻게든 끼워 넣는다 — 혜택 카드 하나에 사진이 통째로 들어가 레이아웃이 깨졌다.
+        //   할 수 없으면 할 수 없다고 말하는 쪽이 낫다
+        if (read instanceof AssetEdit.Result.CannotDo no) {
+            job.fail(no.message());
+            return true;
+        }
+        if (!(read instanceof AssetEdit.Result.Ok ok)) return false;
+
+        AssetEdit.Plan step = ok.plan();
+        String after = AssetEdit.apply(doc, step, uploaded);
+        if (unchanged(doc, after)) {
+            log.info("이미지 수정 — 바뀐 게 없다 (event={}, {})", cmd.eventId(), step);
+            job.fail(step.remove()
+                    ? "그 자리에는 이미지가 없어요."
+                    : "이미지를 넣지 못했어요. 영역을 바꿔서 다시 말씀해 주세요.");
+            return true;
+        }
+
+        job.to(GenerationJob.Phase.VALIDATING);
+        after = PageShell.settle(after);
+        job.to(GenerationJob.Phase.SAVING);
+
+        // ★ 자리를 안 말하고 뺀 경우에는 role · block 이 없다 (AssetEdit.Plan 참고)
+        String summary = step.role() == null
+                ? step.index() + "번 이미지 제거"
+                : (step.remove() ? "이미지 제거 — " : "이미지 배치 — ")
+                        + step.block().key() + " " + step.role().cssClass();
+        VersionStore.Saved saved =
+                versions.save(cmd.eventId(), after, base.versionId(), summary, job.chatRequestId());
+        log.info("이미지 수정 저장 (event={}, versionId={}, v{}, source=v{}) — 모델 호출 0회",
+                cmd.eventId(), saved.versionId(), saved.versionNo(), base.versionNo());
+
+        job.versionId(saved.versionId());
+        job.to(GenerationJob.Phase.DONE);
+        return true;
+    }
+
+    /**
      * 전후가 사실상 같은가. <b>공백과 class 순서는 차이로 보지 않는다.</b>
      *
      * ★ Jsoup 을 한 번 통과시키면 모델이 속성 순서나 따옴표를 바꿔도 같은 글자가 된다.
      *   이걸 안 하면 "줄바꿈 하나 달라졌다" 를 변경으로 세어서 검사가 무력해진다.
      */
+    private static final String LAYOUT_SUMMARY = "페이지 배치 변경";
+
     private static boolean unchanged(String before, String after) {
         return normalize(before).equals(normalize(after));
     }
@@ -462,6 +539,14 @@ public class EditService {
     private List<Decision.Run> planAll(GenerationJob job, EditCommand cmd, String doc) {
         job.to(GenerationJob.Phase.ROUTING);
 
+        // 영역을 고른 채 "페이지를 벤토 배치로"
+        if (cmd.hasBlocks() && Layout.saysPage(cmd.requestText())
+                && Layout.requestedBy(cmd.requestText()).isPresent()) {
+            job.fail("페이지 배치는 페이지 전체에 적용되는 값이라 영역을 고른 채로는 바꿀 수 없습니다. "
+                    + "영역 선택을 해제하고 다시 요청해 주세요.");
+            return null;
+        }
+
         // ★ requestId = jobId 다. 라우터 호출만 이 작업과 로그에서 이어진다.
         LlmCallContext ctx = LlmCallContext.of(cmd.eventId(), job.jobId());
 
@@ -470,6 +555,26 @@ public class EditService {
         //   라우터가 아무것도 못 읽었어도 되묻지 않는다 — 고른 영역을 EDIT 으로 고친다
         if (cmd.hasBlocks()) {
             routed = Optional.of(restrict(routed.orElse(List.of()), chosenBlocks(cmd), cmd.eventId()));
+        }
+        // ★ 페이지 배치를 직접 말한 요청인데 라우터가 hero 를 안 짚었으면 hero STYLE 을 더한다 —
+        //   배치를 고르는 자리가 hero 다. 실제 처리는 apply() 가 모델 없이 한다
+        Optional<Layout> layout = cmd.hasBlocks() ? Optional.empty() : Layout.requestedBy(cmd.requestText());
+        if (layout.isPresent()) {
+            List<RawRoute> ops = new ArrayList<>(routed.orElse(List.of()));
+            // 라우터가 hero 를 두 번 짚는 일이 있다 - "제목을 짧게 바꾸고 매거진 레이아웃으로" 에
+            // EDIT(제목) + STYLE(배치). 그대로 두면 아래 중복 검사가 "같은 부분에 대한 요청이 두 개" 로 거절한다.
+            List<RawRoute> heroOps = ops.stream().filter(r -> Block.HERO.key().equals(r.target())).toList();
+            if (heroOps.size() > 1) {
+                RawRoute keep = heroOps.stream().filter(r -> r.content() != null && !r.content().isBlank()).findFirst()
+                        .or(() -> heroOps.stream().filter(r -> !Op.STYLE.name().equalsIgnoreCase(r.op())).findFirst())
+                        .orElse(heroOps.get(0));
+                ops.removeIf(r -> Block.HERO.key().equals(r.target()) && r != keep);
+                routed = Optional.of(ops);
+            }
+            if (heroOps.isEmpty()) {
+                ops.add(new RawRoute(Op.STYLE.name(), Block.HERO.key(), null));
+                routed = Optional.of(ops);
+            }
         }
         if (routed.isEmpty()) {
             // ★ 모델에게 다시 시키지 않는다. 관리자에게 다시 묻는다
@@ -574,6 +679,27 @@ public class EditService {
             return new Applied(removeBlock(doc, block), blockName + " 영역 삭제");
         }
 
+        // 페이지 배치를 직접 말한 요청 - 배치는 서버가 정한다. 목록에서 이름 하나를 고르는 일이고
+        //   요청문이 이미 골랐다. 모델에게 시켰더니 배치와 함께 hero 모양까지 바꿨다
+        Layout serverLayout = null;
+        if (block == Block.HERO && !cmd.hasBlocks() && step.op() != Op.ADD) {
+            serverLayout = Layout.requestedBy(cmd.requestText()).orElse(null);
+        }
+        if (serverLayout != null) {
+            // 걸 수 없는 배치면 모델을 부르기 전에 말한다 - 저장 때 조용히 떨어지면 화면이 그대로다
+            String why = PageShell.layoutBlocked(doc, serverLayout);
+            if (why != null) {
+                job.fail(why);
+                return null;
+            }
+            boolean heroHasMore = (step.content() != null && !step.content().isBlank())
+                    || Layout.asksMoreOfHero(cmd.requestText());
+            if (!heroHasMore) {
+                log.info("수정 — 페이지 배치 {} (event={}). 모델을 부르지 않는다", serverLayout.cssClass(), cmd.eventId());
+                return new Applied(PageShell.pickLayout(doc, serverLayout), LAYOUT_SUMMARY);
+            }
+        }
+
         job.to(GenerationJob.Phase.CALLING);
 
         // ★ 연산마다 새 묶음이다. 아래 로그가 jobId 와 묶음을 잇는 유일한 끈이다 —
@@ -587,6 +713,10 @@ public class EditService {
         //   어긋난 지시를 받은 모델은 그대로 두거나 지어낸다 — 둘 다 실패다
         boolean addItem = step.op() == Op.ADD && !before.isBlank();
 
+        // ★ 한 번만 읽는다. 프롬프트에 주는 목록과 검증기가 대조하는 목록이
+        //   **같아야** 한다 — 두 번 읽으면 그 사이에 삭제된 이미지를 안내하게 된다
+        List<Asset.Ref> uploaded = assets.assetsOf(cmd.eventId());
+
         RetryService.Result res;
         try {
             res = retry.runEdit(ctx,
@@ -596,12 +726,15 @@ public class EditService {
                     //   그래서 "더 화려하게" 에 모델이 이모지만 붙이고 모양은 안 바꿨다.
                     // ★★ addItem 을 넘긴다. 안 넘기면 "항목을 새로 만들거나 지우지 마라" 가
                     //   그대로 나가서, 사용자 프롬프트의 "하나만 더한다" 와 정면으로 어긋난다
+                    // ★★ 올라온 이미지 목록을 같이 넘긴다. 비면 안내가 한 줄도 안 나간다
                     PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks(),
-                            step.op() == Op.STYLE, addItem),
-                    userPrompt(cmd, step, before),
+                            step.op() == Op.STYLE, addItem, uploaded),
+                    userPrompt(cmd, step, before, serverLayout != null),
                     // ★ 항목을 하나 더하는 요청이면 검증기에 그렇게 알린다. 안 알리면
                     //   ITEM_ADDED 로 4회가 전부 터지고 관리자는 이유를 못 듣는다
-                    HtmlPolicy.edit(block, before, cmd.requestText(), addItem));
+                    // ★★ **같은 목록**을 검증기에도 준다. 여기 없는 src 는 <img> 째로 떨어진다 —
+                    //   모델이 지어낸 주소나 바깥 주소가 게시되는 걸 막는 유일한 지점이다
+                    HtmlPolicy.edit(block, before, cmd.requestText(), addItem, uploaded));
         } catch (RetryService.Aborted e) {
             // ★ 터진 시도의 실패 행은 문이 남겼다. 그 앞의 시도들은 아직 아무도 안 남겼다.
             //   ctx 가 여기 있으므로 여기서 남긴다 — runSafely 로 올라가면 못 남긴다
@@ -639,17 +772,24 @@ public class EditService {
                 : " 영역 수정");
         }
 
+        if (serverLayout != null) {
+            boolean heroChanged = !unchanged(PageShell.pickLayout(before, serverLayout),
+                    PageShell.pickLayout(html, serverLayout));
+            merged = PageShell.pickLayout(merged, serverLayout);
+            summary = heroChanged ? summary + "; " + LAYOUT_SUMMARY : LAYOUT_SUMMARY;
+        }
+
         return new Applied(merged, summary);
     }
 
-    /** 섹션들의 palette-* class 를 걷어 낸다 — 선택 영역 수정용. 다른 class 는 그대로 */
+    /** 섹션들의 palette-* · layout-* class 를 걷어 낸다 — 선택 영역 수정용. 둘 다 페이지 전체 값이다. 다른 class 는 그대로 */
     static String withoutPalette(String html) {
         org.jsoup.nodes.Document d = Jsoup.parseBodyFragment(html);
         d.outputSettings().prettyPrint(false);
         boolean changed = false;
         for (Element el : d.body().select("[class]")) {
             for (String c : List.copyOf(el.classNames())) {
-                if (Palette.looksLike(c)) {
+                if (Palette.looksLike(c) || Layout.looksLike(c)) {
                     el.removeClass(c);
                     changed = true;
                 }
@@ -706,14 +846,16 @@ public class EditService {
      *
      * ★ 현재 내용을 준다. 이게 없으면 모델은 무엇을 고칠지 모른다
      */
-    private static String userPrompt(EditCommand cmd, Decision.Run step, String before) {
+    private static String userPrompt(EditCommand cmd, Decision.Run step, String before, boolean serverSetsLayout) {
         StringJoiner s = new StringJoiner("\n");
         if (cmd.title() != null && !cmd.title().isBlank()) {
             s.add("이벤트 제목: " + cmd.title().strip());
             s.add("");
         }
         s.add("[관리자 요청]");
-        s.add(RequestFilter.clean(cmd.requestText()));
+        // ★ 배치는 서버가 건다 — 배치를 말한 마디는 모델에게 보여 주지 않는다 (Layout.withoutLayoutTalk).
+        //   보여 주면 "좌우로 나눠줘" 를 읽고 hero 자체 모양(v-hero-split)을 바꾼다 — 배치를 서버로 옮긴 이유가 그것이다
+        s.add(RequestFilter.clean(serverSetsLayout ? Layout.withoutLayoutTalk(cmd.requestText()) : cmd.requestText()));
         s.add("");
 
         if (step.content() != null && !step.content().isBlank()) {

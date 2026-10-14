@@ -85,8 +85,13 @@ class VersionCompareServiceTest {
     }
 
     private void seedChunk(Event event, Long versionId, String blockKey, String content, float[] vector) {
+        seedChunk(event, versionId, blockKey, 0, content, vector);
+    }
+
+    private void seedChunk(Event event, Long versionId, String blockKey, int chunkIndex, String content,
+            float[] vector) {
         EventVersion version = tem.getEntityManager().getReference(EventVersion.class, versionId);
-        chunks.save(RagChunk.create(event, version, blockKey, 0, content,
+        chunks.save(RagChunk.create(event, version, blockKey, chunkIndex, content,
                 "test-similar", vector, AT));
     }
 
@@ -114,6 +119,48 @@ class VersionCompareServiceTest {
         assertTrue(out.stream().noneMatch(r -> r.versionId().equals(v1)),
                 "기준 버전 자신이 결과에 들어갔다");
         assertEquals(1, out.get(0).topChunks().size());
+    }
+
+    private VersionCompareService compareQuery() {
+        EmbeddingClient queryModel = new FixedModel() {
+            @Override
+            public float[] embed(String text) {
+                return vec(1.0);
+            }
+        };
+        return new VersionCompareServiceImpl(versions, chunks, queryModel);
+    }
+
+    @Test
+    @DisplayName("query 모드 — 청크가 많아도 버전별 최소 거리 순으로 상위 버전을 고른다")
+    void queryModeRanksVersionsByBestDistance() {
+        Event eventA = seedEvent("A이벤트");
+        Event eventB = seedEvent("B이벤트");
+        Long va = seedVersion(eventA.getId(), 1);
+        Long vb = seedVersion(eventB.getId(), 1);
+        // A에 동일 벡터 6개 — 청크 상위 N개 후 묶음이면 A만 6개 잡혀 B가 잘린다
+        for (int i = 0; i < 6; i++) {
+            seedChunk(eventA, va, "hero", i, "A" + i, vec(1.0));
+        }
+        // B는 1개지만 거리 0.05 — 버전별 최소 거리 순이면 2순위다
+        seedChunk(eventB, vb, "hero", "B", vec(0.95, 0.3123));
+
+        List<VersionSimilarityResponse> out = compareQuery().similarVersionsByQuery("쿠폰", 2);
+
+        assertEquals(2, out.size());
+        assertEquals(va, out.get(0).versionId());
+        assertEquals(vb, out.get(1).versionId());
+        assertEquals(eventA.getId(), out.get(0).eventId());
+        assertEquals("A이벤트", out.get(0).eventTitle());
+        assertEquals(eventB.getId(), out.get(1).eventId());
+        assertEquals(2, out.get(0).topChunks().size());
+        assertEquals(1, out.get(1).topChunks().size());
+    }
+
+    @Test
+    @DisplayName("query 모드 — 빈 검색어는 임베딩 없이 빈 목록이다")
+    void blankQueryReturnsEmptyWithoutEmbedding() {
+        assertTrue(compare().similarVersionsByQuery("  ", 3).isEmpty());
     }
 
     @Test

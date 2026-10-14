@@ -1033,4 +1033,260 @@ class EditServiceTest {
             eq("제목을 가을 대축제로 변경"),
             isNull());
     }
+
+    // ── 페이지 배치 (layout-*) ─────────────────────────────────────
+    //
+    //   배치는 이름 넷 중 하나를 고르는 일이라, 요청문이 직접 말했으면 모델을 부르지 않고 서버가 정한다.
+    //   여기서 보는 것은 EditService 의 분기다. 열쇠말 자체는 VariantPaletteTest 가 본다
+
+    private static final String LAYOUT_HERO =
+            "<section data-block=\"hero\" class=\"v-hero-center\"><h1>여름 데이터 대방출</h1>"
+            + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>";
+
+    private static final String LAYOUT_BENEFITS =
+            "<section data-block=\"benefits\"><ul><li>데이터 10GB</li><li>쿠폰</li></ul></section>";
+
+    /** 백지 페이지 — 내용 영역 넷(intro · benefits · steps · faq). 벤토를 걸 수 있는 최소다 */
+    private static String layoutPage(String rootClass) {
+        return "<div class=\"ev-container event-page theme-basic" + (rootClass.isEmpty() ? "" : " " + rootClass) + "\">"
+                + LAYOUT_HERO
+                + "<section data-block=\"intro\"><p>올여름 데이터를 마음껏</p></section>"
+                + LAYOUT_BENEFITS
+                + "<section data-block=\"steps\"><ol><li>앱 열기</li><li>버튼 누르기</li></ol></section>"
+                + "<section data-block=\"faq\"><details><summary>언제까지인가요</summary><p>이달 말까지</p></details>"
+                + "<details><summary>누가 참여하나요</summary><p>모든 고객</p></details></section>"
+                + "<section data-block=\"cta\"><button class=\"btn\">참여하기</button></section></div>";
+    }
+
+    private static boolean hasLayout(String html) {
+        return root(html).classNames().stream().anyMatch(c -> c.startsWith("layout-"));
+    }
+
+    @Test
+    @DisplayName("★ 페이지 배치를 직접 말하면 모델을 부르지 않고 루트에 건다 — hero 의 모양 · 문구는 그대로다")
+    void 페이지_배치는_모델_없이_건다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+
+        GenerationJob job = run("페이지를 벤토 배치로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(0, retry.calls(), "배치는 서버가 정한다 — 모델을 부르면 hero 모양까지 바꾼다");
+        assertEquals(2, versionNo());
+        assertTrue(root(savedHtml()).hasClass("layout-bento"), "루트에 배치가 없습니다: " + root(savedHtml()).className());
+        var hero = root(savedHtml()).selectFirst("[data-block=hero]");
+        assertEquals("v-hero-center", hero.className(), "hero 에는 원래 모양만 남아야 합니다 — 배치는 루트로 옮긴다");
+        assertEquals("여름 데이터 대방출", hero.selectFirst("h1").text());
+    }
+
+    @Test
+    @DisplayName("★ 라우터가 못 읽어도 배치 요청은 되묻지 않는다 — hero STYLE 을 서버가 더한다")
+    void 라우터가_못_읽어도_배치는_건다() {
+        setUpWith(layoutPage(""));
+        router.willNotUnderstand();
+
+        GenerationJob job = run("영역들을 2열로 넓게 배치해줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(0, retry.calls());
+        assertTrue(root(savedHtml()).hasClass("layout-wide"), root(savedHtml()).className());
+    }
+
+    @Test
+    @DisplayName("라우터가 다른 영역만 짚었으면 그 연산은 그대로 돌고 배치도 같이 걸린다")
+    void 다른_영역_수정과_배치가_한_버전에_들어간다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("EDIT", "benefits", null));
+        retry.willReturn(ok(NEW_BENEFITS));
+
+        GenerationJob job = run("혜택 문구를 다듬고 페이지를 벤토 배치로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls(), "모델은 혜택만 고친다");
+        assertTrue(retry.prompts().get(0).contains("data-block=\"benefits\""));
+        assertEquals(2, versionNo(), "버전은 하나다");
+        assertTrue(savedHtml().contains("데이터 20GB"));
+        assertTrue(root(savedHtml()).hasClass("layout-bento"), root(savedHtml()).className());
+    }
+
+    @Test
+    @DisplayName("배치를 원래대로 — 루트의 배치 class 를 지운다")
+    void 배치를_기본으로_되돌린다() {
+        setUpWith(layoutPage("layout-bento"));
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+
+        GenerationJob job = run("기본 배치로 돌려줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(0, retry.calls());
+        assertFalse(hasLayout(savedHtml()), "기본은 class 를 남기지 않는다: " + root(savedHtml()).className());
+    }
+
+    @Test
+    @DisplayName("★ 걸 수 없는 배치는 이유를 말하고 저장하지 않는다 — 영역 부족 · 이미 그 배치 · 템플릿")
+    void 걸_수_없는_배치는_이유를_말한다() {
+        // 내용 영역 2개(benefits · steps) — 벤토는 4개가 있어야 한다
+        setUpWith(WRAPPED);
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        GenerationJob few = run("페이지를 벤토 배치로 바꿔줘");
+        assertEquals(GenerationJob.Phase.FAILED, few.phase());
+        assertTrue(few.message().contains("4개 이상"), few.message());
+        assertEquals(1, versionNo());
+
+        setUpWith(layoutPage("layout-bento"));
+        GenerationJob same = run("페이지를 벤토 배치로 바꿔줘");
+        assertEquals(GenerationJob.Phase.FAILED, same.phase());
+        assertTrue(same.message().contains("이미 그 배치"), same.message());
+        assertEquals(1, versionNo());
+
+        setUpWith(layoutPage("").replace("data-block=\"intro\"", "data-block=\"intro\" class=\"ev-block\""));
+        GenerationJob template = run("페이지를 벤토 배치로 바꿔줘");
+        assertEquals(GenerationJob.Phase.FAILED, template.phase());
+        assertTrue(template.message().contains("템플릿"), template.message());
+        assertEquals(1, versionNo());
+
+        assertEquals(0, retry.calls(), "이유를 말하는 데 모델은 필요 없다");
+    }
+
+    @Test
+    @DisplayName("★ 영역을 고른 채 페이지 배치를 요청하면 라우터도 부르지 않고 안내한다")
+    void 영역을_고른_채_페이지_배치는_안내한다() {
+        setUpWith(layoutPage(""));
+
+        GenerationJob job = runOn("페이지를 벤토 배치로 바꿔줘", "benefits");
+
+        assertEquals(GenerationJob.Phase.FAILED, job.phase());
+        assertTrue(job.message().contains("영역 선택을 해제"), job.message());
+        assertEquals(0, router.calls(), "안 되는 일인 줄 알면서 모델을 부를 이유가 없다");
+        assertEquals(0, retry.calls());
+        assertEquals(1, versionNo());
+    }
+
+    @Test
+    @DisplayName("영역을 고르고 '페이지' 를 말하지 않은 벤토 요청은 그 영역의 모양 요청이다 — 페이지 배치는 그대로")
+    void 고른_영역의_벤토는_영역_변형이다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("STYLE", "benefits", null));
+        retry.willReturn(ok("<section data-block=\"benefits\" class=\"v-benefits-bento\"><ul>"
+                + "<li>데이터 10GB</li><li>쿠폰</li></ul></section>"));
+
+        GenerationJob job = runOn("벤토 그리드 배치로 바꿔줘", "benefits");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls(), "영역 모양은 모델이 고른다");
+        assertFalse(hasLayout(savedHtml()), "고른 영역 수정이 페이지 배치를 바꿨습니다: " + root(savedHtml()).className());
+    }
+
+    @Test
+    @DisplayName("관리자가 쓴 문구가 같이 온 hero 요청은 모델로 보낸다 — 문구를 써야 한다")
+    void 문구가_같이_오면_모델로_보낸다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("EDIT", "hero", "가을 대축제"));
+        retry.willReturn(ok("<section data-block=\"hero\" class=\"v-hero-center layout-bento\"><h1>가을 대축제</h1>"
+                + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>"));
+
+        GenerationJob job = run("제목을 '가을 대축제' 로 바꾸고 페이지를 벤토 배치로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls());
+        assertTrue(savedHtml().contains("가을 대축제"));
+        assertTrue(root(savedHtml()).hasClass("layout-bento"), "모델이 hero 에 붙인 배치도 루트로 옮겨야 한다");
+    }
+
+    @Test
+    @DisplayName("★ 배치와 색감을 같이 시키면 둘 다 된다 — 배치만 걸고 끝내면 색감 요청이 조용히 버려진다")
+    void 배치와_다른_요청이_섞이면_모델도_부른다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        // 모델은 색감만 했다 — 배치는 붙이지 않았다
+        retry.willReturn(ok("<section data-block=\"hero\" class=\"v-hero-center palette-summer\"><h1>여름 데이터 대방출</h1>"
+                + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>"));
+
+        GenerationJob job = run("전체 색감을 여름 느낌으로 바꾸고 페이지를 벤토 배치로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls(), "색감은 모델이 고른다");
+        assertTrue(retry.prompts().get(0).contains("전체 색감을 여름 느낌으로"), "색감 요청은 모델에게 가야 한다");
+        assertFalse(retry.prompts().get(0).contains("벤토"),
+                "배치를 말한 마디는 모델에게 보여 주지 않는다 — 보여 주면 hero 모양까지 바꾸거나 색감을 빠뜨린다: "
+                        + retry.prompts().get(0));
+        assertTrue(root(savedHtml()).hasClass("palette-summer"), "색감이 버려졌습니다: " + root(savedHtml()).className());
+        assertTrue(root(savedHtml()).hasClass("layout-bento"), "배치가 안 걸렸습니다: " + root(savedHtml()).className());
+        assertEquals(2, versionNo(), "버전은 하나다");
+    }
+
+    @Test
+    @DisplayName("섞인 요청에서 모델이 다른 배치를 붙여 와도 요청문이 고른 배치 하나만 남는다")
+    void 섞인_요청에서도_배치는_서버가_정한다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("EDIT", "hero", null));
+        retry.willReturn(ok("<section data-block=\"hero\" class=\"v-hero-center layout-wide\"><h1>여름 대방출</h1>"
+                + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>"));
+
+        GenerationJob job = run("제목을 더 짧게 하고 페이지를 벤토 배치로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertTrue(savedHtml().contains("여름 대방출"), "제목 수정이 버려졌습니다");
+        assertEquals(List.of("layout-bento"),
+                root(savedHtml()).classNames().stream().filter(c -> c.startsWith("layout-")).toList());
+    }
+
+    @Test
+    @DisplayName("★ 라우터가 hero 를 두 번 짚어도(제목 EDIT + 배치 STYLE) 거절하지 않는다 — 배치는 서버 몫이다")
+    void 라우터가_hero_를_두_번_짚어도_된다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("EDIT", "hero", null), new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok("<section data-block=\"hero\" class=\"v-hero-center\"><h1>여름 대방출</h1>"
+                + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>"));
+
+        GenerationJob job = run("제목을 더 짧고 강렬하게 바꾸고 매거진 레이아웃으로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls(), "hero 연산은 하나로 합친다");
+        assertTrue(savedHtml().contains("여름 대방출"));
+        assertTrue(root(savedHtml()).hasClass("layout-magazine"), root(savedHtml()).className());
+    }
+
+    @Test
+    @DisplayName("섞인 요청도 걸 수 없는 배치면 모델을 부르기 전에 이유를 말한다")
+    void 섞인_요청도_걸_수_없으면_먼저_말한다() {
+        setUpWith(WRAPPED);     // 내용 영역 2개
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+
+        GenerationJob job = run("전체 색감을 여름 느낌으로 바꾸고 페이지를 벤토 배치로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.FAILED, job.phase());
+        assertTrue(job.message().contains("4개 이상"), job.message());
+        assertEquals(0, retry.calls());
+        assertEquals(1, versionNo());
+    }
+
+    @Test
+    @DisplayName("★ 영역을 두고 한 '배치 · 레이아웃' 은 그 영역만 고친다 — 페이지 배치로 읽으면 요청이 통째로 실패했다")
+    void 영역_배치_요청은_페이지_배치가_아니다() {
+        // "혜택을 2열로 배치해줘" 가 layout-wide 로 읽혀 페이지 전체가 바뀌었다
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("STYLE", "benefits", null));
+        retry.willReturn(ok("<section data-block=\"benefits\" class=\"v-benefits-grid\"><ul>"
+                + "<li>데이터 10GB</li><li>쿠폰</li></ul></section>"));
+
+        GenerationJob grid = run("혜택을 2열로 배치해줘");
+
+        assertEquals(GenerationJob.Phase.DONE, grid.phase(), grid.message());
+        assertEquals(1, retry.calls(), "혜택 하나만 모델을 불러야 한다 — hero STYLE 이 끼어들면 안 된다");
+        assertTrue(retry.prompts().get(0).contains("data-block=\"benefits\""));
+        assertFalse(hasLayout(savedHtml()), "페이지 배치가 걸렸습니다: " + root(savedHtml()).className());
+        assertTrue(savedHtml().contains("v-benefits-grid"));
+
+        // "혜택 레이아웃을 기본으로" 가 layout-stack 으로 읽혀 "이미 그 배치입니다" 로 끝났다
+        setUpWith(layoutPage("").replace(LAYOUT_BENEFITS,
+                LAYOUT_BENEFITS.replace("data-block=\"benefits\"", "data-block=\"benefits\" class=\"v-benefits-grid\"")));
+        router.willReturn(new RawRoute("STYLE", "benefits", null));
+        retry.willReturn(ok(LAYOUT_BENEFITS));
+
+        GenerationJob back = run("혜택 레이아웃을 기본으로 돌려줘");
+
+        assertEquals(GenerationJob.Phase.DONE, back.phase(), back.message());
+        assertFalse(savedHtml().contains("v-benefits-grid"), "혜택 모양이 그대로입니다");
+    }
 }

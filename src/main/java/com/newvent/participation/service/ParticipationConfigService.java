@@ -31,10 +31,14 @@ import lombok.extern.slf4j.Slf4j;
  *   ParticipationService 가 configs.size() != 1 을 거부하므로, 방식이 바뀌어도
  *   행을 새로 만들지 않고 기존 행을 고친다(upsert). 그래서 POST 가 아니라 PUT 이다.
  *
- * ★ 참여 기록이 있으면 바꿀 수 없다
+ * ★ 참여 기록이 있으면 **결과를 뒤집는 값만** 바꿀 수 없다
  *   이미 저장된 result_data 는 그때의 방식을 전제한다. BASIC 으로 참여한 기록이
  *   남아 있는데 LUCKY_POUCH 로 바꾸면 그 기록에 pouchIndex 가 없다.
  *   영구 삭제를 참여 기록으로 막는 것(EVENT409-9)과 같은 이유다.
+ *
+ *   다만 전에는 **통째로** 거부했고 그건 너무 넓었다 — 경품명 오타도 못 고치고,
+ *   스포츠 예측형은 정답을 넣을 길이 없어 기능 자체가 성립하지 않았다.
+ *   지금은 {@link ParticipationConfigLock} 이 값 단위로 가른다.
  *
  * ★ 검증은 ParticipationValidator.validateConfig 하나만 쓴다
  *   참여 경로도 같은 함수를 부른다. 설정 규칙을 두 벌로 쓰면 갈라진다.
@@ -89,14 +93,17 @@ public class ParticipationConfigService {
         requireAnnouncementAfterEnd(event, game, config);
 
         // ④ 잠금을 잡은 뒤에 본다. 이제 그 사이에 참여가 끼어들 수 없다
-        if (participationRepository.existsByEventId(eventId)) {
-            throw new ParticipationException(ParticipationErrorCode.PARTICIPATION_CONFIG_LOCKED);
-        }
+        boolean participated = participationRepository.existsByEventId(eventId);
 
         List<EventGameConfig> existing = eventGameConfigRepository.findAllByEventId(eventId);
 
         EventGameConfig saved;
         if (existing.isEmpty()) {
+            // ★ 참여 기록이 있는데 설정이 없는 상태는 성립하지 않는다 — 참여 API 가
+            //   설정 없이는 받아 주지 않는다. 그래도 왔다면 손으로 지운 것이라 사람이 봐야 한다.
+            if (participated) {
+                throw new ParticipationException(ParticipationErrorCode.PARTICIPATION_CONFIG_LOCKED);
+            }
             saved = eventGameConfigRepository.save(EventGameConfig.create(event, game, config));
             log.info("참여 설정 생성 — event={}, admin={}, game={}", eventId, admin.id(), gameCode);
         } else {
@@ -107,9 +114,19 @@ public class ParticipationConfigService {
             }
             saved = existing.getFirst();
             String before = saved.getGame().getCode();
+
+            // ★ 참여 기록이 있으면 **결과를 뒤집지 않는 값만** 바꿀 수 있다.
+            //   전에는 통째로 거부했는데, 그러면 경품명 오타도 못 고치고
+            //   스포츠 예측형은 정답을 넣을 길이 없어 아예 성립하지 않았다.
+            //   무엇이 허용되고 왜인지는 ParticipationConfigLock 에 있다.
+            if (participated && !ParticipationConfigLock.allows(
+                    before, gameCode, saved.getConfig(), config)) {
+                throw new ParticipationException(ParticipationErrorCode.PARTICIPATION_CONFIG_LOCKED);
+            }
+
             saved.changeConfig(game, config);
-            log.info("참여 설정 변경 — event={}, admin={}, game={} -> {}",
-                    eventId, admin.id(), before, gameCode);
+            log.info("참여 설정 변경 — event={}, admin={}, game={} -> {}, 참여기록={}",
+                    eventId, admin.id(), before, gameCode, participated);
         }
 
         eventGameConfigRepository.flush();

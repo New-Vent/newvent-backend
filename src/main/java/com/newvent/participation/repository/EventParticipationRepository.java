@@ -79,6 +79,85 @@ public interface EventParticipationRepository extends JpaRepository<EventPartici
             Pageable pageable
     );
 
+    /**
+     * 한 이벤트의 참여 기록을 최신순으로. <b>관리자가 참여자·당첨자를 볼 때 쓴다.</b>
+     *
+     * ★ 이 쿼리가 없어서 참여 기록은 DB 에 쌓이기만 하고 아무도 못 봤다.
+     *   이 레포지토리의 다른 조회는 전부 {@code user.id} 로 걸려 있다 — 본인 것만 본다.
+     *
+     * ★ user 를 같이 끌어온다. 목록에 참여자 이름을 띄우는데, 없으면 행마다 조회가 한 번
+     *   더 나간다(N+1). 한 페이지가 20행이면 쿼리가 21개다.
+     *
+     * ★ resultStatus 가 null 이면 전체다. 쿼리를 둘로 쓰지 않는다 — 조건이 한 벌이라
+     *   필터를 늘려도 두 곳을 고치지 않는다 (본인 조회는 메서드가 둘로 갈려 있다).
+     *
+     * ★★ CAST(:resultStatus AS string) 을 지우지 마라 — <b>두 자리 모두 필요하다.</b>
+     *   없으면 PostgreSQL 이 {@code ? is null} 의 파라미터 타입을 못 정하고
+     *   「알 수 없는 유형 값입니다」(could not determine data type of parameter)로 터진다.
+     *   기동 때가 아니라 <b>호출할 때</b> 터지고, 레포지토리를 mock 한 서비스 테스트는
+     *   끝까지 통과한다. 그래서 EventParticipationAdminQueryTest 가 실제 PG 로 돌린다.
+     *
+     *   실측: 첫 자리만 캐스트하면 여전히 같은 오류다. 두 번째 {@code = :resultStatus} 의
+     *   null 도 타입이 없어서 그렇다 — {@code jsonb_extract_path_text} 의 반환형으로
+     *   추론되지 않는다.
+     */
+    @EntityGraph(attributePaths = "user")
+    @Query(
+            value = """
+                    SELECT p
+                    FROM EventParticipation p
+                    WHERE p.event.id = :eventId
+                      AND (CAST(:resultStatus AS string) IS NULL
+                           OR function(
+                               'jsonb_extract_path_text',
+                               p.resultData,
+                               'status'
+                           ) = CAST(:resultStatus AS string))
+                    ORDER BY p.createdAt DESC, p.id DESC
+                    """,
+            countQuery = """
+                    SELECT COUNT(p)
+                    FROM EventParticipation p
+                    WHERE p.event.id = :eventId
+                      AND (CAST(:resultStatus AS string) IS NULL
+                           OR function(
+                               'jsonb_extract_path_text',
+                               p.resultData,
+                               'status'
+                           ) = CAST(:resultStatus AS string))
+                    """
+    )
+    Page<EventParticipation> findByEventId(
+            @Param("eventId") Long eventId,
+            @Param("resultStatus") String resultStatus,
+            Pageable pageable
+    );
+
+    /**
+     * 한 이벤트의 참여·당첨·대기 수. <b>필터·페이지와 무관하게</b> 전체를 센다.
+     *
+     * ★ 목록의 totalElements 로는 이걸 못 만든다 — 그건 필터가 걸린 수다.
+     *   「당첨 12명」을 보려고 필터를 걸면 전체 수가 12로 보이면 안 된다.
+     */
+    @Query(
+            value = """
+                    SELECT
+                        COUNT(*) AS "totalParticipationCount",
+                        COUNT(*) FILTER (
+                            WHERE p.result_data ->> 'status' = 'WON'
+                        ) AS "rewardCount",
+                        COUNT(*) FILTER (
+                            WHERE p.result_data ->> 'status' = 'PENDING'
+                        ) AS "pendingCount"
+                    FROM event_participations p
+                    WHERE p.event_id = :eventId
+                    """,
+            nativeQuery = true
+    )
+    ParticipationSummaryProjection findSummaryByEventId(
+            @Param("eventId") Long eventId
+    );
+
     // 목록 필터·페이지와 관계없이 본인의 전체 참여·당첨·대기 수를 한 번에 집계
     @Query(
             value = """

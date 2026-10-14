@@ -14,6 +14,12 @@ java {
 	}
 }
 
+// @RequestParam 명시명 없는 컨트롤러가 리플렉션에 의존하지 않도록 파라미터명을 바이트코드에 남긴다.
+// 없으면 -parameters 미지원 컴파일러(Eclipse 기본 등)에서 IllegalArgumentException → 500 이 난다
+tasks.withType(JavaCompile).configureEach {
+	options.compilerArgs += '-parameters'
+}
+
 repositories {
 	mavenCentral()
 }

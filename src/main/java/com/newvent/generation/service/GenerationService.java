@@ -18,10 +18,15 @@ import com.newvent.common.exception.code.ErrorCode;
 import com.newvent.generation.exception.GenerationErrorCode;
 import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmCallException;
+import com.newvent.infra.llm.LlmCallGateway;
+import com.newvent.infra.llm.LlmClient;
 import com.newvent.rag.domain.RagChunk;
 import com.newvent.rag.service.RagConstants;
 import com.newvent.rag.service.SimilarityService;
+import com.newvent.registry.BehaviorPlanter;
 import com.newvent.registry.Block;
+import com.newvent.registry.BlockValidator.Failure;
+import com.newvent.registry.FailureCode;
 import com.newvent.registry.PageShell;
 import com.newvent.registry.PromptBuilder;
 import com.newvent.registry.Slot;
@@ -54,6 +59,12 @@ public class GenerationService {
     private final com.newvent.filtering.FilteringPolicy filtering;
     // ★ b3: RAG 검색기. 백지 경로(fromBlank)에서만 쓴다
     private final SimilarityService similarity;
+
+    /** 동작 배치기(LLM) 호출 — null 이면 배치기 없이 기본 배치(BehaviorPlanter.plantGenerated)로 간다 (테스트 · 옛 생성자) */
+    private final LlmCallGateway gateway;
+
+    // b3: 현재 생성에서 사용된 RAG 청크 ID들 (Aborted 시 로그 갱신용)
+    private String ragChunkIds;
     // 채팅 내역. 남기지 못해도 생성은 계속된다
     private final ChatLog chatLog;
 
@@ -78,12 +89,27 @@ public class GenerationService {
         this(retry, templates, versions, guard, jobs, recorder, filtering, similarity, ChatLog.NOOP);
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public GenerationService(RetryService retry, TemplateService templates,
                              VersionStore versions, EventGuard guard, GenerationJobStore jobs,
                              LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering,
                              SimilarityService similarity, ChatLog chatLog) {
+        this(retry, templates, versions, guard, jobs, recorder, filtering, similarity, chatLog, null);
+    }
+
+    public GenerationService(RetryService retry, TemplateService templates,
+                             VersionStore versions, EventGuard guard, GenerationJobStore jobs,
+                             LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering,
+                             SimilarityService similarity, LlmCallGateway gateway) {
+        this(retry, templates, versions, guard, jobs, recorder, filtering, similarity, ChatLog.NOOP, gateway);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public GenerationService(RetryService retry, TemplateService templates,
+                             VersionStore versions, EventGuard guard, GenerationJobStore jobs,
+                             LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering,
+                             SimilarityService similarity, ChatLog chatLog, LlmCallGateway gateway) {
         this.chatLog = chatLog;
+        this.gateway = gateway;
         this.filtering = filtering;
         this.similarity = similarity;
         this.retry = retry;
@@ -343,7 +369,12 @@ public class GenerationService {
         // ★ 저장 직전에 껍데기를 보장한다 — 래퍼 · 유의사항.
         //   백지는 템플릿이 없으므로 테마를 고를 근거가 없다 → null.
         //   event.css 의 :root 기본값이 쓰인다. 무스타일이 아니다.
-        return PageShell.plant(plantSlots(res.html()), null);    }
+        //   동작(data-behavior)도 여기서 서버가 심는다 — 모델 출력의 것은 정화가 이미 지웠다
+        String html = plantBehaviors(cmd, plantSlots(res.html()));
+        var layout = com.newvent.registry.Layout.requestedBy(cmd.requestText());
+        if (layout.isPresent()) html = PageShell.pickLayout(html, layout.get());
+        return PageShell.plant(html, null);
+    }
 
     /**
      * 이벤트 값과 어긋나는지 본다.
@@ -360,6 +391,47 @@ public class GenerationService {
         log.warn("REQ-LLM-41 — 본문에 지어낸 날짜 {}개 (event={}): {}. "
                 + "기간은 슬롯으로만 들어가야 합니다. 프롬프트에는 날짜를 주지 않았습니다.",
                 dates.size(), cmd.eventId(), dates);
+    }
+
+    private static final Failure PLAN_TRUNCATED =
+            Failure.of(FailureCode.TRUNCATED, "요청이 너무 복잡해 동작 배치 출력이 잘렸습니다.");
+    private static final Failure PLAN_UNPARSABLE =
+            Failure.of(FailureCode.ROUTER_PARSE, "동작 배치 출력이 규격에 맞지 않습니다.");
+
+    /**
+     * 백지 결과에 동작을 심는다 — 동작 배치기(LLM)가 JSON 으로 고르고, 서버가 검증해서 심는다.
+     *
+     * ★ 모델은 HTML 을 쓰지 않는다. "무엇을 어디에" 만 고른다 — BehaviorPlanter.decide 가 검증한다
+     * ★ 배치기가 실패해도 생성은 실패하지 않는다 — 기본 배치(plantGenerated)로 간다.
+     *   잘림 · 규격 밖 출력 · 호출 실패 · 하루 상한 모두 같다. 재시도는 없다 (모델 호출 1회)
+     * ★ 새 묶음이다 — jobId 묶음은 HTML 생성 재시도가 쓴다. 같이 쓰면 (request_id, attempt_no) 유니크에 걸린다
+     */
+    private String plantBehaviors(GenerateCommand cmd, String html) {
+        if (gateway == null) return BehaviorPlanter.plantGenerated(html);
+
+        Document doc = Jsoup.parseBodyFragment(html);
+        List<Block> present = new java.util.ArrayList<>();
+        for (Block b : Block.values()) if (doc.body().selectFirst(b.selector()) != null) present.add(b);
+
+        try {
+            LlmCallContext ctx = LlmCallContext.newGroup(cmd.eventId());
+            LlmClient.Response res = gateway.call(ctx, LlmClient.Request.router(
+                    PromptBuilder.behaviorPlanner(),
+                    PromptBuilder.behaviorPlannerUser(RequestFilter.clean(cmd.requestText()), present)));
+            Optional<List<BehaviorPlanter.Placement>> placements =
+                    res.truncated() ? Optional.empty() : BehaviorPlanter.decide(res.content(), doc.body());
+            recorder.recordSingle(ctx, res, placements.isPresent() ? List.of()
+                    : List.of(res.truncated() ? PLAN_TRUNCATED : PLAN_UNPARSABLE));
+            if (placements.isPresent()) {
+                log.info("동작 배치 (event={}) — {}", cmd.eventId(), placements.get().stream()
+                        .map(p -> p.behavior().key() + "@" + p.block().key()).toList());
+                return BehaviorPlanter.apply(html, placements.get());
+            }
+            log.info("동작 배치 출력을 읽지 못해 기본 배치로 (event={})", cmd.eventId());
+        } catch (RuntimeException e) {
+            log.warn("동작 배치 실패 — 기본 배치로 (event={})", cmd.eventId(), e);
+        }
+        return BehaviorPlanter.plantGenerated(html);
     }
 
     /**
@@ -381,20 +453,28 @@ public class GenerationService {
         Document doc = Jsoup.parseBodyFragment(html);
         doc.outputSettings().prettyPrint(false);
 
-        if (!doc.body().select(Slot.PERIOD.selector()).isEmpty()) {
-            return doc.body().html();      // 이미 있으면 두 번 심지 않는다
-        }
-
-        Element hero = doc.body().selectFirst(Block.HERO.selector());
-        Element host = (hero != null) ? hero : doc.body();
-
-        // ★ 내용은 비워 둔다. 값은 보여줄 때 Slots.fill() 이 채운다
-        if (doc.body().select(Slot.PERIOD.selector()).isEmpty()) {
-            host.appendElement("p").attr("data-slot", Slot.PERIOD.key());
-        }
-
+        // ★★ 전에는 여기서 period 가 있으면 **통째로** 반환했다. 그래서 period 는 있고
+        //   cta-link 는 없는 문서가 생기면 cta-link 를 영영 못 심었다. 두 슬롯은
+        //   서로 모르는 자리이므로 각자 판단해야 한다 — 아래 두 메서드가 각각
+        //   "이미 있으면 안 심는다" 를 스스로 본다.
+        plantPeriod(doc);
         plantCtaLink(doc);
         return doc.body().html();
+    }
+
+    /**
+     * 기간 슬롯을 hero 안에 심는다.
+     *
+     * ★ 내용은 비워 둔다. 값은 보여줄 때 {@code Slots.fill()} 이 채운다 —
+     *   저장할 때 넣으면 기간을 고쳐도 화면이 안 바뀐다.
+     */
+    private void plantPeriod(Document doc) {
+        if (!doc.body().select(Slot.PERIOD.selector()).isEmpty()) {
+            return;                        // 이미 있으면 두 번 심지 않는다
+        }
+        Element hero = doc.body().selectFirst(Block.HERO.selector());
+        Element host = (hero != null) ? hero : doc.body();
+        host.appendElement("p").attr("data-slot", Slot.PERIOD.key());
     }
 
     /**

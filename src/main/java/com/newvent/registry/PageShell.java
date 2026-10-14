@@ -3,6 +3,7 @@ package com.newvent.registry;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -14,6 +15,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
+import org.jsoup.select.Elements;
 
 /**
  * 저장되는 조각이 **혼자서도 성립하도록** 서버가 보장하는 것들.
@@ -73,16 +75,59 @@ public final class PageShell {
 
     private PageShell() {}
 
-    /** 게시된 HTML 조각을 독립적인 문서로 감싼다. 조각의 스크립트와 마크업은 그대로 유지한다. */
-    public static String standalone(String fragment, String title) {
-        String safeTitle = new Element("title").text(title).outerHtml();
+    /** 이벤트 페이지의 동작을 실행하는 파일 — 프론트 nginx 의 /assets/ 가 event.css 와 같이 서빙한다 */
+    static final String RUNTIME_SRC = "/assets/event-runtime.js";
+
+    /**
+     * 게시된 HTML 조각을 독립적인 문서로 감싼다 — /e/{id} · 공개 상세 API · 관리자 미리보기 공통.
+     *
+     *   &lt;body class="theme-…"&gt;
+     *     조각
+     *     &lt;script src="/assets/event-runtime.js" defer&gt;
+     *
+     * ★ behavior 가 있는 조각(새 방식)
+     *   조각 안의 &lt;script&gt; 를 지운다 — 실행 코드는 runtime.js 하나뿐이다.
+     *   종료 시각을 타이머에 묶는다 — BehaviorPlanter.bind. **저장본에는 굳히지 않는다** (Slots.fill 과 같은 이유)
+     *
+     * ★ behavior 가 없는 조각(이전에 만든 페이지)은 스크립트와 마크업을 그대로 둔다
+     *   옛 &lt;script&gt; 가 지금처럼 동작한다. runtime.js 는 같이 실리지만 [data-behavior] 가 없어 아무것도 하지 않는다.
+     *
+     * ★ 테마는 body 에도 붙인다
+     *   저장본에서는 래퍼(.ev-container)가 theme-* 를 들고 있다. event.css 의 테마 규칙은 조상 어디에 있어도 걸리지만,
+     *   body 배경처럼 body 자체를 보는 규칙이 있다.
+     *
+     * @param title  &lt;title&gt; — 이벤트 제목. 없으면 "이벤트"
+     * @param endsAt 이벤트 종료 시각 — countdown 의 data-until. 없으면 null
+     */
+    public static String standalone(String fragment, String title, OffsetDateTime endsAt) {
+        Document doc = Jsoup.parseBodyFragment(fragment == null ? "" : fragment);
+        doc.outputSettings().prettyPrint(false);
+        if (!doc.select("[" + Behavior.ATTR + "]").isEmpty()) {
+            doc.select("script, noscript").remove();
+            BehaviorPlanter.bind(doc, endsAt);
+        }
+
+        Element body = doc.body();
+        Element root = doc.selectFirst(ROOT_SELECTOR);
+        if (root == null) {
+            // ★ 래퍼가 없는 조각(더미 · 초안)은 감싼다 — event.css 가 전부 래퍼 기준이라 없으면 무스타일이다.
+            //   예전에는 프론트(serverDocument)가 감쌌다. 이제 완전한 문서로 내보내므로 여기서 한다
+            root = new Element("div").addClass("ev-container").addClass("event-page");
+            for (Node n : new ArrayList<>(body.childNodes())) root.appendChild(n);
+            body.appendChild(root);
+        } else {
+            root.classNames().stream().filter(c -> c.startsWith(Theme.PREFIX)).findFirst().ifPresent(body::addClass);
+        }
+        body.appendElement("script").attr("src", RUNTIME_SRC).attr("defer", "");
+
+        String safeTitle = new Element("title").text(title == null || title.isBlank() ? "이벤트" : title).outerHtml();
         return "<!DOCTYPE html>\n<html lang=\"ko\">\n<head>\n"
                 + "<meta charset=\"UTF-8\">\n"
                 + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
                 + safeTitle + "\n"
                 + "<link rel=\"stylesheet\" href=\"/assets/event.css\">\n"
                 + "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&amp;display=swap\">\n"
-                + "</head>\n<body>\n" + fragment + "\n</body>\n</html>";
+                + "</head>\n" + body.outerHtml() + "\n</html>";
     }
 
     /**
@@ -299,6 +344,29 @@ public final class PageShell {
      *
      * ★ 루트가 없으면 그대로 돌려준다. 래퍼를 만드는 건 ensureRoot 의 몫이다
      */
+    /**
+     * 페이지 전체 배경 이미지를 루트로 옮긴다.
+     *
+     * ★ 왜 옮기나 — 모델은 **영역 하나**의 HTML 만 쓴다. 루트에는 손이 닿지 않는다.
+     *   그래서 hero 안에 쓰게 하고 서버가 옮긴다. 팔레트 · 테마와 똑같은 길이다.
+     * ★ 맨 앞에 둔다. CSS 가 z-index 로 눌러 두지만, 순서까지 맞춰 두면
+     *   미리보기에서 글자를 가리는 사고가 한 겹 더 막힌다.
+     * ★ 하나만 남긴다. 두 장이 겹치면 어느 쪽이 보이는지 아무도 모른다.
+     * ★ 이미 루트에 있는 것은 그대로 둔다 — 영역 수정 때마다 다시 옮기지 않는다.
+     */
+    private static void hoistPageAsset(Document doc, Element root) {
+        Elements all = doc.body().select("img." + Asset.PAGE.cssClass());
+        if (all.isEmpty()) return;
+
+        Element keep = all.first();
+        for (Element e : all) {
+            if (e != keep) e.remove();
+        }
+        if (keep.parent() != root || keep.elementSiblingIndex() != 0) {
+            root.prependChild(keep);
+        }
+    }
+
     public static String hoistPalette(String fragment) {
         Document doc = parse(fragment);
         Element root = doc.body().selectFirst(ROOT_SELECTOR);
@@ -314,6 +382,7 @@ public final class PageShell {
      *   그 밖                  루트의 팔레트를 그걸로 바꾼다
      */
     private static void hoist(Document doc, Element root) {
+        hoistPageAsset(doc, root);
         String palette = pickFromHero(doc, Palette::looksLike, c -> Palette.find(c).isPresent());
         String theme   = pickFromHero(doc, Theme::looksLike,   c -> Theme.find(c).isPresent());
 
@@ -329,6 +398,81 @@ public final class PageShell {
                 if (Theme.looksLike(c)) root.removeClass(c);
             }
             root.addClass(theme);
+        }
+        settleLayout(doc, root, pickFromHero(doc, Layout::looksLike, c -> Layout.find(c).isPresent()));
+    }
+
+    public static String layoutBlocked(String fragment, Layout layout) {
+        Document doc = parse(fragment);
+        Element root = doc.body().selectFirst(ROOT_SELECTOR);
+        if (root == null) return "페이지가 아직 없습니다.";
+
+        boolean template = false;
+        int content = 0;
+        for (Element sec : root.select("> section[data-block]")) {
+            Block b = Block.find(sec.attr("data-block")).orElse(null);
+            if (b == null || b == Block.NOTICES) continue;
+            if (sec.hasClass("ev-block")) template = true;
+            if (b != Block.HERO && b != Block.CTA) content++;
+        }
+        String current = root.classNames().stream().filter(Layout::looksLike).findFirst()
+                .orElse(Layout.DEFAULT.cssClass());
+        if (current.equals(layout.cssClass())) return "이미 그 배치입니다.";
+        if (layout == Layout.DEFAULT) return null;
+        if (template) return "템플릿으로 만든 페이지는 배치를 바꿀 수 없습니다. 색감은 바꿀 수 있습니다.";
+        if (content < layout.minContentBlocks()) {
+            return "이 배치는 내용 영역이 " + layout.minContentBlocks() + "개 이상일 때 쓸 수 있습니다. "
+                    + "지금은 " + content + "개입니다. 영역을 추가한 뒤 다시 요청해 주세요.";
+        }
+        return null;
+    }
+
+    /**
+     * 배치를 고른다 — hero 에 그 class 하나만 붙인다. 루트로 옮기는 것은 저장 직전의 {@link #settle} · {@link #plant} 다.
+     * hero 의 다른 class(모양 변형)와 문구는 건드리지 않는다.
+     */
+    public static String pickLayout(String fragment, Layout layout) {
+        Document doc = parse(fragment);
+        Element hero = doc.body().selectFirst(Block.HERO.selector());
+        if (hero == null) return fragment;
+        for (String c : List.copyOf(hero.classNames())) {
+            if (Layout.looksLike(c)) hero.removeClass(c);
+        }
+        hero.addClass(layout.cssClass());
+        return doc.body().html();
+    }
+
+    /**
+     * 페이지 배치(layout-*)를 루트에 하나만 남긴다. 팔레트와 같은 규칙에 조건 둘이 더 붙는다.
+     *   새 배치가 없으면      루트는 그대로 (이번 수정이 배치를 안 건드렸다)
+     *   layout-stack 이면     루트의 배치를 지운다 (기본 = class 없음)
+     *   그 밖                 루트의 배치를 그걸로 바꾼다
+     *
+     * ★ 조건은 **매번** 다시 본다 — 고를 때만 보면 나중에 영역을 지워서 격자가 비어도 남는다
+     *   템플릿 페이지        배치를 걸지 않는다. 템플릿 블록(.ev-block)은 자기 디자인이 있다
+     *   내용 영역이 모자람   기본으로 되돌린다 ({@link Layout#minContentBlocks})
+     */
+    private static void settleLayout(Document doc, Element root, String picked) {
+        if (picked != null) {
+            for (String c : List.copyOf(root.classNames())) {
+                if (Layout.looksLike(c)) root.removeClass(c);
+            }
+            if (!picked.equals(Layout.DEFAULT.cssClass())) root.addClass(picked);
+        }
+
+        // 유의사항은 세지 않는다
+        boolean template = false;
+        int content = 0;
+        for (Element sec : root.select("> section[data-block]")) {
+            Block b = Block.find(sec.attr("data-block")).orElse(null);
+            if (b == null || b == Block.NOTICES) continue;
+            if (sec.hasClass("ev-block")) template = true;
+            if (b != Block.HERO && b != Block.CTA) content++;
+        }
+        for (String c : List.copyOf(root.classNames())) {
+            if (!Layout.looksLike(c)) continue;
+            Layout l = Layout.find(c).orElse(null);
+            if (l == null || template || content < l.minContentBlocks()) root.removeClass(c);
         }
     }
 
