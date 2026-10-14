@@ -110,15 +110,19 @@ PY
 | `PARTICIPATION409-0` | 409 | 이미 참여한 이벤트입니다 |
 | `PARTICIPATION409-1` | 409 | 이벤트의 참여 설정이 없거나 올바르지 않습니다 |
 | `PARTICIPATION409-2` | 409 | 지원하지 않거나 비활성화된 참여 방식입니다 |
-| `PARTICIPATION409-3` | 409 | 참여 기록이 있는 이벤트는 참여 설정을 바꿀 수 없습니다 |
+| `PARTICIPATION409-3` | 409 | 참여 기록이 있어 이 설정 값은 바꿀 수 없습니다 |
 
 `PARTICIPATION409-1` 은 **설정이 하나가 아닐 때**입니다 — 없거나 둘 이상이면 어느 방식으로
 참여할지 정할 수 없어 같게 다룹니다 (`configs.size() != 1`). 설정 저장 API 에서는 **모양이
 맞지 않을 때**도 이 코드입니다 (예: `LUCKY_POUCH` 인데 칸에 `prizeName` 이 없음).
 
-`PARTICIPATION409-3` 은 관리자가 설정을 **바꾸려 할 때**만 납니다. 이미 저장된 `result_data` 가
-그때의 방식을 전제하기 때문입니다 — `BASIC` 으로 참여한 기록이 있는데 `LUCKY_POUCH` 로
-바꾸면 그 기록에 `pouchIndex` 가 없습니다. 영구 삭제를 막는 `EVENT409-9` 와 같은 이유입니다.
+`PARTICIPATION409-3` 은 관리자가 설정을 **바꾸려 할 때**만 납니다. 참여 기록이 있어도
+**결과를 뒤집지 않는 값**(`prizeName` · `announcementAt`)은 바꿀 수 있고, 그 밖의 값
+(`gameCode` · `resultMode` · `winProbability` · `winnerCount` · `predictionOptions` · `pouches`)이
+달라지면 이 코드입니다. 이미 저장된 `result_data` 가 그때의 방식을 전제하기 때문입니다 —
+`BASIC` 으로 참여한 기록이 있는데 `LUCKY_POUCH` 로 바꾸면 그 기록에 `pouchIndex` 가 없습니다.
+영구 삭제를 막는 `EVENT409-9` 와 같은 이유입니다.
+허용 목록은 `ParticipationConfigLock` 에 있습니다 (자세한 근거는 `api-design.md` §10).
 
 ## 알림 (`notification/`)
 
