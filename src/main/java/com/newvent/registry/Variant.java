@@ -265,6 +265,16 @@ public enum Variant {
     public String desc()     { return desc; }
     public boolean namedColor() { return namedColor; }
 
+    /** 이 모양이 말이 되려면 있어야 하는 항목 수. 조건이 없으면 0 */
+    public int needsItems() {
+        return NEEDS_ITEMS.getOrDefault(this, 0);
+    }
+
+    /** 그 블록의 전용 모양 — 선언 순서. 첫 번째가 기본이다 (class 를 안 붙인 것과 같다) */
+    public static List<Variant> layoutsOf(Block b) {
+        return Arrays.stream(values()).filter(v -> v.block == b && v.group == Group.LAYOUT).toList();
+    }
+
     /** 그 블록에 쓸 수 있는 변형 전부 — 전용 배치 먼저, 배경 나중 */
     public static List<Variant> of(Block b) {
         return Arrays.stream(values())

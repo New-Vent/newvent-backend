@@ -409,6 +409,30 @@ class GenerationServiceTest {
     }
 
     @Test
+    @DisplayName("★ 생성 화면에서 고른 배치가 요청문 · 모델보다 앞선다")
+    void 화면에서_고른_배치가_가장_앞선다() {
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(generatedWide("layout-bento"))));
+        GenerationJob job = await(started(service.start(
+                blank(1L, "좌우 분할 화면으로 봄 이벤트를 만들어줘").withLayout(com.newvent.registry.Layout.THREE))));
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+
+        var root = Jsoup.parseBodyFragment(savedHtml(1L)).body().selectFirst(".ev-container");
+        assertEquals(List.of("layout-three"), layoutsOf(root), root.className());
+    }
+
+    @Test
+    @DisplayName("화면에서 고른 배치라도 영역이 모자라면 기본 배치로 만든다 — 생성은 실패하지 않는다")
+    void 화면에서_고른_배치가_모자라면_기본_배치() {
+        // GENERATED 의 내용 영역은 benefits 하나다 — 벤토를 못 건다
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(GENERATED)));
+        GenerationJob job = await(started(service.start(
+                blank(2L, "여름 이벤트 페이지").withLayout(com.newvent.registry.Layout.BENTO))));
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        var small = Jsoup.parseBodyFragment(savedHtml(2L)).body().selectFirst(".ev-container");
+        assertEquals(List.of(), layoutsOf(small), small.className());
+    }
+
+    @Test
     @DisplayName("요청문이 배치를 말하지 않았으면 모델이 고른 것을 쓴다")
     void 말하지_않았으면_모델이_고른다() {
         var root = generatedRoot("봄맞이 데이터 이벤트", generatedWide("layout-wide"));

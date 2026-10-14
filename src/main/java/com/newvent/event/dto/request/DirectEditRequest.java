@@ -1,6 +1,8 @@
 package com.newvent.event.dto.request;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -8,6 +10,8 @@ import jakarta.validation.constraints.NotNull;
 import com.newvent.event.exception.DirectEditErrorCode;
 import com.newvent.event.exception.DirectEditException;
 import com.newvent.registry.Block;
+import com.newvent.registry.Layout;
+import com.newvent.registry.Variant;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -23,6 +27,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * @param edits           수정할 문구 목록
  * @param buttonStyle     수정할 CTA 버튼 스타일 (색상, 크기, 모양)
  * @param blockOrder      블록을 세울 순서. 블록 key 목록 (예: ["hero","steps","benefits"])
+ * @param layout          페이지 배치 (예: "layout-bento"). 기본으로 되돌리려면 "layout-stack"
+ * @param variants        영역 → 모양 (예: {"benefits":"v-benefits-grid"}). 빈 문자열이면 모양 class 를 뗀다
  */
 public record DirectEditRequest(
         @Schema(description = "지금 에디터에 띄운 버전. 새 버전은 이 버전을 이어서 만든다.")
@@ -31,12 +37,28 @@ public record DirectEditRequest(
         @Schema(description = "고칠 문구 목록. buttonStyle 과 둘 중 하나는 있어야 한다.")
         List<@Valid TextEdit> edits,
         @Valid ButtonStyle buttonStyle,
-        List<String> blockOrder) {
+        List<String> blockOrder,
+        @Schema(description = "페이지 배치 class. 미리보기 응답의 looks.layouts 에 있는 이름")
+        String layout,
+        @Schema(description = "영역(data-block) → 모양 class. 미리보기 응답의 looks.blocks[영역].variants 에 있는 이름")
+        Map<String, String> variants) {
 
     public DirectEditRequest {
         if ((edits == null || edits.isEmpty()) && buttonStyle == null
-                && (blockOrder == null || blockOrder.isEmpty())) {
+                && (blockOrder == null || blockOrder.isEmpty())
+                && layout == null && (variants == null || variants.isEmpty())) {
             throw new DirectEditException(DirectEditErrorCode.EMPTY_EDIT_REQUEST);
+        }
+        // ★ 이름은 여기서 거른다 (순서와 같다). 붙일 수 있는지는 페이지를 봐야 알아서 서비스가 본다
+        if (layout != null && Layout.find(layout).isEmpty()) {
+            throw new DirectEditException(DirectEditErrorCode.INVALID_LOOK);
+        }
+        if (variants != null) {
+            variants.forEach((k, v) -> {
+                if (Block.find(k).isEmpty() || v == null || (!v.isEmpty() && Variant.find(v).isEmpty())) {
+                    throw new DirectEditException(DirectEditErrorCode.INVALID_LOOK);
+                }
+            });
         }
         // ★ 여기서 바로 걸러 낸다. 서비스까지 들고 가서 조용히 무시하면
         //   프론트는 오타를 낸 줄 모르고, 관리자는 왜 안 움직이는지 모른다
@@ -52,6 +74,36 @@ public record DirectEditRequest(
     /** blockOrder 를 쓰지 않는 기존 호출을 위한 것. */
     public DirectEditRequest(Long sourceVersionId, List<TextEdit> edits, ButtonStyle buttonStyle) {
         this(sourceVersionId, edits, buttonStyle, null);
+    }
+
+    /** 배치 · 모양을 쓰지 않는 기존 호출을 위한 것. */
+    public DirectEditRequest(Long sourceVersionId, List<TextEdit> edits, ButtonStyle buttonStyle,
+                             List<String> blockOrder) {
+        this(sourceVersionId, edits, buttonStyle, blockOrder, null, null);
+    }
+
+    /** 배치 · 모양 중 고친 것이 있는가 */
+    public boolean hasLooks() {
+        return layout != null || (variants != null && !variants.isEmpty());
+    }
+
+    /** 배치 · 모양 말고 고친 것이 있는가 — 문구 · 버튼 스타일 · 블록 순서 */
+    public boolean hasOtherEdits() {
+        return (edits != null && !edits.isEmpty()) || buttonStyle != null
+                || (blockOrder != null && !blockOrder.isEmpty());
+    }
+
+    /** 고른 배치. 안 고쳤으면 null */
+    public Layout layoutPick() {
+        return layout == null ? null : Layout.find(layout).orElseThrow();
+    }
+
+    /** 영역 → 고른 모양. 값이 null 이면 모양을 뗀다 */
+    public Map<Block, Variant> variantPicks() {
+        Map<Block, Variant> out = new LinkedHashMap<>();
+        // 빈 문자열 = 모양을 뗀다 → null
+        if (variants != null) variants.forEach((k, v) -> out.put(Block.of(k.trim()), Variant.find(v).orElse(null)));
+        return out;
     }
 
     /**

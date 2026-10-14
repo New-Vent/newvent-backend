@@ -57,6 +57,7 @@ public class GenerateController {
                     + "검색에서 이 이벤트(eventId)는 뺀다. "
                     + "검색이 실패하거나 결과가 없어도 생성은 그대로 진행된다. "
                     + "AI 경로에서 requestText 가 비면 400 (GEN400-0), 500자를 넘으면 400. "
+                    + "layout 을 보내면 AI 가 고른 배치 대신 그 배치로 만든다 (모르는 이름은 400 GEN400-4). "
                     + "요청문에 개인정보가 보이면 바로 ASK_BACK 으로 끝나고, 확인한 뒤 privacyConfirmationJobId·privacyConfirmed 를 담아 "
                     + "다시 보낸다 (확인 요청이 없거나 만료 409 FILTER409-0, 내용이 다르면 409 FILTER409-2). "
                     + "이벤트가 없으면 404 (EVENT404-0), 템플릿이 없거나 고를 수 없으면 404 (EVENT404-1), "
@@ -82,7 +83,7 @@ public class GenerateController {
         }
         GenerateCommand cmd = new GenerateCommand(initial.eventId(), initial.templateCode(), initial.templateFromEvent(),
                 initial.title(), initial.period(), initial.ctaUrl(), initial.requestText(),
-                req.privacyConfirmationJobId(), req.privacyConfirmed());
+                req.privacyConfirmationJobId(), req.privacyConfirmed(), layoutOf(req));
 
         return switch (generation.start(cmd)) {
             case StartResult.Started s -> ResponseEntity
@@ -96,5 +97,12 @@ public class GenerateController {
             case StartResult.AlreadyRunning ignored ->
                     throw new GenerationException(GenerationErrorCode.ALREADY_GENERATING);
         };
+    }
+
+    /** 고른 배치. 모르는 이름은 400 — 조용히 무시하면 관리자는 왜 그 배치가 안 나왔는지 모른다 */
+    private static com.newvent.registry.Layout layoutOf(GenerateRequest req) {
+        if (req.layout() == null) return null;
+        return com.newvent.registry.Layout.find(req.layout())
+                .orElseThrow(() -> new GenerationException(GenerationErrorCode.INVALID_LAYOUT));
     }
 }

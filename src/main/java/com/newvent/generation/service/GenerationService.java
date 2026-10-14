@@ -196,7 +196,7 @@ public class GenerationService {
             return new StartResult.Rejected(com.newvent.filtering.FilteringErrorCode.PRIVACY_CONFIRMATION_NOT_FOUND);
         }
         GenerateCommand safeCommand = new GenerateCommand(cmd.eventId(), cmd.templateCode(),
-                cmd.title(), cmd.period(), cmd.ctaUrl(), input.text());
+                cmd.title(), cmd.period(), cmd.ctaUrl(), input.text()).withLayout(cmd.layout());
         Optional<GenerationJob> already = jobs.ofEvent(cmd.eventId());
         if (already.isPresent()) {
             return new StartResult.AlreadyRunning(already.get());
@@ -371,9 +371,27 @@ public class GenerationService {
         //   event.css 의 :root 기본값이 쓰인다. 무스타일이 아니다.
         //   동작(data-behavior)도 여기서 서버가 심는다 — 모델 출력의 것은 정화가 이미 지웠다
         String html = plantBehaviors(cmd, plantSlots(res.html()));
-        var layout = com.newvent.registry.Layout.requestedBy(cmd.requestText());
-        if (layout.isPresent()) html = PageShell.pickLayout(html, layout.get());
-        return PageShell.plant(html, null);
+        return PageShell.plant(withLayout(cmd, html), null);
+    }
+
+    /**
+     * 페이지 배치를 건다. 순서는 관리자가 화면에서 고른 것 → 요청문이 말한 것 → 모델이 고른 것(그대로 둔다).
+     *
+     * ★ 화면에서 고른 배치는 {@link com.newvent.registry.Looks} 로 건다 — 직접 편집과 같은 조건을 본다.
+     *   영역이 모자라 못 거는 배치면 기본 배치로 두고 넘어간다. 생성은 이미 끝났고, 그 이유로 실패시킬 일이 아니다
+     */
+    private String withLayout(GenerateCommand cmd, String html) {
+        if (cmd.layout() != null) {
+            try {
+                return com.newvent.registry.Looks.apply(PageShell.plant(html, null), cmd.layout(), java.util.Map.of());
+            } catch (com.newvent.registry.Looks.Blocked e) {
+                log.info("고른 배치를 걸지 못해 기본 배치로 만듭니다 (event={}, layout={}) — {}",
+                        cmd.eventId(), cmd.layout().cssClass(), e.getMessage());
+                return PageShell.pickLayout(html, com.newvent.registry.Layout.DEFAULT);
+            }
+        }
+        var asked = com.newvent.registry.Layout.requestedBy(cmd.requestText());
+        return asked.isPresent() ? PageShell.pickLayout(html, asked.get()) : html;
     }
 
     /**

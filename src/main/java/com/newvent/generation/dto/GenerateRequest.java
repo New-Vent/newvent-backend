@@ -21,9 +21,18 @@ public record GenerateRequest(
         @Schema(description = "개인정보 확인으로 ASK_BACK 이 된 작업의 jobId. 확인 후 다시 보낼 때만 쓴다.")
         java.util.UUID privacyConfirmationJobId,
         @Schema(description = "개인정보가 들어가도 그대로 만들겠다는 관리자 확인. 생략하면 false")
-        Boolean privacyConfirmed) {
+        Boolean privacyConfirmed,
+        @Schema(description = "페이지 배치 class (예: layout-bento). 생략하면 AI 가 고른다. AI 생성에서만 쓴다 — "
+                + "영역이 모자라 못 거는 배치는 기본 배치로 만들어진다")
+        @Size(max = 30, message = "배치 이름이 너무 깁니다.")
+        String layout) {
     public GenerateRequest {
         privacyConfirmed = Boolean.TRUE.equals(privacyConfirmed);
+        layout = (layout == null || layout.isBlank()) ? null : layout.strip();
+    }
+    public GenerateRequest(String templateCode, String requestText, java.util.UUID privacyConfirmationJobId,
+                           Boolean privacyConfirmed) {
+        this(templateCode, requestText, privacyConfirmationJobId, privacyConfirmed, null);
     }
     public GenerateRequest(String templateCode, String requestText, java.util.UUID privacyConfirmationJobId) {
         this(templateCode, requestText, privacyConfirmationJobId, false);

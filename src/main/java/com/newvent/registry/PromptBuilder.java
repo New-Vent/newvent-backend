@@ -561,6 +561,15 @@ public final class PromptBuilder {
         for (Layout l : Layout.all()) {
             s.add("    " + l.cssClass() + " : " + l.desc());
         }
+        // ★ 고르는 기준을 준다. 목록만 주면 모델이 배치를 건너뛴다 — 안 붙여도 틀린 출력이 아니라서다
+        //   (Bedrock 실측: 배치를 말하지 않은 요청은 전부 기본 배치로 나왔다).
+        //   금지문이 아니라 "이럴 때는 이것" 으로만 적는다 — 금지문에서 이름을 배워 고른 전례가 있다
+        s.add("  고르는 기준 — 영역의 수와 길이를 보고 **반드시 하나를 고른다**:");
+        s.add("    내용 영역 4개 이상, 숫자 · 경품 · 쿠폰 같은 짧은 영역이 섞임 → layout-bento");
+        s.add("    대표 내용 하나(혜택 · 소개)가 뚜렷함 → layout-magazine");
+        s.add("    짧은 영역이 3개 이상 → layout-three, 길이가 비슷한 영역이 짝수 → layout-wide");
+        s.add("    화려한 홍보 페이지 → layout-full 또는 layout-zigzag");
+        s.add("    영역이 2~3개로 적거나 글 위주 → layout-stack 또는 layout-focus");
     }
 
     /**

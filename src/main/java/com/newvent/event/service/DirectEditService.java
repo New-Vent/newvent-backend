@@ -11,16 +11,19 @@ import org.springframework.transaction.annotation.Transactional;
 import com.newvent.event.domain.Event;
 import com.newvent.event.dto.request.DirectEditRequest;
 import com.newvent.event.dto.response.DirectEditResponse;
+import com.newvent.event.exception.DirectEditErrorCode;
+import com.newvent.event.exception.DirectEditException;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.generation.service.VersionStore;
+import com.newvent.registry.Looks;
 import com.newvent.registry.PageShell;
 
 /**
  * 에디터 직접 편집 서비스.
  * <p>
- * 관리자가 요청한 텍스트 · 버튼 스타일 · 블록 순서 수정을 기준 버전에 반영하고
+ * 관리자가 요청한 텍스트 · 버튼 스타일 · 블록 순서 · 배치 · 모양 수정을 기준 버전에 반영하고
  * {@code event_versions}에 새로운 버전으로 저장한다.
  */
 @Service
@@ -74,6 +77,23 @@ public class DirectEditService {
         //      거르는 규칙(중복 · 고정 블록)은 PageShell.applyOrder 가 갖는다.
         if (!request.blocks().isEmpty()) {
             updatedHtml = PageShell.applyOrder(updatedHtml, request.blocks());
+        }
+
+        // 3-3. 배치 · 모양. 순서 **뒤**다 — 순서를 세운 조각에 건다.
+        //      못 붙이는 이유(영역 수 · 항목 수 · 템플릿 페이지)는 관리자에게 그대로 돌려준다
+        if (request.hasLooks()) {
+            String before = PageShell.settle(updatedHtml);
+            try {
+                updatedHtml = Looks.apply(updatedHtml, request.layoutPick(), request.variantPicks());
+            } catch (Looks.Blocked e) {
+                throw new DirectEditException(DirectEditErrorCode.LOOK_NOT_AVAILABLE, e.getMessage());
+            }
+            // ★ 이미 그 배치 · 모양이면 저장하지 않는다 — 똑같은 버전이 하나 더 쌓일 뿐이다
+            // ★ 문구 · 버튼 · 순서를 같이 고쳤으면 저장한다. 모양이 그대로라는 이유로 막으면
+            //   같이 보낸 문구 수정까지 버려진다
+            if (updatedHtml.equals(before) && !request.hasOtherEdits()) {
+                throw new DirectEditException(DirectEditErrorCode.LOOK_NOT_AVAILABLE, "이미 그 배치 · 모양입니다.");
+            }
         }
 
         // 4. 새 버전으로 저장 (source_version_id 지정)

@@ -295,6 +295,90 @@ class DirectEditServiceTest {
         verifyNoInteractions(versionStore);
     }
 
+    // ── 배치 · 모양 ──
+
+    private static final String BLANK_PAGE = "<div class=\"ev-container event-page theme-basic\">"
+            + "<section data-block=\"hero\"><h1>t</h1></section>"
+            + "<section data-block=\"stats\"><ul><li><strong>1</strong></li><li><strong>2</strong></li></ul></section>"
+            + "<section data-block=\"benefits\"><ul><li>a</li><li>b</li><li>c</li></ul></section>"
+            + "<section data-block=\"steps\"><ol><li>a</li><li>b</li></ol></section>"
+            + "<section data-block=\"cta\"><a href=\"#\" class=\"btn\">go</a></section></div>";
+
+    @Test
+    @DisplayName("배치 · 모양을 고르면 모델 없이 class 만 바꿔 새 버전으로 저장한다")
+    void directEdit_배치_모양() {
+        Event event = ownedEvent();
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(versionStore.htmlOf(1L, 12L)).thenReturn(Optional.of(BLANK_PAGE));
+        when(versionStore.save(eq(1L), any(String.class), eq(12L)))
+                .thenReturn(new VersionStore.Saved(13L, 2));
+
+        directEditService.directEdit(1L, new DirectEditRequest(12L, null, null, null, "layout-wide",
+                java.util.Map.of("benefits", "v-benefits-grid")), 1L);
+
+        verify(versionStore).save(eq(1L), argThat(html ->
+                html.contains("layout-wide") && html.contains("class=\"v-benefits-grid\"")), eq(12L));
+    }
+
+    @Test
+    @DisplayName("이미 그 배치여도 같이 보낸 순서 변경은 저장한다 - 모양이 그대로라는 이유로 요청 전체를 버리지 않는다")
+    void directEdit_이미_그_배치여도_다른_수정은_저장() {
+        Event event = ownedEvent();
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(versionStore.htmlOf(1L, 12L)).thenReturn(Optional.of(BLANK_PAGE));
+        when(versionStore.save(eq(1L), any(String.class), eq(12L)))
+                .thenReturn(new VersionStore.Saved(13L, 2));
+
+        // 배치는 이미 기본(layout-stack)이다. 순서만 실제로 바뀐다 — steps 를 benefits 앞으로
+        directEditService.directEdit(1L, new DirectEditRequest(12L, null, null,
+                java.util.List.of("hero", "stats", "steps", "benefits", "cta"), "layout-stack", null), 1L);
+
+        verify(versionStore).save(eq(1L), argThat(html ->
+                html.indexOf("data-block=\"steps\"") < html.indexOf("data-block=\"benefits\"")), eq(12L));
+    }
+
+    @Test
+    @DisplayName("지금 페이지에 못 거는 배치는 LOOK_NOT_AVAILABLE(409) - 이유를 그대로 돌려주고 저장하지 않는다")
+    void directEdit_못_거는_배치_409() {
+        Event event = ownedEvent();
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(versionStore.htmlOf(1L, 12L)).thenReturn(Optional.of(BLANK_PAGE));
+
+        // 내용 영역이 셋이다 — 벤토는 넷이 있어야 한다
+        assertThatThrownBy(() -> directEditService.directEdit(1L,
+                new DirectEditRequest(12L, null, null, null, "layout-bento", null), 1L))
+                .isInstanceOf(DirectEditException.class)
+                .satisfies(ex -> {
+                    var code = ((DirectEditException) ex).getErrorCode();
+                    assertThat(code.getCode()).isEqualTo(DirectEditErrorCode.LOOK_NOT_AVAILABLE.getCode());
+                    assertThat(code.getHttpStatus()).isEqualTo(DirectEditErrorCode.LOOK_NOT_AVAILABLE.getHttpStatus());
+                    assertThat(code.getMessage()).contains("4개 이상");
+                });
+        verify(versionStore, never()).save(any(), any(), any());
+
+        // 이미 그 배치(기본)면 저장하지 않는다 — 똑같은 버전이 쌓일 뿐이다
+        assertThatThrownBy(() -> directEditService.directEdit(1L,
+                new DirectEditRequest(12L, null, null, null, "layout-stack", null), 1L))
+                .isInstanceOf(DirectEditException.class)
+                .satisfies(ex -> assertThat(((DirectEditException) ex).getErrorCode().getMessage()).contains("이미"));
+        verify(versionStore, never()).save(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("모르는 배치 · 모양 이름이면 INVALID_LOOK(400)")
+    void directEdit_모르는_모양이름_400() {
+        assertThatThrownBy(() -> new DirectEditRequest(12L, null, null, null, "layout-nope", null))
+                .isInstanceOf(DirectEditException.class)
+                .extracting(ex -> ((DirectEditException) ex).getErrorCode())
+                .isEqualTo(DirectEditErrorCode.INVALID_LOOK);
+        assertThatThrownBy(() -> new DirectEditRequest(12L, null, null, null, null,
+                java.util.Map.of("benefits", "v-nope")))
+                .isInstanceOf(DirectEditException.class);
+        assertThatThrownBy(() -> new DirectEditRequest(12L, null, null, null, null,
+                java.util.Map.of("없는블록", "v-benefits-grid")))
+                .isInstanceOf(DirectEditException.class);
+    }
+
     @Test
     @DisplayName("빈 순서 목록은 수정 내용으로 치지 않는다 - EMPTY_EDIT_REQUEST(400)")
     void directEdit_빈_순서목록_400() {
