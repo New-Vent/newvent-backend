@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.admin.domain.Admin;
 import com.newvent.admin.repository.AdminRepository;
+import com.newvent.asset.service.AssetCleanup;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventProgress;
@@ -49,8 +50,11 @@ public class EventService {
     private final EventVersionRepository eventVersionRepository;
     private final AdminRepository adminRepository;
     private final GenerationJobStore generationJobStore;
+    // ★ 이벤트를 영구 삭제할 때 올린 이미지 파일도 같이 치운다 (AssetCleanup 주석 참고)
+    private final AssetCleanup assetCleanup;
     private final Clock clock;
 
+    /** 이미지를 쓰지 않는 구성 — 기존 테스트가 쓰던 자리 */
     public EventService(
             EventRepository eventRepository,
             EventTemplateRepository eventTemplateRepository,
@@ -58,6 +62,20 @@ public class EventService {
             AdminRepository adminRepository,
             GenerationJobStore generationJobStore,
             Clock clock) {
+        this(eventRepository, eventTemplateRepository, eventVersionRepository, adminRepository,
+                generationJobStore, AssetCleanup.NONE, clock);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EventService(
+            EventRepository eventRepository,
+            EventTemplateRepository eventTemplateRepository,
+            EventVersionRepository eventVersionRepository,
+            AdminRepository adminRepository,
+            GenerationJobStore generationJobStore,
+            AssetCleanup assetCleanup,
+            Clock clock) {
+        this.assetCleanup = assetCleanup;
         this.eventRepository = eventRepository;
         this.eventTemplateRepository = eventTemplateRepository;
         this.eventVersionRepository = eventVersionRepository;
@@ -201,6 +219,12 @@ public class EventService {
             throw new EventException(EventErrorCode.PARTICIPATED_EVENT_PERMANENT_DELETE_FORBIDDEN);
         }
         eventRepository.delete(event);
+
+        // ★★ 행은 on delete cascade 로 같이 사라지지만 **디스크의 파일은 안 사라진다.**
+        //   아무도 가리키지 않는 파일이 박스에 쌓인다 — 한 이벤트에 3MB × 20장이면 60MB 다.
+        // ★ 삭제 뒤에 부른다. 파일을 먼저 지우면, 뒤에서 트랜잭션이 되돌아갈 때
+        //   **살아 있는 이벤트의 이미지가 사라진다.** 고아 파일보다 그쪽이 훨씬 나쁘다.
+        assetCleanup.deleteAllOf(id);
     }
 
     // 게시(DRAFT→PUBLISHED) 및 재게시(PUBLISHED 상태에서 다른 버전으로 교체)

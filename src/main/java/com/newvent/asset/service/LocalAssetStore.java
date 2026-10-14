@@ -66,6 +66,23 @@ public class LocalAssetStore implements AssetStore {
         }
     }
 
+    @Override
+    public void deleteAll(long eventId) {
+        Path dir = root.resolve(String.valueOf(eventId));
+        if (!Files.isDirectory(dir)) return;
+        try (var paths = Files.list(dir)) {
+            for (Path f : paths.toList()) Files.deleteIfExists(f);
+        } catch (IOException e) {
+            throw new UncheckedIOException("에셋 폴더를 비우지 못했습니다: " + dir, e);
+        }
+        try {
+            Files.deleteIfExists(dir);
+        } catch (IOException e) {
+            // ★ 폴더가 안 지워져도 파일은 비웠다. 빈 폴더 하나는 문제가 아니다
+            throw new UncheckedIOException("에셋 폴더를 지우지 못했습니다: " + dir, e);
+        }
+    }
+
     /** 공개 주소 — 게시 페이지(/e/*)는 비로그인이라 /api/admin 아래면 안 된다 */
     public String url(String assetId, String extension) {
         return publicBaseUrl + "/api/public/assets/" + assetId + "." + extension;

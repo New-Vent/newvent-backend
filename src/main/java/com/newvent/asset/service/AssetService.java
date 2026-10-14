@@ -28,7 +28,7 @@ import com.newvent.registry.Asset;
  * ★ 덮개 농도도 여기서 한 번 재서 박아 둔다 — 그릴 때마다 잴 수는 없다.
  */
 @Service
-public class AssetService implements AssetUrls {
+public class AssetService implements AssetUrls, AssetCleanup {
 
     private static final Logger log = LoggerFactory.getLogger(AssetService.class);
 
@@ -87,6 +87,27 @@ public class AssetService implements AssetUrls {
             }
             throw e;
         }
+    }
+
+    /**
+     * 이벤트가 영구 삭제될 때 이 이벤트의 이미지를 통째로 치운다.
+     *
+     * ★ 행은 on delete cascade 로 같이 사라지지만 **파일은 안 사라진다.**
+     *   그래서 파일을 지우는 게 이 메서드의 일이다. 행도 같이 지워 둔다 —
+     *   cascade 에만 기대면 호출 순서에 따라 남는 경우가 생긴다.
+     */
+    @Override
+    @Transactional
+    public void deleteAllOf(long eventId) {
+        // ★ 파일 지우기가 실패해도 **이벤트 삭제를 막지 않는다.**
+        //   디스크가 잠깐 말썽이라고 관리자가 이벤트를 못 지우면 안 된다.
+        //   남은 파일은 아무도 가리키지 않으니 나중에 치우면 된다.
+        try {
+            store.deleteAll(eventId);
+        } catch (RuntimeException e) {
+            log.warn("이벤트 {} 의 이미지 파일을 지우지 못했습니다 — 고아 파일이 남습니다", eventId, e);
+        }
+        assets.deleteAll(assets.findByEventIdOrderByCreatedAtAsc(eventId));
     }
 
     @Transactional(readOnly = true)

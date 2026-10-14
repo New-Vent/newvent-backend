@@ -1,5 +1,6 @@
 package com.newvent.asset;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -94,5 +95,31 @@ class LocalAssetStoreTest {
         for (String bad : new String[] { "../x", "p", "pngpng", "PNG", "" }) {
             assertThrows(IllegalArgumentException.class, () -> st.put(7, ID, bad, BYTES), bad);
         }
+    }
+    // ★★ 이벤트를 영구 삭제하면 행은 on delete cascade 로 사라지지만
+    //   **디스크의 파일은 안 사라진다.** 아무도 가리키지 않는 파일이 박스에 쌓인다.
+    @Test
+    @DisplayName("★ 이벤트 하나의 이미지를 통째로 지운다 - 다른 이벤트는 건드리지 않는다")
+    void 이벤트별_전체_삭제() throws IOException {
+        Path root = Files.createTempDirectory("assets");
+        AssetStore store = new LocalAssetStore(root, "https://cdn.newvent.test");
+        store.put(7, "a".repeat(32), "png", new byte[] { 1, 2, 3 });
+        store.put(7, "b".repeat(32), "jpg", new byte[] { 4, 5 });
+        store.put(9, "c".repeat(32), "png", new byte[] { 6 });
+
+        store.deleteAll(7);
+
+        assertFalse(Files.exists(root.resolve("7")));
+        assertTrue(Files.exists(root.resolve("9").resolve("c".repeat(32) + ".png")),
+                "다른 이벤트의 이미지는 남아야 합니다");
+    }
+
+    // ★ 이미지가 하나도 없는 이벤트가 흔하다. 그때 터지면 이벤트를 못 지운다
+    @Test
+    @DisplayName("이미지가 없는 이벤트를 지워도 조용하다")
+    void 없는_이벤트_삭제() throws IOException {
+        AssetStore store = new LocalAssetStore(Files.createTempDirectory("assets"), "https://x.test");
+
+        assertDoesNotThrow(() -> store.deleteAll(12345));
     }
 }

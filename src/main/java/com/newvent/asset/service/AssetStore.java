@@ -25,5 +25,14 @@ public interface AssetStore {
     /** 지운다. 없으면 아무 일도 하지 않는다 */
     void delete(long eventId, String assetId, String extension);
 
+    /**
+     * 이 이벤트의 이미지를 통째로 지운다 — 이벤트가 영구 삭제될 때 쓴다.
+     *
+     * ★ DB 행은 event_assets 의 on delete cascade 로 같이 사라지지만
+     *   **디스크의 파일은 안 사라진다.** 그러면 아무도 가리키지 않는 파일이 박스에 쌓인다.
+     * ★ 없어도 아무 일도 하지 않는다. 이벤트에 이미지가 하나도 없는 경우가 흔하다.
+     */
+    void deleteAll(long eventId);
+
     record Stored(String url, long bytes) {}
 }
