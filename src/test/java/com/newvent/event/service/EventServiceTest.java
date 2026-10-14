@@ -301,6 +301,7 @@ class EventServiceTest {
         assertThat(content.get(0).latestVersionNo()).isEqualTo(5);
         assertThat(content.get(1).publishedVersionNo()).isNull();
         assertThat(content.get(1).latestVersionNo()).isNull();
+        assertThat(content.get(0).deletedAt()).isNull();
     }
 
     @Test
@@ -343,6 +344,7 @@ class EventServiceTest {
         assertThat(detail.name()).isEqualTo("지금 긁으면 바로 당첨");
         assertThat(detail.closingSoon()).isTrue();
         assertThat(detail.completedHtml()).contains("지금 긁으면 바로 당첨");
+        assertThat(detail.publishedVersionNo()).isEqualTo(1);
     }
 
     @Test
@@ -365,6 +367,7 @@ class EventServiceTest {
         EventDetailResponse detail = eventService.findAdminEvent(1L, 7L);
 
         assertThat(detail.closingSoon()).isFalse();
+        assertThat(detail.publishedVersionNo()).isNull();
     }
 
     @Test
@@ -396,6 +399,7 @@ class EventServiceTest {
         assertThat(result.totalElements()).isEqualTo(1);
         assertThat(result.content().get(0).id()).isEqualTo(99L);
         assertThat(result.content().get(0).ownedByMe()).isTrue();
+        assertThat(result.content().get(0).deletedAt()).isEqualTo(OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
     }
 
     @Test

@@ -119,7 +119,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T10:20:00+09:00"),
                 "signup", "<section data-block=\"hero\"><h1>쿠폰</h1></section>", MembershipGrade.NORMAL, false, 2, 3,
-                true);
+                true, null);
         given(eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10))
                 .willReturn(PageResponse.of(List.of(row), 0, 10, 1));
 
@@ -170,7 +170,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-18T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-15T09:10:00+09:00"),
                 "instant", MembershipGrade.NORMAL,
-                "<h1>지금 긁으면 바로 당첨</h1>", true, false);
+                "<h1>지금 긁으면 바로 당첨</h1>", 2, true, false);
         given(eventService.findAdminEvent(1L, 3L)).willReturn(detail);
 
         mockMvc.perform(get("/api/admin/events/3").with(adminPrincipal()))
@@ -179,6 +179,7 @@ class AdminEventControllerTest {
                 .andExpect(jsonPath("$.data.id").value(3))
                 .andExpect(jsonPath("$.data.closingSoon").value(true))
                 .andExpect(jsonPath("$.data.ownedByMe").value(false))
+                .andExpect(jsonPath("$.data.publishedVersionNo").value(2))
                 .andExpect(jsonPath("$.data.completedHtml").value("<h1>지금 긁으면 바로 당첨</h1>"));
     }
 
@@ -218,7 +219,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
                 "sports_cheer", MembershipGrade.BEST,
-                null, false, true);
+                null, null, false, true);
         given(eventService.create(eq(1L), any(EventCreateRequest.class))).willReturn(created);
 
         mockMvc.perform(post("/api/admin/events")
@@ -281,7 +282,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-07-31T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
                 null, MembershipGrade.EXCELLENT,
-                null, false, true);
+                null, null, false, true);
         given(eventService.update(eq(1L), eq(2L), any(EventUpdateRequest.class))).willReturn(updated);
 
         mockMvc.perform(patch("/api/admin/events/2").with(adminPrincipal())
@@ -460,7 +461,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-01-11T00:00:00+09:00"),
                 null, "<section data-block=\"hero\"><h1>쿠폰</h1></section>", MembershipGrade.NORMAL, false, null, null,
-                true);
+                true, OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
         given(eventService.findDeletedEvents(1L, 0, 10))
                 .willReturn(PageResponse.of(List.of(row), 0, 10, 1));
 
@@ -469,6 +470,7 @@ class AdminEventControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.content[0].id").value(99))
                 .andExpect(jsonPath("$.data.content[0].name").value("삭제된 이벤트"))
+                .andExpect(jsonPath("$.data.content[0].deletedAt").value("2026-01-11T00:00:00+09:00"))
                 .andExpect(jsonPath("$.data.content[0].thumbnailHtml").value(containsString("data-block=\"hero\"")));
     }
 
@@ -480,7 +482,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-01-11T00:00:00+09:00"),
-                null, MembershipGrade.NORMAL, null, false, true);
+                null, MembershipGrade.NORMAL, null, null, false, true);
         given(eventService.restore(1L, 99L)).willReturn(restored);
 
         mockMvc.perform(post("/api/admin/events/99/restore").with(adminPrincipal()))
@@ -508,7 +510,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-30T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-30T13:00:00+09:00"),
                 "member_appreciation", MembershipGrade.NORMAL,
-                "<h1>가을 멤버십 더블 혜택</h1>", false, true);
+                "<h1>가을 멤버십 더블 혜택</h1>", 1, false, true);
         given(eventService.changeStatus(1L, 3L, EventStatus.ENDED)).willReturn(ended);
 
         mockMvc.perform(patch("/api/admin/events/3/status").with(adminPrincipal())
@@ -571,7 +573,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-09-30T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-20T13:00:00+09:00"),
                 "member_appreciation", MembershipGrade.NORMAL,
-                null, false, true);
+                null, null, false, true);
         given(eventService.unpublish(1L, 3L)).willReturn(unpublished);
 
         mockMvc.perform(post("/api/admin/events/3/unpublish").with(adminPrincipal()))
@@ -623,7 +625,7 @@ class AdminEventControllerTest {
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"),
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"),
                 null, MembershipGrade.NORMAL,
-                "<h1>게시된 버전</h1>", false, true);
+                "<h1>게시된 버전</h1>", 1, false, true);
         given(eventService.publish(1L, 1L, 10L)).willReturn(published);
 
         mockMvc.perform(post("/api/admin/events/1/publish").with(adminPrincipal())

@@ -29,7 +29,9 @@ public record EventSummaryResponse(
         @Schema(description = "가장 최근 버전 번호. 버전이 없으면 null. publishedVersionNo 보다 크면 게시 후 새 버전이 있다.")
         Integer latestVersionNo,
         @Schema(description = "요청한 관리자가 만든 이벤트면 true. 수정·게시·삭제 버튼 노출 기준")
-        boolean ownedByMe
+        boolean ownedByMe,
+        @Schema(description = "휴지통으로 옮긴 시각. 휴지통 목록에서만 값이 있고 일반 목록에서는 null")
+        OffsetDateTime deletedAt
 ) {
 	// latestVersionNo 는 목록 한 페이지를 한 번에 모아 온 값 - 버전이 없으면 null
     // thumbnailHtml 은 hero 블록만 담은 조각이다(게시 버전, 없으면 최신 버전). 버전이 없거나 hero 가 없으면 null
@@ -48,6 +50,7 @@ public record EventSummaryResponse(
                 closingSoon,
                 event.getPublishedVersion() == null ? null : event.getPublishedVersion().getVersionNo(),
                 latestVersionNo,
-                ownedByMe);
+                ownedByMe,
+                event.getDeletedAt());
     }
 }

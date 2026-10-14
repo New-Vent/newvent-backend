@@ -21,6 +21,8 @@ public record EventDetailResponse(
         MembershipGrade grade,
         @Schema(description = "게시 버전의 HTML. 게시한 적 없으면 null")
         String completedHtml,
+        @Schema(description = "게시 중인 버전 번호. 게시한 적 없으면 null")
+        Integer publishedVersionNo,
         @Schema(description = "마감임박. 게시 중이고 이미 시작했으며 종료 3일 전부터 종료 시각까지면 true")
         boolean closingSoon,
         @Schema(description = "요청한 관리자가 만든 이벤트면 true. 수정·게시·삭제 버튼 노출 기준")
@@ -37,6 +39,7 @@ public record EventDetailResponse(
                 event.templateCode(),
                 event.getGrade(),
                 event.completedHtml(),
+                event.getPublishedVersion() == null ? null : event.getPublishedVersion().getVersionNo(),
                 closingSoon,
                 ownedByMe);
     }
