@@ -5,7 +5,7 @@ package com.newvent.asset.service;
  *
  * ★ 왜 인터페이스인가 — {@link AssetUrls} 와 같은 이유다.
  *   EventService 가 asset 모듈 전체(저장소 · 트랜잭션)를 끌고 오지 않게 한다.
- *   테스트는 {@link #NONE} 을 쓴다.
+ *   테스트는 이 인터페이스를 mock 한다.
  *
  * ★★ DB 행만으로는 모자란다.
  *   event_assets 는 on delete cascade 라 이벤트가 지워지면 행은 같이 사라진다.
@@ -15,7 +15,4 @@ package com.newvent.asset.service;
 public interface AssetCleanup {
 
     void deleteAllOf(long eventId);
-
-    /** 이미지를 쓰지 않는 구성 — 테스트 · 목업 */
-    AssetCleanup NONE = eventId -> { };
 }
