@@ -299,6 +299,44 @@ class EditServiceTest {
     }
 
     @Test
+    @DisplayName("팔레트에 없는 색(노랑)을 페이지 전체로 말하면 되묻는다 — 엉뚱한 팔레트를 고르지 않는다")
+    void 팔레트에_없는_색은_되묻는다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+
+        GenerationJob job = run("바탕색은 노란색으로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertTrue(job.message().contains("'노랑' 색감은 지원하지 않습니다"), job.message());
+        assertTrue(job.message().contains("고를 수 있는 색:"), job.message());
+        assertEquals(0, retry.calls(), "블록 수정 모델을 부르면 안 된다");
+        assertEquals(1, versionNo(), "행이 생기면 안 된다");
+    }
+
+    @Test
+    @DisplayName("팔레트에 있는 색(파랑)은 되묻지 않고 그대로 진행한다")
+    void 팔레트에_있는_색은_진행한다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(NEW_HERO));
+
+        GenerationJob job = run("전체 색감을 파란색으로 바꿔줘");
+
+        assertNotEquals(GenerationJob.Phase.ASK_BACK, job.phase(), String.valueOf(job.message()));
+        assertEquals(1, retry.calls());
+    }
+
+    @Test
+    @DisplayName("영역을 고르고 말한 색은 팔레트 검사를 타지 않는다 — 영역 배경은 색 이름 변형이 받는다")
+    void 영역_지정_요청은_색_검사를_타지_않는다() {
+        router.willReturn(new RawRoute("STYLE", "steps", null));
+        retry.willReturn(ok(NEW_HERO));
+
+        GenerationJob job = run("참여 방법 영역 배경을 노란색으로 바꿔줘");
+
+        // 라우터가 hero 가 아닌 영역을 짚었으므로 페이지 전체 색감 경로가 아니다
+        assertFalse(job.message() != null && job.message().contains("색감은 지원하지 않습니다"), job.message());
+    }
+
+    @Test
     @DisplayName("내용 없는 항목 추가는 되묻는다 — 모델이 지어내면 안 된다")
     void 내용_없는_추가는_되묻는다() {
         router.willReturn(new RawRoute("ADD", "steps", null));

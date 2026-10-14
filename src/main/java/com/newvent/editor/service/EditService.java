@@ -37,6 +37,7 @@ import com.newvent.infra.llm.LlmCallGateway;
 import com.newvent.registry.Block;
 import com.newvent.registry.BlockMerge;
 import com.newvent.registry.BlockValidator;
+import com.newvent.registry.ColorWords;
 import com.newvent.registry.PageShell;
 import com.newvent.registry.Palette;
 import com.newvent.registry.PromptBuilder;
@@ -504,6 +505,19 @@ public class EditService {
                     if (fixed == null) return null;     // job 에 문구가 담겼다
                     plan.add(fixed);
                 }
+            }
+        }
+        // ★ 팔레트로 낼 수 없는 색을 말했으면 모델이 팔레트를 고르기 전에 되묻는다.
+        //   "바탕색은 노란색으로" 에 노란 팔레트가 없어서, 봄(분홍) 같은 엉뚱한 걸 골라 놓고 "반영했어요" 가 나갔다.
+        //   페이지 전체 색감 경로(hero STYLE)에서만 본다 — 영역 하나의 배경은 색 이름 변형(v-surface-yellow …)이 받는다.
+        //   영역을 골라 고치는 요청(hasBlocks)에는 팔레트를 안내하지 않으므로 이 길을 안 탄다.
+        if (!cmd.hasBlocks() && plan.stream().anyMatch(r -> r.block() == Block.HERO && r.op() == Op.STYLE)) {
+            Optional<ColorWords.Unsupported> unsupported = ColorWords.firstUnsupported(RequestFilter.clean(cmd.requestText()));
+            if (unsupported.isPresent()) {
+                log.info("수정 — 팔레트에 없는 색이라 되묻는다 (event={}, 색={})",
+                        cmd.eventId(), unsupported.get().group().name());
+                job.askBack(ColorWords.message(unsupported.get()));
+                return null;
             }
         }
         log.info("수정 계획 (event={}, job={}) — {}", cmd.eventId(), job.jobId(),
