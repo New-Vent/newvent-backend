@@ -106,9 +106,15 @@ class EventServiceTest {
     private final GenerationJobStore generationJobStore = mock(GenerationJobStore.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-09-16T01:00:00+09:00"), SEOUL);
     private final OffsetDateTime now = OffsetDateTime.now(clock);
+    /**
+     * 게시 HTML 을 만드는 쪽. <b>실제 구현을 쓴다</b> — 상세 응답의 completedHtml 이
+     * 공개 상세와 같은 함수를 지나는지(슬롯이 채워지는지)가 이 테스트의 관심사다.
+     */
+    private final PublicEventService publicEventService = new PublicEventService(eventRepository);
+
     private final EventService eventService =
             new EventService(eventRepository, eventTemplateRepository, eventVersionRepository,
-                    adminRepository, generationJobStore, clock);
+                    adminRepository, generationJobStore, clock, publicEventService);
 
     @Test
     @DisplayName("목록 조회는 리포지토리 결과를 마감임박과 함께 매핑한다")
@@ -343,6 +349,25 @@ class EventServiceTest {
         assertThat(detail.name()).isEqualTo("지금 긁으면 바로 당첨");
         assertThat(detail.closingSoon()).isTrue();
         assertThat(detail.completedHtml()).contains("지금 긁으면 바로 당첨");
+    }
+
+    @Test
+    @DisplayName("★ completedHtml 은 슬롯이 채워진다 — 전에는 생 조각이라 기간도 참여 주소도 없었다")
+    void 상세의_HTML은_슬롯이채워진다() {
+        Event event = newEvent(3L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "publishedVersion", EventVersion.htmlOnly(
+                "<section data-block=\"hero\"><p data-slot=\"period\">기간</p></section>"
+                + "<section data-block=\"cta\">"
+                + "<button data-slot=\"cta-link\">참여하기</button></section>"));
+        when(eventRepository.findAdminEventById(3L)).thenReturn(Optional.of(event));
+
+        String html = eventService.findAdminEvent(1L, 3L).completedHtml();
+
+        assertThat(html).contains("2026.10.01 ~ 10.31");
+        assertThat(html).contains("data-href=\"/events/3\"");
+        assertThat(html).contains("참여하기");
     }
 
     @Test
