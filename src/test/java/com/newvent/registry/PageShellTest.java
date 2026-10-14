@@ -347,4 +347,20 @@ class PageShellTest {
                         Block.FAQ, Block.NOTICES, Block.CTA),
                 PageShell.blocksOf(moved));
     }
+
+    // ── 문서 조립 (standalone) ───────────────────────────────────────
+
+    @Test
+    @DisplayName("문서 조립 — 래퍼가 없는 조각(더미 · 초안)은 .ev-container 로 감싼다. 있으면 그대로 둔다")
+    void standalone은_래퍼를_보장한다() {
+        Document bare = Jsoup.parse(PageShell.standalone("<section data-block=\"hero\"><h1>t</h1></section>", "t", null));
+        Element root = bare.body().child(0);
+        assertTrue(root.hasClass("ev-container") && root.hasClass("event-page"), bare.body().html());
+        assertNotNull(root.selectFirst("[data-block=hero] h1"));
+
+        Document wrapped = Jsoup.parse(PageShell.standalone(
+                "<div class=\"ev-container event-page theme-sale\"><section data-block=\"hero\"></section></div>", "t", null));
+        assertEquals(1, wrapped.select(".ev-container").size(), "두 번 감쌌습니다");
+        assertTrue(wrapped.body().hasClass("theme-sale"));
+    }
 }

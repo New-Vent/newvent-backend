@@ -81,9 +81,9 @@
 
 ## HTML 작성 규칙 (새 시드 추가 시)
 
-1. `data-block` 섹션으로만 구성한다. 허용 키 10종(CHECK 제약과 동일):
-   `hero·highlight·intro·benefits·compare·audience·steps·faq·notices·cta`
-2. `stats·prize·coupon·schedule` 키를 쓰면 CHECK 위반으로 적재가 터진다.
+1. `data-block` 섹션으로만 구성한다. 허용 키 14종(CHECK 제약과 동일):
+   `hero·highlight·intro·stats·benefits·prize·coupon·compare·audience·steps·schedule·faq·notices·cta`
+2. 허용 키는 V19 CHECK와 `RagSeedDefinitionsTest.ALLOWED_BLOCKS`가 함께 검증한다
 3. `compare·audience·faq`는 트리거 단어가 본문에 있어야 청킹된다:
    비교표(`비교표`·`vs`) / 대상(`참여 대상` 등) / 질문(`자주 묻는 질문`·`FAQ`)
 4. `cta()` 헬퍼 사용 — `<a class="btn">` 형태 (event.css 스타일 적용 대상)

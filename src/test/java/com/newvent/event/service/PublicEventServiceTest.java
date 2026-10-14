@@ -137,6 +137,19 @@ class PublicEventServiceTest {
     }
 
     @Test
+    @DisplayName("마감임박 기간은 관리자 쪽과 같은 Event.CLOSING_SOON_WINDOW 를 따른다")
+    void 마감임박_기간은_Event_기준() {
+        OffsetDateTime now = OffsetDateTime.parse("2026-10-13T10:00:00+09:00");
+        OffsetDateTime windowEdge = now.plus(Event.CLOSING_SOON_WINDOW);
+        Event atEdge = newEvent(1L, EventStatus.PUBLISHED, now.minusDays(1), windowEdge);
+        Event justOutside = newEvent(2L, EventStatus.PUBLISHED, now.minusDays(1), windowEdge.plusSeconds(1));
+
+        assertTrue(publicEventService.isClosingSoon(atEdge, now));
+        assertFalse(publicEventService.isClosingSoon(justOutside, now));
+        assertEquals(atEdge.closingSoon(now), publicEventService.isClosingSoon(atEdge, now));
+    }
+
+    @Test
     @DisplayName("목록 조회 결과를 카테고리·마감임박 정보와 함께 PageResponse로 반환")
     void 목록조회_성공() {
         OffsetDateTime now = OffsetDateTime.now();
@@ -261,6 +274,26 @@ class PublicEventServiceTest {
         String html = publicEventService.publishedHtmlOf(event);
 
         assertTrue(html.contains("data-block=\"cta\""), "실제: " + html);
+    }
+
+    // ── 공개 페이지 문서 (PageShell.standalone) ──────────────────────
+
+    @Test
+    @DisplayName("공개 페이지 문서 — 슬롯을 채우고, 타이머에 종료 시각을 묶고, 게시 버전이 없으면 null")
+    void 공개문서() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        setPublishedHtml(event, "<section data-block=\"hero\"><p data-slot=\"period\">기간</p>"
+                + "<span data-behavior=\"countdown\"></span></section>");
+
+        String page = publicEventService.publishedPageOf(event);
+
+        assertTrue(page.startsWith("<!DOCTYPE html>"), page);
+        assertTrue(page.contains("2026.10.01 ~ 10.31"), "기간이 채워져야 한다. 실제: " + page);
+        assertTrue(page.contains("data-until=\"2026-10-31T14:59:59Z\""), page);
+        assertTrue(page.contains("/assets/event-runtime.js"), page);
+        assertNull(publicEventService.publishedPageOf(newEvent(2L, EventStatus.PUBLISHED, null, null)));
     }
 
     // ── 목록 썸네일 (hero 만 잘라내기) ───────────────────────────

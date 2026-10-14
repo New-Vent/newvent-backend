@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -82,6 +83,19 @@ class RagControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.eventId").value(3));
         verify(embedding).reindex(3L, 5L);
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/rag/reindex — 전체 재색인이 돌고 있으면 409")
+    void 재색인_전체실행중_충돌() throws Exception {
+        given(embedding.isReindexAllRunning()).willReturn(true);
+        given(embedding.getReindexAllStatus()).willReturn(ReindexAllStatus.idle());
+
+        mockMvc.perform(post("/api/admin/rag/reindex")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"eventId\":3,\"versionId\":5}"))
+                .andExpect(status().isConflict());
+        verify(embedding, never()).reindex(3L, 5L);
     }
 
     @Test
@@ -208,6 +222,38 @@ class RagControllerTest {
                     .andExpect(jsonPath("$.code").value("COMMON403-0"));
         }
         verifyNoInteractions(embedding, similarity, comparing);
+    }
+
+    @Test
+    @DisplayName("GET similar-versions — 어중간한 조합은 400이고 서비스를 부르지 않는다")
+    void 유사버전_모드검증() throws Exception {
+        List<RequestBuilder> bad = List.of(
+                // versionId+query 동시 (eventId 없음) — 예전엔 조용히 query 모드로 넘어갔다
+                get("/api/admin/rag/similar-versions").param("versionId", "5").param("query", "쿠폰"),
+                // versionId 단독 — 소유 확인이 안 된다
+                get("/api/admin/rag/similar-versions").param("versionId", "5"),
+                // query+eventId 동시 — query 모드는 단독이다
+                get("/api/admin/rag/similar-versions").param("eventId", "3").param("query", "쿠폰"),
+                // 둘 다 없음
+                get("/api/admin/rag/similar-versions"));
+
+        for (RequestBuilder request : bad) {
+            mockMvc.perform(request)
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("EVENT400-4"));
+        }
+        verifyNoInteractions(comparing, ownerCheck);
+    }
+
+    @Test
+    @DisplayName("GET similar-versions — query 단독은 기획 모드로 소유자 확인 없이 서비스를 부른다")
+    void 유사버전_query모드() throws Exception {
+        given(comparing.similarVersionsByQuery(any(), anyInt())).willReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/rag/similar-versions").param("query", "쿠폰"))
+                .andExpect(status().isOk());
+        verify(comparing).similarVersionsByQuery("쿠폰", 3);
+        verifyNoInteractions(ownerCheck);
     }
 
     @Test

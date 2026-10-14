@@ -8,6 +8,9 @@
 - Entity를 API 응답으로 직접 반환하지 않는다.
 - Entity는 Response DTO의 정적 팩토리 메서드 `from()`을 통해 변환한다.
 - 성공 응답은 공통 `ApiResponse<T>`로 감싸서 반환한다.
+- JSON 키는 camelCase, Enum 값은 `UPPER_SNAKE` 로 쓴다.
+- 시각은 ISO-8601 + 오프셋 (`2026-09-16T00:00:00+09:00`), 기준 시간대는 Asia/Seoul 이다.
+  오류 응답의 `timestamp` 만 오프셋 없는 서울 시각이다 (3.1 참고).
 
 ```java
 public record EventResponse(

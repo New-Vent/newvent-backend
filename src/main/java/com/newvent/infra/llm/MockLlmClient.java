@@ -132,9 +132,10 @@ public class MockLlmClient implements LlmClient {
     public Response chat(Request r) {
         sleep();                                   // 로딩 UI 를 볼 수 있게 약간 지연
 
-        String body = (r.mode() == Mode.ROUTER)
-                ? route(r.user())
-                : html(r);
+        String body = (r.mode() != Mode.ROUTER) ? html(r)
+                // PromptBuilder.behaviorPlanner() 만 이 말을 쓴다
+                : (r.system() != null && r.system().contains("동작 배치기")) ? plan(r.user())
+                : route(r.user());
 
         return new Response(
                 body,
@@ -149,6 +150,26 @@ public class MockLlmClient implements LlmClient {
 
     @Override
     public String modelName() { return "mock"; }
+
+    // ── 동작 배치기 ──────────────────────────────────────────────────
+
+    /**
+     * 열쇠말로 동작을 고른다 — 모델 없이 백지 생성의 배치 경로를 끝까지 볼 수 있게.
+     *
+     * ★ 기간 · 선착순 말이 있으면 타이머, 혜택 영역이 있으면 이동 버튼, 참여 버튼은 항상
+     */
+    private static String plan(String user) {
+        String text = user == null ? "" : user;
+        StringJoiner actions = new StringJoiner(",", "[", "]");
+        if (containsAny(text, new String[]{"마감", "까지", "선착순", "한정", "기간"})) {
+            actions.add("{\"behavior\":\"countdown\",\"block\":\"hero\",\"target\":null}");
+        }
+        if (text.contains("benefits")) {
+            actions.add("{\"behavior\":\"scroll-to\",\"block\":\"hero\",\"target\":\"benefits\"}");
+        }
+        actions.add("{\"behavior\":\"participate\",\"block\":\"cta\",\"target\":null}");
+        return "{\"actions\":" + actions + "}";
+    }
 
     // ── 라우터 ────────────────────────────────────────────────────
 

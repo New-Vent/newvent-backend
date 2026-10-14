@@ -1,6 +1,7 @@
 package com.newvent.rag.service;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,6 +9,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import software.amazon.awssdk.core.SdkBytes;
+import software.amazon.awssdk.core.retry.RetryPolicy;
+import software.amazon.awssdk.core.retry.backoff.EqualJitterBackoffStrategy;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
@@ -36,8 +39,23 @@ public class BedrockEmbeddingClient implements EmbeddingClient {
     }
 
     public BedrockEmbeddingClient(String region, String modelId, int dimension) {
+        // ★ 재시도 3회 + 지터 백오프. 야간 전체 재색인처럼 수백 건 순차 호출하면 스로틀이 필연이라,
+        //   없으면 터진 이벤트는 다음날까지 검색 공백이 생긴다. API 타임아웃 60초 (임베딩 1건 기준 넉넉).
         this.bedrock = BedrockRuntimeClient.builder()
                 .region(Region.of(region))
+                .overrideConfiguration(c -> c
+                        .retryPolicy(RetryPolicy.builder()
+                                .numRetries(3)
+                                .backoffStrategy(EqualJitterBackoffStrategy.builder()
+                                        .baseDelay(Duration.ofMillis(200))
+                                        .maxBackoffTime(Duration.ofSeconds(5))
+                                        .build())
+                                .throttlingBackoffStrategy(EqualJitterBackoffStrategy.builder()
+                                        .baseDelay(Duration.ofMillis(500))
+                                        .maxBackoffTime(Duration.ofSeconds(10))
+                                        .build())
+                                .build())
+                        .apiCallTimeout(Duration.ofSeconds(60)))
                 .build();
         this.modelId = modelId;
         this.dimension = dimension;
@@ -56,11 +74,21 @@ public class BedrockEmbeddingClient implements EmbeddingClient {
 
     @Override
     public float[] embed(String text) {
+        return embedWithInputType(text, "search_query");
+    }
+
+    /** 문서 색인용. 질의용 벡터와 다른 공간에 두어 매칭 정밀도를 올린다. */
+    @Override
+    public float[] embedDocument(String text) {
+        return embedWithInputType(text, "search_document");
+    }
+
+    private float[] embedWithInputType(String text, String inputType) {
         if (text == null || text.isBlank()) {
             throw new IllegalArgumentException("임베딩 입력이 비어 있습니다.");
         }
 
-        String body = titan ? titanBody(text) : cohereBody(text);
+        String body = titan ? titanBody(text) : cohereBody(text, inputType);
         String out;
         try {
             InvokeModelResponse res = bedrock.invokeModel(InvokeModelRequest.builder()
@@ -109,13 +137,11 @@ public class BedrockEmbeddingClient implements EmbeddingClient {
         }
     }
 
-    private String cohereBody(String text) {
+    private String cohereBody(String text, String inputType) {
         try {
             ObjectNode root = M.createObjectNode();
             root.putArray("texts").add(text);
-            // ★ 문서·질의 구분 없이 search_query 로 통일한다.
-            //   나눌 이유는 있지만 평가용이라 하나로 간다. 점수가 안 나오면 여기를 본다.
-            root.put("input_type", "search_query");
+            root.put("input_type", inputType);
             root.putArray("embedding_types").add("float");
             return M.writeValueAsString(root);
         } catch (Exception e) {

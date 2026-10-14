@@ -57,9 +57,25 @@ public interface VersionStore {
      *                        생성은 백지에서 다시 만드는 것이라 고친 원본이 없다 —
      *                        두 번째 생성이어도 null 이 맞다.
      */
-    Saved save(Long eventId, String html, Long sourceVersionId);
+    default Saved save(Long eventId, String html, Long sourceVersionId) {
+        return save(eventId, html, sourceVersionId, null, null);
+    }
 
-    Saved save(Long eventId, String html, Long sourceVersionId, String changeSummary);
+    /** 변경 요약과 함께 새 버전으로 남긴다. 채팅 요청이 아닌 저장(되돌리기 등)이 쓴다 */
+    default Saved save(Long eventId, String html, Long sourceVersionId, String changeSummary) {
+        return save(eventId, html, sourceVersionId, changeSummary, null);
+    }
+
+    /**
+     * 새 버전으로 남기면서 <b>변경 요약</b>과 <b>어느 채팅 요청으로 만든 버전인지</b>를 건다.
+     * 구현이 실제로 저장하는 유일한 메서드이고, 위의 3·4개 인자 save 는 여기로 넘긴다.
+     *
+     * @param changeSummary    이 버전의 변경 요약. 없으면 null
+     * @param requestMessageId 이 버전을 만든 관리자 요청의 chat_messages id. 채팅 요청이 아니면(되돌리기 ·
+     *                         직접 편집 · 템플릿으로 만들기) null.
+     *                         event_versions.request_message_id 가 UNIQUE 라 메시지 하나로 버전을 둘 만들 수 없다.
+     */
+    Saved save(Long eventId, String html, Long sourceVersionId, String changeSummary, Long requestMessageId);
 
     /** 마지막 버전. 없으면 빈 값 */
     Optional<Snapshot> latest(Long eventId);
@@ -92,15 +108,17 @@ public interface VersionStore {
         private final Map<Long, Snapshot> lastSaved = new ConcurrentHashMap<>();
         private final Map<Long, String> htmlById = new ConcurrentHashMap<>();
         private final Map<Long, Long> eventOfVersion = new ConcurrentHashMap<>();
+        private final Map<Long, Long> requestMessageOfVersion = new ConcurrentHashMap<>();
         private final AtomicLong ids = new AtomicLong();
 
-        @Override
-        public Saved save(Long eventId, String html, Long sourceVersionId) {
-            return save(eventId, html, sourceVersionId, null);
+        /** 테스트가 "이 버전이 어느 채팅 요청으로 만들어졌나" 를 확인하는 용도. 연결이 없으면 null */
+        public Long requestMessageOf(Long versionId) {
+            return requestMessageOfVersion.get(versionId);
         }
 
         @Override
-        public Saved save(Long eventId, String html, Long sourceVersionId, String changeSummary) {
+        public Saved save(Long eventId, String html, Long sourceVersionId,
+                          String changeSummary, Long requestMessageId) {
             Snapshot prev = lastSaved.get(eventId);
             Snapshot now = new Snapshot(ids.incrementAndGet(),
                     prev == null ? 1 : prev.versionNo() + 1, html);
@@ -108,6 +126,9 @@ public interface VersionStore {
             lastSaved.put(eventId, now);
             htmlById.put(now.versionId(), html);
             eventOfVersion.put(now.versionId(), eventId);
+            if (requestMessageId != null) {
+                requestMessageOfVersion.put(now.versionId(), requestMessageId);
+            }
             return new Saved(now.versionId(), now.versionNo());
         }
 

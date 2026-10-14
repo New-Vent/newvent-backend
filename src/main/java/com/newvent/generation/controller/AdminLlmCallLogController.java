@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
 import com.newvent.common.response.PageResponse;
 import com.newvent.generation.dto.LlmCallLogDetailResponse;
@@ -48,8 +50,9 @@ public class AdminLlmCallLogController {
             @RequestParam(required = false) OffsetDateTime from,
             @RequestParam(required = false) OffsetDateTime to,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "10") @Min(1) @Max(50) int size) {
-        return ApiResponse.success(logs.search(eventId, callOk, from, to, page, size));
+            @RequestParam(defaultValue = "10") @Min(1) @Max(50) int size,
+            @AuthenticationPrincipal AuthUser admin) {
+        return ApiResponse.success(logs.search(eventId, callOk, from, to, page, size, admin));
     }
 
     /** 상세 1건. 실패 분류·잘림·RAG 청크 아이디 포함. */
@@ -58,7 +61,8 @@ public class AdminLlmCallLogController {
             description = "목록에 없는 실패 분류(failureType)·검증 실패 코드·잘림 여부·참고한 RAG 청크 ID 가 더해진다. "
                     + "없으면 404 (LLM404-0)")
     @GetMapping("/{id}")
-    public ApiResponse<LlmCallLogDetailResponse> detail(@PathVariable Long id) {
-        return ApiResponse.success(logs.detail(id));
+    public ApiResponse<LlmCallLogDetailResponse> detail(@PathVariable Long id,
+                                                        @AuthenticationPrincipal AuthUser admin) {
+        return ApiResponse.success(logs.detail(id, admin));
     }
 }

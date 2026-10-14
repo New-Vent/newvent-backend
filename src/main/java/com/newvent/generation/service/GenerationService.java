@@ -18,10 +18,15 @@ import com.newvent.common.exception.code.ErrorCode;
 import com.newvent.generation.exception.GenerationErrorCode;
 import com.newvent.infra.llm.LlmCallContext;
 import com.newvent.infra.llm.LlmCallException;
+import com.newvent.infra.llm.LlmCallGateway;
+import com.newvent.infra.llm.LlmClient;
 import com.newvent.rag.domain.RagChunk;
 import com.newvent.rag.service.RagConstants;
 import com.newvent.rag.service.SimilarityService;
+import com.newvent.registry.BehaviorPlanter;
 import com.newvent.registry.Block;
+import com.newvent.registry.BlockValidator.Failure;
+import com.newvent.registry.FailureCode;
 import com.newvent.registry.PageShell;
 import com.newvent.registry.PromptBuilder;
 import com.newvent.registry.Slot;
@@ -55,8 +60,13 @@ public class GenerationService {
     // ★ b3: RAG 검색기. 백지 경로(fromBlank)에서만 쓴다
     private final SimilarityService similarity;
 
+    /** 동작 배치기(LLM) 호출 — null 이면 배치기 없이 기본 배치(BehaviorPlanter.plantGenerated)로 간다 (테스트 · 옛 생성자) */
+    private final LlmCallGateway gateway;
+
     // b3: 현재 생성에서 사용된 RAG 청크 ID들 (Aborted 시 로그 갱신용)
     private String ragChunkIds;
+    // 채팅 내역. 남기지 못해도 생성은 계속된다
+    private final ChatLog chatLog;
 
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -72,11 +82,34 @@ public class GenerationService {
                 new com.newvent.filtering.FilteringPolicy(), similarity);
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public GenerationService(RetryService retry, TemplateService templates,
                              VersionStore versions, EventGuard guard, GenerationJobStore jobs,
                              LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering,
                              SimilarityService similarity) {
+        this(retry, templates, versions, guard, jobs, recorder, filtering, similarity, ChatLog.NOOP);
+    }
+
+    public GenerationService(RetryService retry, TemplateService templates,
+                             VersionStore versions, EventGuard guard, GenerationJobStore jobs,
+                             LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering,
+                             SimilarityService similarity, ChatLog chatLog) {
+        this(retry, templates, versions, guard, jobs, recorder, filtering, similarity, chatLog, null);
+    }
+
+    public GenerationService(RetryService retry, TemplateService templates,
+                             VersionStore versions, EventGuard guard, GenerationJobStore jobs,
+                             LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering,
+                             SimilarityService similarity, LlmCallGateway gateway) {
+        this(retry, templates, versions, guard, jobs, recorder, filtering, similarity, ChatLog.NOOP, gateway);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public GenerationService(RetryService retry, TemplateService templates,
+                             VersionStore versions, EventGuard guard, GenerationJobStore jobs,
+                             LlmCallRecorder recorder, com.newvent.filtering.FilteringPolicy filtering,
+                             SimilarityService similarity, ChatLog chatLog, LlmCallGateway gateway) {
+        this.chatLog = chatLog;
+        this.gateway = gateway;
         this.filtering = filtering;
         this.similarity = similarity;
         this.retry = retry;
@@ -189,8 +222,17 @@ public class GenerationService {
         GenerationJob job = slot.get();
         job.privacyRequest("generate", null);
         job.privacyConfirmation(input.fingerprint(), input.privacyTypes());
+
+        // ⑦ 채팅 내역 - AI 로 만드는 요청만 남긴다. 템플릿으로 만들기는 대화가 아니라 요청문이 없다.
+        //   개인정보 후보가 감지된 요청(확인 전 되묻기 · 확인 후 재전송)은 원문 대신 표시만 남긴다.
+        if (!cmd.hasTemplate()) {
+            boolean privacy = input.question() != null || cmd.privacyConfirmed();
+            job.chatRequestId(chatLog.request(cmd.eventId(), input.text(), null, privacy));
+        }
+
         if (input.question() != null) {
             job.askBack(input.question());
+            chatLog.finish(job, cmd.eventId(), null);
             jobs.finish(job);
         } else {
             worker.submit(() -> runSafely(job, safeCommand));
@@ -220,7 +262,7 @@ public class GenerationService {
             log.warn("생성 실패 — {}차 시도에서 모델 호출 (event={})", e.attempt(), cmd.eventId(), e);
             // ★ ctxOf() 는 attemptNo 가 항상 1이라, 2차 이후 실패는 실제 시도 행을 못 찾는다.
             //   e.attempt() 로 실패한 시도 번호를 넘겨 그 행의 RAG 정보를 갱신한다.
-            recorder.updateRagInfo(ctxOf(job, cmd).attempt(e.attempt()), ragChunkIds);
+            recorder.updateRagInfo(ctxOf(job, cmd).attempt(e.attempt()), job.ragChunkIds());
             job.fail("페이지 생성 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         } catch (LlmCallException e) {
             // 연결 끊김 · 타임아웃 · 모델 서버 down. 프롬프트를 고쳐도 안 고쳐진다
@@ -230,8 +272,14 @@ public class GenerationService {
             log.error("생성 실패 — 예상치 못한 오류 (event={})", cmd.eventId(), e);
             job.fail("페이지를 만드는 중 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.");
         } finally {
-            // ★ 반드시 비운다. 안 비우면 그 이벤트는 다음 생성을 영원히 못 한다
-            jobs.finish(job);
+            // 채팅 내역을 먼저 끝맺는다. 자리를 비우면 다음 요청이 바로 들어와 메시지 순서가 뒤섞일 수 있다.
+            // 남기다 터져도 자리는 반드시 비운다.
+            try {
+                chatLog.finish(job, cmd.eventId(), "페이지를 만들었습니다.");
+            } finally {
+                // ★ 반드시 비운다. 안 비우면 그 이벤트는 다음 생성을 영원히 못 한다
+                jobs.finish(job);
+            }
         }
     }
 
@@ -250,7 +298,7 @@ public class GenerationService {
 
         // ★ sourceVersionId = null 이다. 생성은 고친 원본이 없다 — 두 번째 생성이어도 그렇다.
         //   기준이 된 버전을 가리키는 건 수정(EditService)의 일이다.
-        VersionStore.Saved saved = versions.save(cmd.eventId(), html, null);
+        VersionStore.Saved saved = versions.save(cmd.eventId(), html, null, null, job.chatRequestId());
 
         // ★ "템플릿 T1" / "백지 생성" 은 event_versions 에 넣을 컬럼이 없어 로그로만 남긴다
         log.info("버전 저장 (event={}, versionId={}, v{}) — {}",
@@ -285,7 +333,7 @@ public class GenerationService {
         // ★ b3: RAG 참고 예시 검색. searchRagChunks 안에서 예외를 다 잡으므로 여기서 터지지 않는다.
         //   빈 리스트면 ragChunkIds=null → 로그에 rag_used=false 로 남는다.
         List<RagChunk> ragChunks = searchRagChunks(cmd);
-        ragChunkIds = chunkIdsOf(ragChunks);
+        job.ragChunkIds(chunkIdsOf(ragChunks));
 
         RetryService.Result res;
         try {
@@ -297,12 +345,12 @@ public class GenerationService {
         } catch (RetryService.Aborted e) {
             // ★ 터진 시도 앞부분을 chunkIds 와 함께 먼저 기록하고 다시 던진다.
             //   runSafely 쪽 기록을 지웠으므로 중복 기록이 아니다.
-            recorder.recordAttempts(ctxOf(job, cmd), e.partial(), ragChunkIds);
+            recorder.recordAttempts(ctxOf(job, cmd), e.partial(), job.ragChunkIds());
             throw e;
         }
 
         // ★ 성공이든 실패든 시도 전부를 남긴다. 저장·취소보다 먼저 — 취소돼도 쓴 토큰은 쓴 것이다
-        recorder.recordAttempts(ctxOf(job, cmd), res, ragChunkIds);
+        recorder.recordAttempts(ctxOf(job, cmd), res, job.ragChunkIds());
 
         job.attempt(res.attempts());
         if (job.checkCancelled()) return null;
@@ -321,7 +369,12 @@ public class GenerationService {
         // ★ 저장 직전에 껍데기를 보장한다 — 래퍼 · 유의사항.
         //   백지는 템플릿이 없으므로 테마를 고를 근거가 없다 → null.
         //   event.css 의 :root 기본값이 쓰인다. 무스타일이 아니다.
-        return PageShell.plant(plantSlots(res.html()), null);    }
+        //   동작(data-behavior)도 여기서 서버가 심는다 — 모델 출력의 것은 정화가 이미 지웠다
+        String html = plantBehaviors(cmd, plantSlots(res.html()));
+        var layout = com.newvent.registry.Layout.requestedBy(cmd.requestText());
+        if (layout.isPresent()) html = PageShell.pickLayout(html, layout.get());
+        return PageShell.plant(html, null);
+    }
 
     /**
      * 이벤트 값과 어긋나는지 본다.
@@ -338,6 +391,47 @@ public class GenerationService {
         log.warn("REQ-LLM-41 — 본문에 지어낸 날짜 {}개 (event={}): {}. "
                 + "기간은 슬롯으로만 들어가야 합니다. 프롬프트에는 날짜를 주지 않았습니다.",
                 dates.size(), cmd.eventId(), dates);
+    }
+
+    private static final Failure PLAN_TRUNCATED =
+            Failure.of(FailureCode.TRUNCATED, "요청이 너무 복잡해 동작 배치 출력이 잘렸습니다.");
+    private static final Failure PLAN_UNPARSABLE =
+            Failure.of(FailureCode.ROUTER_PARSE, "동작 배치 출력이 규격에 맞지 않습니다.");
+
+    /**
+     * 백지 결과에 동작을 심는다 — 동작 배치기(LLM)가 JSON 으로 고르고, 서버가 검증해서 심는다.
+     *
+     * ★ 모델은 HTML 을 쓰지 않는다. "무엇을 어디에" 만 고른다 — BehaviorPlanter.decide 가 검증한다
+     * ★ 배치기가 실패해도 생성은 실패하지 않는다 — 기본 배치(plantGenerated)로 간다.
+     *   잘림 · 규격 밖 출력 · 호출 실패 · 하루 상한 모두 같다. 재시도는 없다 (모델 호출 1회)
+     * ★ 새 묶음이다 — jobId 묶음은 HTML 생성 재시도가 쓴다. 같이 쓰면 (request_id, attempt_no) 유니크에 걸린다
+     */
+    private String plantBehaviors(GenerateCommand cmd, String html) {
+        if (gateway == null) return BehaviorPlanter.plantGenerated(html);
+
+        Document doc = Jsoup.parseBodyFragment(html);
+        List<Block> present = new java.util.ArrayList<>();
+        for (Block b : Block.values()) if (doc.body().selectFirst(b.selector()) != null) present.add(b);
+
+        try {
+            LlmCallContext ctx = LlmCallContext.newGroup(cmd.eventId());
+            LlmClient.Response res = gateway.call(ctx, LlmClient.Request.router(
+                    PromptBuilder.behaviorPlanner(),
+                    PromptBuilder.behaviorPlannerUser(RequestFilter.clean(cmd.requestText()), present)));
+            Optional<List<BehaviorPlanter.Placement>> placements =
+                    res.truncated() ? Optional.empty() : BehaviorPlanter.decide(res.content(), doc.body());
+            recorder.recordSingle(ctx, res, placements.isPresent() ? List.of()
+                    : List.of(res.truncated() ? PLAN_TRUNCATED : PLAN_UNPARSABLE));
+            if (placements.isPresent()) {
+                log.info("동작 배치 (event={}) — {}", cmd.eventId(), placements.get().stream()
+                        .map(p -> p.behavior().key() + "@" + p.block().key()).toList());
+                return BehaviorPlanter.apply(html, placements.get());
+            }
+            log.info("동작 배치 출력을 읽지 못해 기본 배치로 (event={})", cmd.eventId());
+        } catch (RuntimeException e) {
+            log.warn("동작 배치 실패 — 기본 배치로 (event={})", cmd.eventId(), e);
+        }
+        return BehaviorPlanter.plantGenerated(html);
     }
 
     /**

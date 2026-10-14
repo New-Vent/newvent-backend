@@ -82,11 +82,12 @@ OpenAPI 가 절대 못 적는 것들입니다.
 | 코드에서 한 일 | 고칠 문서 |
 | --- | --- |
 | 이벤트 **상태 전이** 규칙 변경 | [`api-design.md`](api-design.md) §1 |
-| `closingSoon` **창(3일) 변경** | §2 — ⚠️ **세 곳입니다**(`Event` · `PublicEventService` · `EventSummaryResponse` 의 `@Schema`). 전부 고치세요 |
+| `closingSoon` **창(3일) 변경** | §2 — 값은 `Event.CLOSING_SOON_WINDOW` 한 곳. Swagger 문구(`EventSummaryResponse` · `EventDetailResponse` · `PublicEventSummaryResponse` 의 `@Schema`)의 "3일" 도 같이 고치세요 |
 | `Slot` enum 에 **슬롯 추가** | [`decisions/0001`](decisions/0001-슬롯은-보여줄-때-채운다.md) 비고 + 채우는 경로 전부 확인 |
 | `result_data` 의 **`status` 값 추가** | §10 — 집계(`rewardCount`·`pendingCount`)에 어떻게 들어가는지 같이 |
 | **멤버십 등급** 산정·재계산 시점 변경 | §9 |
 | 알림 **종류·발송 조건** 변경 | §8 |
+| AI 채팅 내역 **저장 대상·개인정보 처리** 변경 | §14 |
 
 ### 인프라·배포
 
