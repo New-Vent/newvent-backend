@@ -86,9 +86,15 @@ public class VersionCompareServiceImpl implements VersionCompareService {
 		int limit = topK <= 0 ? RagConstants.DEFAULT_TOP_K : topK;
 		float[] q = embedding.embed(query);
 		// 기획 모드 — 자기 제외 없음, SEED 포함. 만들기 화면에서 이벤트 생기기 전에 쓴다.
-		// 버전별 최소 거리 순으로 상위 버전을 고른다 (청크 상위 N개 후 묶음은 독식 버전이 있으면 잘린다)
-		List<RagChunk> hits = chunks.findBestChunksPerVersion(Vectors.toDb(q), embedding.modelName(),
-			-1L, RagConstants.MAX_DISTANCE, limit * 2);
+		// 1단계에서 버전별 최소 거리 순으로 상위 버전을 고른 뒤 2단계에서 청크를 가져온다.
+		// 빈 IN 절은 문법 오류라 id 가 없으면 여기서 끝낸다
+		List<Long> versionIds = chunks.findTopVersionIds(Vectors.toDb(q), embedding.modelName(),
+			-1L, RagConstants.MAX_DISTANCE, limit);
+		if (versionIds.isEmpty()) {
+			return List.of();
+		}
+		List<RagChunk> hits = chunks.findTopChunksOfVersions(Vectors.toDb(q), embedding.modelName(),
+			versionIds, RagConstants.MAX_DISTANCE);
 		Map<Long, Double> best = new HashMap<>();
 		Map<Long, RagChunk> byId = new HashMap<>();
 		for (RagChunk h : hits) {
