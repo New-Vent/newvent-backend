@@ -13,6 +13,7 @@ import com.newvent.generation.exception.GenerationErrorCode;
 import com.newvent.generation.exception.GenerationException;
 import com.newvent.generation.service.GenerateCommand;
 import com.newvent.generation.service.GenerationService;
+import com.newvent.registry.PageShell;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -39,6 +40,7 @@ public class GenerationPreviewController {
      * 저장된 마지막 버전에 이벤트 값을 채워 돌려준다.
      *
      * ★ 응답에 versionId 가 같이 나간다. 프론트가 이후 수정의 기준으로 쓴다.
+     * ★ html 은 완전한 문서다 — 공개 페이지와 같은 PageShell.standalone
      * ★ 이벤트 소유 관리자만 볼 수 있다.
      */
     @Operation(
@@ -49,10 +51,10 @@ public class GenerationPreviewController {
     @Transactional(readOnly = true)
     public ApiResponse<PreviewResponse> preview(@PathVariable Long eventId,
                                                 @AuthenticationPrincipal AuthUser admin) {
-
         Event event = ownerCheck.requireOwned(eventId, admin);
         return generation.render(GenerateCommand.forRender(event))
-                .map(rendered -> ApiResponse.success(PreviewResponse.of(rendered)))
+                .map(rendered -> ApiResponse.success(PreviewResponse.of(rendered,
+                        PageShell.standalone(rendered.html(), event.getTitle(), event.getEndDate()))))
                 .orElseThrow(() -> new GenerationException(GenerationErrorCode.PAGE_NOT_FOUND));
     }
 }

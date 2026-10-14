@@ -60,7 +60,7 @@ class PublicEventApiTest {
         when(publicEventService.isClosingSoon(any(), any())).thenReturn(true);
         //   슬롯 채우기는 서비스가 한다 — 여기서는 그 결과를 컨트롤러가 그대로 내려보내는지만 본다.
         //   실제로 채워지는지는 PublicEventServiceTest 가 검증한다.
-        when(publicEventService.publishedHtmlOf(event)).thenReturn("<h1>hello</h1>");
+        when(publicEventService.publishedPageOf(event)).thenReturn("<h1>hello</h1>");
 
         mockMvc.perform(get("/api/public/events/1"))
                 .andExpect(status().isOk())
