@@ -144,15 +144,20 @@ public class RagController {
             @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK,
             @AuthenticationPrincipal AuthUser admin) {
-        // 기준 버전 모드(eventId+versionId)와 기획 모드(query) 중 하나만. versionId 단독은 소유 확인이 안 돼 막는다
-        boolean hasVersion = eventId != null && versionId != null;
+        // query 모드는 단독, 버전 모드는 eventId+versionId 둘 다 필수.
+        // 어중간한 조합(versionId 단독, query+eventId 등)은 조용히 한쪽으로 해석하지 않고 400 으로 막는다
         boolean hasQuery = query != null && !query.isBlank();
-        if (hasVersion == hasQuery) throw new EventException(EventErrorCode.INVALID_SIMILAR_QUERY);
-        if (hasVersion) {
-            ownerCheck.requireOwned(eventId, admin);
-            return ApiResponse.success(comparing.similarVersions(eventId, versionId, topK));
+        if (hasQuery) {
+            if (eventId != null || versionId != null) {
+                throw new EventException(EventErrorCode.INVALID_SIMILAR_QUERY);
+            }
+            return ApiResponse.success(comparing.similarVersionsByQuery(query.strip(), topK));
         }
-        return ApiResponse.success(comparing.similarVersionsByQuery(query.strip(), topK));
+        if (eventId == null || versionId == null) {
+            throw new EventException(EventErrorCode.INVALID_SIMILAR_QUERY);
+        }
+        ownerCheck.requireOwned(eventId, admin);
+        return ApiResponse.success(comparing.similarVersions(eventId, versionId, topK));
     }
 
     /** 주간 품질 추이. 호출 건수·RAG 사용 건수·청크 수를 주별로 묶어 보여준다. */

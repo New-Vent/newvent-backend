@@ -58,6 +58,33 @@ public interface RagChunkRepository extends JpaRepository<RagChunk, Long>{
 		@Param("maxDistance") double maxDistance,
 		@Param("limit") int limit);
 
+	// 기획용 버전 단위 조회. 버전별 최소 거리 순으로 상위 버전을 고르고 버전당 최대 2개 청크를 돌려준다.
+	// 청크 상위 N개 후 메모리 묶음은 한 버전이 상위권을 독식하면 다른 버전이 잘리므로,
+	// 윈도우 함수로 버전별 순위를 DB에서 먼저 매긴 뒤 min_dist 순으로 자른다.
+	// order by min_dist 덕분에 상위 K개 버전의 행(버전당 최대 2개)이 먼저 오므로 limit = K*2 면 충분하다
+	@Query(value = """
+		select * from (
+		  select c.*,
+		         row_number() over (partition by c.version_id order by c.embedding <=> cast(:query as vector)) as rn,
+		         min(c.embedding <=> cast(:query as vector)) over (partition by c.version_id) as min_dist
+		    from rag_chunks c
+		    join events e on e.id = c.event_id
+		   where c.embedding_model = :model
+		     and c.version_id is not null
+		     and c.event_id <> :excludeEventId
+		     and e.deleted_at is null
+		     and c.embedding <=> cast(:query as vector) <= :maxDistance
+		) ranked
+		 where rn <= 2
+		 order by min_dist, rn
+		 limit :limit
+		""", nativeQuery = true)
+	List<RagChunk> findBestChunksPerVersion(@Param("query") String query,
+		@Param("model") String model,
+		@Param("excludeEventId") long excludeEventId,
+		@Param("maxDistance") double maxDistance,
+		@Param("limit") int limit);
+
 	// 같은 버전을 다시 색인할 때 묵은 청크를 지우는 용도
 	void deleteByEventIdAndVersionId(Long eventId, Long versionId);
 
