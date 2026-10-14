@@ -15,7 +15,7 @@ import com.newvent.rag.domain.RagChunk;
  * rag_chunks 읽기 전담
  *
  * ★ 유사도 검색은 네이티브 쿼리. JPQL에 벡터 연산자가 없음.
- *   distance = 1 - similarity. min-score 0.6 -> maxDistance 0.4 로 바꿔서 넘김
+ *   distance = 1 - similarity. MIN_SCORE 미만(거리 초과)은 버린다.
  *
  * ★ excludeEventId 는 필수 (없으면 - 1)
  *   네이티브 쿼리에 null 바인딩은 타입을 못 잡는다.
@@ -24,11 +24,14 @@ import com.newvent.rag.domain.RagChunk;
 public interface RagChunkRepository extends JpaRepository<RagChunk, Long>{
 
 	@Query(value = """
-			select * from rag_chunks
-			 where embedding_model = :model
-			   and event_id <> :excludeEventId
-			   and embedding <=> cast(:query as vector) <= :maxDistance
-			 order by embedding <=> cast(:query as vector)
+			select c.* from rag_chunks c
+			 join events e on e.id = c.event_id
+			 where c.embedding_model = :model
+			   and c.event_id <> :excludeEventId
+			   and e.deleted_at is null
+			   and e.title not like 'SEED:%'
+			   and c.embedding <=> cast(:query as vector) <= :maxDistance
+			 order by c.embedding <=> cast(:query as vector)
 			 limit :limit
 			""", nativeQuery = true)
 	List<RagChunk> findSimilar(@Param("query") String query,

@@ -121,7 +121,7 @@ class RagEvalSmokeTest {
             String content = section.text();
             repo.save(RagChunk.create(event, null, key, i++,
                     content, embedding.modelName(),
-                    embedding.embed(content), Instant.now()));
+                    embedding.embedDocument(content), Instant.now()));
         }
     }
 

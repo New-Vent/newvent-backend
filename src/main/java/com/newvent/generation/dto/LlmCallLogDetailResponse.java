@@ -5,6 +5,8 @@ import java.util.UUID;
 
 import com.newvent.generation.domain.LlmCallLog;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /** 호출 로그 상세. 목록에 없는 실패 분류·잘림·RAG 청크 아이디까지 내려간다. */
 public record LlmCallLogDetailResponse(
         Long id,
@@ -23,7 +25,10 @@ public record LlmCallLogDetailResponse(
         Integer inputTokens,
         Integer outputTokens,
         Integer responseTimeMs,
+        @Schema(description = "RAG 참고 예시를 프롬프트에 넣었으면 true")
         boolean ragUsed,
+        @Schema(description = "참고한 RAG 청크 ID 를 쉼표로 이은 문자열 (배열 아님). ragUsed 가 false 면 null",
+                example = "41,42,43")
         String chunkIds,
         Instant createdAt
 ) {

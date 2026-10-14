@@ -24,9 +24,11 @@ import com.newvent.user.dto.response.AdminUserSummaryResponse;
 import com.newvent.user.service.UserService;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 
 // 등급은 직접 고치지 않고 관리자가 요금제를 변경해서 계산하도록
+@Tag(name = "관리자 회원 관리", description = "회원 조회와 요금제 변경. 등급은 직접 고치지 않고, 요금제를 바꾸면 서버가 다시 계산한다.")
 @Validated
 @RestController
 @RequestMapping("/api/admin/users")
@@ -41,7 +43,8 @@ public class AdminUserController {
     @Operation(
             summary = "회원 목록",
             description = "keyword 는 아이디·이름·이메일에 포함되는 글자(대소문자 무시, % _ 도 글자 그대로). "
-                    + "grade 로 거를 수 있고, 최근 가입순이다. 비밀번호 해시는 내려가지 않는다.")
+                    + "grade 로 거를 수 있고, 최근 가입순이다. 비밀번호 해시는 내려가지 않는다. "
+                    + "page 는 0 이상, size 는 1~50 (아니면 400)")
     @GetMapping
     public ApiResponse<PageResponse<AdminUserSummaryResponse>> list(
             @RequestParam(required = false) String keyword,
@@ -60,7 +63,7 @@ public class AdminUserController {
     @Operation(
             summary = "회원 요금제 변경",
             description = "관리자만 할 수 있다. 가입일은 두고 바뀐 요금제로 등급을 바로 다시 계산한다(내리면 등급도 내려간다). "
-                    + "누가 무엇을 바꿨는지는 서버 로그(INFO)에 남는다.")
+                    + "누가 무엇을 바꿨는지는 서버 로그(INFO)에 남는다. plan 이 1 미만이면 400, 회원이 없으면 404 (USER404-0)")
     @PatchMapping("/{id}/plan")
     public ApiResponse<AdminUserDetailResponse> changePlan(
             @AuthenticationPrincipal AuthUser principal,

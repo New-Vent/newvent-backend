@@ -1,6 +1,7 @@
 package com.newvent.rag;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
@@ -126,5 +127,56 @@ public class RagChunkRepositoryTest {
         List<RagChunk> hits2 = repo.findSimilar(
                 Vectors.toDb(vec(0)), MODEL, other.getId(), 0.4, 3);
         assertEquals(1, hits2.size());
+    }
+
+    @Test
+    @DisplayName("청킹 14종 블록 키가 CHECK를 모두 통과한다.")
+    void 블록키_14종_허용() {
+        Event event = seedEvent();
+        for (String key : List.of("hero", "highlight", "intro", "stats", "benefits",
+                "prize", "coupon", "compare", "audience", "steps",
+                "schedule", "faq", "notices", "cta")) {
+            repo.save(chunk(event, key, MODEL, vec(0)));
+        }
+        repo.flush();
+    }
+
+    @Test
+    @DisplayName("같은 버전·블록·순서 중복 저장은 막힌다.")
+    void 중복청크_유니크위반() {
+        Event event = seedEvent();
+        com.newvent.event.domain.EventVersion version = seedVersion(event);
+        repo.saveAndFlush(RagChunk.create(event, version, "benefits", 0, "내용", MODEL, vec(0), AT));
+
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                () -> repo.saveAndFlush(
+                        RagChunk.create(event, version, "benefits", 0, "내용", MODEL, vec(1), AT)));
+    }
+
+    @Test
+    @DisplayName("버전 삭제 시 청크도 함께 지워진다.")
+    void 버전삭제_청크캐스케이드() {
+        Event event = seedEvent();
+        com.newvent.event.domain.EventVersion version = seedVersion(event);
+        RagChunk saved = repo.saveAndFlush(
+                RagChunk.create(event, version, "benefits", 0, "내용", MODEL, vec(0), AT));
+        tem.clear();
+
+        tem.getEntityManager().createNativeQuery("DELETE FROM event_versions WHERE id = ?1")
+                .setParameter(1, version.getId())
+                .executeUpdate();
+        tem.clear();
+
+        assertTrue(repo.findById(saved.getId()).isEmpty());
+    }
+
+    private com.newvent.event.domain.EventVersion seedVersion(Event event) {
+        Long versionId = ((Number) tem.getEntityManager().createNativeQuery(
+                        "INSERT INTO event_versions (event_id, version_no, html_content) VALUES (?1,1,?2) RETURNING id")
+                .setParameter(1, event.getId())
+                .setParameter(2, "<section></section>")
+                .getSingleResult()).longValue();
+        return tem.getEntityManager().getReference(
+                com.newvent.event.domain.EventVersion.class, versionId);
     }
 }
