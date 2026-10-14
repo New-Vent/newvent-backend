@@ -39,6 +39,9 @@ public class AdminEventParticipantController {
                     + "summary 는 필터와 무관하게 전체를 세므로, 필터를 걸어도 전체 참여 수가 함께 보인다. "
                     + "participants.content[].submittedData 는 참여 방식마다 모양이 다르다 "
                     + "(기본형 {}, 스포츠 예측형 prediction, 사전예약형 phoneNumber, 복주머니형 pouchIndex). "
+                    + "★ 경품 발송 목록은 rewards 를 봐야 한다 — prizeName 은 혜택이 여러 개일 때 "
+                    + "당첨된 혜택 중 첫 번째 하나만 담으므로, 두 혜택에 당첨된 사람의 나머지 경품이 보이지 않는다. "
+                    + "혜택이 하나인 방식은 rewards 가 빈 목록이고 그때는 prizeName 을 쓴다. "
                     + "참여가 없으면 404 가 아니라 빈 목록과 0 집계를 준다.")
     @GetMapping
     public ApiResponse<EventParticipantListResponse> getParticipants(
