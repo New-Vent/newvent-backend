@@ -433,7 +433,19 @@ public class BlockValidator {
      *   data-slot 을 만들면 서버의 쓰기 지점을 모델이 만드는 셈이 된다 (REQ-LLM-46).
      */
     public static String sanitizeGenerated(String html) {
-        return clean(html, false);
+        return sanitizeGenerated(html, List.of());
+    }
+
+    /**
+     * @param allowedAssets 이 이벤트에 올라온 이미지. 여기 없는 src 는 &lt;img&gt; 째로 지운다.
+     *
+     * ★★ 기본값이 빈 목록이다 — 즉 **이미지를 아예 안 받는다.** 지금 열려 있는 구멍을 막는 쪽이
+     *   기본이어야 한다. Safelist.relaxed 는 img[src] 에 http/https/ftp 를 허용해서,
+     *   모델이 지어낸 바깥 주소가 그대로 게시된다(실측: https://… 통과).
+     *   호출하는 쪽이 목록을 깜빡해도 조용히 열리면 안 된다.
+     */
+    public static String sanitizeGenerated(String html, List<Asset.Ref> allowedAssets) {
+        return clean(html, false, allowedAssets);
     }
 
     /**
@@ -453,7 +465,12 @@ public class BlockValidator {
      *   계약 4-⑤ 도 "CTA 버튼에 onclick 인라인 핸들러를 넣지 않습니다" 로 같은 방향이다.
      */
     public static String sanitizeEdited(String html) {
-        return clean(html, true);
+        return sanitizeEdited(html, List.of());
+    }
+
+    /** @param allowedAssets {@link #sanitizeGenerated(String, Set)} 참고 */
+    public static String sanitizeEdited(String html, List<Asset.Ref> allowedAssets) {
+        return clean(html, true, allowedAssets);
     }
 
     /**
@@ -462,6 +479,10 @@ public class BlockValidator {
      *   순서:  sanitize(모델 출력) → merge   (반대로 하지 말 것)
      */
     private static String clean(String html, boolean keepInteractive) {
+        return clean(html, keepInteractive, List.of());
+    }
+
+    private static String clean(String html, boolean keepInteractive, List<Asset.Ref> allowedAssets) {
         Safelist s = Safelist.relaxed()
                 .addAttributes(":all", "style", "data-block", "class")
                 .addTags("section")
@@ -476,6 +497,14 @@ public class BlockValidator {
                 //   상대 URL 은 절대 URL 로 바꾼 뒤 검사한다. baseUri 가 비어 있으면
                 //   "#" 은 빈 문자열이 되어 어느 프로토콜에도 안 맞고 속성째 제거된다.
                 .addProtocols("a", "href", "#");
+
+        // ★★ 에셋 주소는 **절대 URL** 이어야 한다.
+        //   Safelist 는 img[src] 를 absUrl 로 바꾼 뒤 프로토콜을 보는데, baseUri 가 비어
+        //   있어서 상대 경로("/api/public/assets/…")는 빈 문자열이 되고 속성째 떨어진다.
+        //   바로 위 a[href="#"] 가 특례로 살아 있는 것과 같은 함정이고, "#" 처럼 "/" 를 더하는
+        //   건 안 통한다 — jsoup 은 "#" 만 따로 처리하고 나머지는 "프로토콜:" 로 맞춰 본다.
+        //   그래서 서버가 에셋 주소를 https://… 로 내려 준다(asset.public-base-url).
+        //   대조는 dropForeignImages 가 한다.
 
         if (keepInteractive) {
             s = s.addTags("button", "input")
@@ -498,10 +527,28 @@ public class BlockValidator {
             if (safe.isEmpty()) el.removeAttr("style");
             else el.attr("style", safe);
         }
+        dropForeignImages(doc, allowedAssets);
         cleanLooks(doc);
         // ★ 속성은 열었지만 값은 아직 안 봤다 — 목록에 없는 behavior 이름은 여기서 지운다
         if (keepInteractive) Behavior.sanitize(doc);
         return doc.body().html();
+    }
+
+    /**
+     * 허용 목록에 없는 &lt;img&gt; 를 지운다. **주소를 모델에게 맡기지 않는 줄이다.**
+     *
+     * ★ 통째로 지운다. src 만 떼면 깨진 아이콘이 남고, 그게 그대로 게시된다.
+     * ★ 배치 이름(ev-asset-*)은 Asset.sanitize 가 블록별로 따로 거른다 —
+     *   ev-asset-* 는 v- 도 t- 도 아니라서 cleanLooks 를 그냥 지나간다.
+     */
+    private static void dropForeignImages(Document doc, List<Asset.Ref> allowedAssets) {
+        Set<String> urls = Asset.urls(allowedAssets);
+        for (Element img : doc.body().select("img")) {
+            if (!urls.contains(img.attr("src"))) img.remove();
+        }
+        for (Element sec : doc.body().select("section[data-block]")) {
+            Block.find(sec.attr("data-block")).ifPresent(b -> Asset.sanitize(sec, b, allowedAssets));
+        }
     }
 
     /**

@@ -394,8 +394,28 @@ Origin 이 실제 프론트 주소와 일치하는지는 배포 설정에서 확
 SPRING_PROFILES_ACTIVE=prod
 JWT_SECRET=<32바이트 이상 무작위 값, 예: openssl rand -base64 48>
 CORS_ALLOWED_ORIGINS=https://newvent.duckdns.org
+ASSET_PUBLIC_BASE_URL=https://newvent.duckdns.org
 ```
 
 `CORS_ALLOWED_ORIGINS` 가 서비스 주소와 다르면 refresh·logout 이 전부 403 이 되어 새로고침할 때마다 로그아웃됩니다.
+
+### 올린 이미지 주소 (`ASSET_PUBLIC_BASE_URL`)
+
+**이 값은 DB 와 게시된 페이지에 박힙니다.** 관리자가 이미지를 올리면 이 주소로 완성한 URL 이
+`event_assets.url` 에 저장되고, 게시된 페이지의 `<img src>` 에도 그 글자가 그대로 들어갑니다.
+틀린 채로 뜨면 그동안 올린 이미지가 전부 깨지고, **나중에 환경변수를 고쳐도 이미 저장된 행과
+이미 게시된 페이지는 안 고쳐집니다.** 되돌리려면 DB 를 직접 손봐야 합니다.
+
+그래서 `prod` 에서는 `ProdAssetGuard` 가 기동을 막습니다.
+
+- 비어 있거나 치환되지 않은 `${ASSET_PUBLIC_BASE_URL}`
+- `http://` — 서비스가 https 라 브라우저가 혼합 콘텐츠로 **이미지만** 차단합니다
+- `localhost` · 루프백 주소 (기본값이 `http://localhost:8080` 입니다)
+- 경로가 붙은 주소 — `/api/public/assets` 는 서버가 붙이므로 두 번 들어갑니다
+
+`CORS_ALLOWED_ORIGINS` 와 같은 값이면 됩니다. 경로 없이 주소만 적습니다.
+
+이미지 파일 자체는 도커 볼륨 `newvent_newvent-assets` 에 쌓입니다 (`/data/assets`).
+`docker compose down -v` 는 **DB 볼륨과 함께 이 볼륨도 지웁니다** — 올린 이미지가 전부 사라집니다.
 
 개발용 계정 (V7 마이그레이션): 관리자 `admin / admin1234!`, 사용자 `user01 ~ / user1234!` — 운영 DB 에서는 반드시 바꿉니다.

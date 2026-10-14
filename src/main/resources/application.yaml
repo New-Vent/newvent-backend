@@ -21,6 +21,13 @@ spring:
         queue-capacity: 100
       thread-name-prefix: async-
 
+  # 이미지 업로드. ★ asset.max-bytes(3MB) 보다 넉넉해야 한다 —
+  #   여기서 먼저 걸리면 우리 예외가 아니라 톰캣 500 이 나가서 관리자가 이유를 못 듣는다
+  servlet:
+    multipart:
+      max-file-size: 4MB
+      max-request-size: 4MB
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/newvent}
     username: ${DB_USERNAME:newvent}
@@ -102,3 +109,20 @@ management:
 logging:
   level:
     com.newvent: DEBUG
+
+# 올린 이미지
+#
+# ★ store: local — EC2 한 대에 도커 볼륨으로 둔다. 1.9GB 짜리 박스에 S3 SDK 를
+#   얹는 것보다 가볍고, 컨테이너를 다시 올려도 볼륨은 남는다.
+#   S3 로 옮길 자리는 AssetStore 하나다 — 구현을 바꿔 끼우면 된다.
+# ★ public-base-url 이 **절대 URL** 이어야 한다. 상대 경로는 정화기(jsoup)가
+#   src 째로 떼어 버린다 — BlockValidator 의 주석 참고.
+asset:
+  store: ${ASSET_STORE:local}
+  dir: ${ASSET_DIR:/data/assets}
+  # ★★ **origin 만** 적는다. 경로는 LocalAssetStore.url() 이 붙인다 —
+  #   여기에 /api/public/assets 까지 적으면 주소에 두 번 들어가서 404 가 된다.
+  #   배포에서는 https://실제도메인 하나만 넣는다.
+  public-base-url: ${ASSET_PUBLIC_BASE_URL:http://localhost:8080}
+  max-bytes: 3145728        # 3MB. 배경 한 장에 넉넉하고, 1.9GB 박스가 버틴다
+  max-per-event: 20
