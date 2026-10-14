@@ -98,6 +98,10 @@ spotless {
 tasks.named('test') {
 	useJUnitPlatform()
 
+    // 테스트 컨텍스트마다 생성되는 DB 연결 풀 크기 제한
+    systemProperty 'spring.datasource.hikari.maximum-pool-size', '2'
+    systemProperty 'spring.datasource.hikari.minimum-idle', '0'
+
 	environment 'JWT_SECRET', System.getenv('JWT_SECRET')
 			?: 'test-only-not-a-real-secret-0123456789abcdef'
 
