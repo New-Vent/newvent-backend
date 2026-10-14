@@ -91,7 +91,7 @@ public class RagController {
             description = "이벤트의 전체 버전 중 청크가 있는 버전 수와 청크 수. pendingVersions 는 한 번도 색인되지 않은 버전 수다. "
                     + "lastIndexedAt 은 다른 API 와 달리 UTC(Z) 로 나온다.")
     @GetMapping("/index-status")
-    public ApiResponse<IndexStatusResponse> indexStatus(@RequestParam Long eventId,
+    public ApiResponse<IndexStatusResponse> indexStatus(@RequestParam("eventId") Long eventId,
                                                         @AuthenticationPrincipal AuthUser admin) {
         ownerCheck.requireOwned(eventId, admin);
         return ApiResponse.success(embedding.getStatus(eventId));
@@ -104,9 +104,9 @@ public class RagController {
                     + "query 가 공백이면 임베딩을 부르지 않고 빈 결과를 준다.")
     @GetMapping("/search-preview")
     public ApiResponse<SearchPreviewResponse> searchPreview(
-            @RequestParam Long eventId,
-            @RequestParam String query,
-            @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK,
+            @RequestParam("eventId") Long eventId,
+            @RequestParam("query") String query,
+            @RequestParam(value = "topK", defaultValue = "3") @Min(1) @Max(10) int topK,
             @AuthenticationPrincipal AuthUser admin) {
         ownerCheck.requireOwned(eventId, admin);
         return ApiResponse.success(similarity.searchPreview(eventId, query, topK));
@@ -120,9 +120,9 @@ public class RagController {
                     + "eventId 를 빼면 기획 모드 — 만들기 화면에서 이벤트 생기기 전에 부른다 (SEED 포함).")
     @GetMapping("/recommend-prompts")
     public ApiResponse<List<PromptCandidate>> recommendPrompts(
-            @RequestParam(required = false) Long eventId,
-            @RequestParam String query,
-            @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK,
+            @RequestParam(value = "eventId", required = false) Long eventId,
+            @RequestParam("query") String query,
+            @RequestParam(value = "topK", defaultValue = "3") @Min(1) @Max(10) int topK,
             @AuthenticationPrincipal AuthUser admin) {
         // eventId 없으면 기획 모드 — 소유 검사할 이벤트가 없으므로 건너뛴다
         if (eventId != null) ownerCheck.requireOwned(eventId, admin);
@@ -139,10 +139,10 @@ public class RagController {
                     + "둘 다 없거나 둘 다 있으면 400 (EVENT400-4).")
     @GetMapping("/similar-versions")
     public ApiResponse<List<VersionSimilarityResponse>> similarVersions(
-            @RequestParam(required = false) Long eventId,
-            @RequestParam(required = false) Long versionId,
-            @RequestParam(required = false) String query,
-            @RequestParam(defaultValue = "3") @Min(1) @Max(10) int topK,
+            @RequestParam(value = "eventId", required = false) Long eventId,
+            @RequestParam(value = "versionId", required = false) Long versionId,
+            @RequestParam(value = "query", required = false) String query,
+            @RequestParam(value = "topK", defaultValue = "3") @Min(1) @Max(10) int topK,
             @AuthenticationPrincipal AuthUser admin) {
         // query 모드는 단독, 버전 모드는 eventId+versionId 둘 다 필수.
         // 어중간한 조합(versionId 단독, query+eventId 등)은 조용히 한쪽으로 해석하지 않고 400 으로 막는다
@@ -166,7 +166,7 @@ public class RagController {
             description = "최근 weeks 주 동안 LLM 호출 수·RAG 를 쓴 호출 수·새로 만든 청크 수를 주별로 묶는다. 기록이 없는 주는 빠진다.")
     @GetMapping("/quality-trend")
     public ApiResponse<List<QualityTrendResponse>> qualityTrend(
-            @RequestParam(defaultValue = "4") @Min(1) @Max(12) int weeks) {
+            @RequestParam(value = "weeks", defaultValue = "4") @Min(1) @Max(12) int weeks) {
         return ApiResponse.success(embedding.getQualityTrend(weeks));
     }
 
