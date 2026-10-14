@@ -11,6 +11,7 @@ import java.util.UUID;
 
 import jakarta.persistence.EntityManager;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +62,12 @@ class LlmCallLogRepositoryTest {
     private static LlmCallLog row(Event event, UUID req, int attempt, Instant at) {
         return LlmCallLog.create(event, null, req, attempt, "qwen2.5:7b", "mock",
                 100, 10, 20, false, true, true, null, null, null, at);
+    }
+
+    @BeforeEach
+    void 기존_로그를_테스트_트랜잭션에서_제외한다() {
+        repo.deleteAllInBatch();
+        tem.clear();
     }
 
     @Test
