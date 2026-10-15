@@ -4,6 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -236,5 +237,44 @@ public final class BehaviorPlanter {
         if (endsAt == null) return;
         String until = endsAt.toInstant().toString();
         withBehavior(doc.body(), Behavior.COUNTDOWN).forEach(el -> el.attr("data-until", until));
+    }
+
+    /**
+     * 참여 방식대로 게임 자리를 그린다 — 예측 선택지 · 복주머니 · 전화번호 칸.
+     * <b>보여 줄 때만 부른다</b> (PageShell.standalone).
+     *
+     * ★★ 자리가 없으면 만든다 — 참여 버튼 바로 앞이다
+     *   게임 자리({@code data-behavior="game"})는 저장본에 없다. 생성 때 심지 않는 이유가 둘이다.
+     *     ① 생성 시점에는 참여 설정이 없다. 빈 칸만 저장될 뿐이다
+     *     ② 저장본에 넣으면 수정 경로의 checkPreserved 가 그걸 지키게 되어,
+     *        모델이 실수로 지우면 수정이 통째로 실패한다
+     *   그래서 보여 줄 때 만든다. <b>이미 게시된 페이지도 설정만 붙이면 바로 동작한다.</b>
+     *
+     * ★ 참여 버튼이 없으면 아무것도 하지 않는다. 고르기만 하고 낼 수 없는 화면이 된다
+     *
+     * @param gameCode 참여 방식. null 이면 참여를 받지 않는 이벤트라 그리지 않는다
+     * @param config   그 방식의 설정
+     * @return 그렸으면 true
+     */
+    public static boolean bindGame(Document doc, String gameCode, Map<String, Object> config) {
+        if (gameCode == null) return false;
+
+        List<Element> buttons = withBehavior(doc.body(), Behavior.PARTICIPATE);
+        if (buttons.isEmpty()) return false;
+
+        Element at = doc.body().selectFirst("[" + Behavior.ATTR + "~=" + Behavior.GAME.key() + "]");
+        if (at == null) {
+            Element button = buttons.getFirst();
+            // ★ 버튼이 <section> 바로 아래가 아닐 수 있다(래퍼 div). 그래도 버튼 앞에 둔다
+            at = new Element("div").attr(Behavior.ATTR, Behavior.GAME.key());
+            button.before(at);
+        }
+
+        if (GameWidget.draw(at, gameCode, config)) {
+            return true;
+        }
+        // 추가 입력이 없는 방식(BASIC) — 빈 상자를 남기면 여백만 생긴다
+        at.remove();
+        return false;
     }
 }

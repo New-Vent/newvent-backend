@@ -7,6 +7,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.function.Predicate;
@@ -100,14 +101,37 @@ public final class PageShell {
      * @param endsAt 이벤트 종료 시각 — countdown 의 data-until. 없으면 null
      */
     public static String standalone(String fragment, String title, OffsetDateTime endsAt) {
+        return standalone(fragment, title, endsAt, null, null, null);
+    }
+
+    /**
+     * 참여 정보까지 실어 내보낸다 — <b>게시 페이지에서 참여가 실제로 가는 길이다.</b>
+     *
+     * ★★ runtime 이 body 에서 읽는다 (event-runtime.js 의 participate)
+     *     data-event-id   참여 API 를 부를 이벤트
+     *     data-game       참여 방식 — 이게 없으면 runtime 이 「참여 기능은 준비 중이에요」로 안내한다
+     *   그리고 고르는 칸(.ev-game)은 {@link BehaviorPlanter#bindGame} 이 설정대로 그린다.
+     *
+     * ★ 참여 여부(data-participated)는 여기서 적지 않는다. <b>로그인한 사용자별</b>이라
+     *   공유 링크 페이지는 알 수 없다. 사용자 앱이 iframe 에 넣을 때 붙인다.
+     *
+     * @param eventId  참여 API 가 쓸 이벤트 id. null 이면 적지 않는다 (템플릿 미리보기 등)
+     * @param gameCode 참여 방식. null 이면 참여를 받지 않는 이벤트다
+     * @param gameConfig 그 방식의 설정 — 고르는 칸을 그리는 데 쓴다
+     */
+    public static String standalone(String fragment, String title, OffsetDateTime endsAt,
+                                    Long eventId, String gameCode, Map<String, Object> gameConfig) {
         Document doc = Jsoup.parseBodyFragment(fragment == null ? "" : fragment);
         doc.outputSettings().prettyPrint(false);
         if (!doc.select("[" + Behavior.ATTR + "]").isEmpty()) {
             doc.select("script, noscript").remove();
             BehaviorPlanter.bind(doc, endsAt);
+            BehaviorPlanter.bindGame(doc, gameCode, gameConfig);
         }
 
         Element body = doc.body();
+        if (eventId != null) body.attr("data-event-id", String.valueOf(eventId));
+        if (gameCode != null) body.attr("data-game", gameCode);
         Element root = doc.selectFirst(ROOT_SELECTOR);
         if (root == null) {
             // ★ 래퍼가 없는 조각(더미 · 초안)은 감싼다 — event.css 가 전부 래퍼 기준이라 없으면 무스타일이다.
