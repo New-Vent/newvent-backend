@@ -22,7 +22,9 @@ import java.util.Optional;
  */
 public enum Palette {
 
-    BASE("palette-base", "원래 색으로 되돌린다 (템플릿 테마 또는 기본 남색)"),
+    // ★ 모델이 이 설명을 보고 고른다. "원래 색으로" 한 가지만 적었을 때 "원래대로 되돌려줘" 에는
+    //   다른 팔레트(brand · pastel)를 골랐다(실제 화면). 되돌리는 말투를 같이 적어 둔다.
+    BASE("palette-base", "원래 색 · 원래대로 · 기본 색 · 처음 상태로 되돌린다, 색 초기화 (템플릿 테마 또는 기본 남색)"),
     SPRING("palette-spring", "봄 — 벚꽃 분홍, 연두"),
     SUMMER("palette-summer", "여름 — 바다 파랑, 청량한 하늘색"),
     AUTUMN("palette-autumn", "가을 — 단풍 주황, 갈색"),

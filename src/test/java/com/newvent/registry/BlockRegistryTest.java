@@ -121,6 +121,23 @@ class BlockRegistryTest {
     }
 
     @Test
+    @DisplayName("라우터 프롬프트 — 페이지 전체 색감 요청은 hero 하나로 보내라고 안내하고, 되돌리기 예시가 있다")
+    void 라우터가_페이지_전체_색감을_hero_하나로_안내한다() {
+        String router = PromptBuilder.router();
+
+        // 이 규칙이 빠지면 "원래 색으로 되돌려줘" · "전체를 노랑으로" 에 모델이 14개 영역 전부에 STYLE 을 내고,
+        // RouteParser 가 MAX_OPS(3) 초과로 버려서 "요청을 이해하지 못했습니다" 가 나온다.
+        assertTrue(router.contains("영역을 나열하지 않는다. hero 하나만 쓴다."),
+                "페이지 전체 요청을 hero 하나로 보내는 규칙이 라우터 프롬프트에서 빠졌습니다.");
+        assertTrue(router.contains("되돌리기·취소는 삭제(DELETE)가 아니다."),
+                "되돌리기 요청이 DELETE 로 새는 걸 막는 문장이 빠졌습니다.");
+        assertTrue(router.contains("겉모양(색 · 분위기 · 크기 · 굵기 · 배치 · 이미지)을 바꾸려는 말이 없는 단순 만들기·작성 요청에는 STYLE 을 쓰지 않는다."),
+                "대상 없는 작성 요청이 STYLE 로 새는 걸 막는 문장이 빠졌습니다.");
+        assertTrue(router.contains("\"원래 색으로 되돌려줘\""),
+                "되돌리기 예시가 라우터 프롬프트에서 빠졌습니다.");
+    }
+
+    @Test
     @DisplayName("CSS 정화 — 허용 속성만 남는다")
     void CSS_정화가_위험한_속성을_지운다() {
         String dirty = """
