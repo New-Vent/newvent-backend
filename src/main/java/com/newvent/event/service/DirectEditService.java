@@ -69,7 +69,8 @@ public class DirectEditService {
                 .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
 
         // 3. 순수 함수 적용기로 변경된 HTML 생성 (불일치 시 409, 인덱스/스타일 오류 시 400 발생)
-        String updatedHtml = DirectEditor.apply(baseHtml, request.edits(), request.buttonStyle());
+        String updatedHtml = DirectEditor.apply(
+                baseHtml, request.edits(), request.buttonStyle(), request.textStyle());
 
         // 3-2. 블록 순서. ★ 문구·버튼을 고친 **뒤**다 —
         //      TextEdit 은 문서 전체를 훑은 텍스트 노드 번호로 자리를 가리키므로,
