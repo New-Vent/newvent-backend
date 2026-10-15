@@ -48,15 +48,37 @@ final class ParticipationConfigLock {
      *     winProbability     참여자가 보고 참여한 확률이다. 중간에 바꾸면 공정성이 깨진다
      *     winnerCount        같은 이유 — "2명 추첨" 을 보고 참여했다
      *     predictionOptions  선택지를 지우면 그걸 고른 참여 기록이 떠버린다
-     *     pouches            같은 이유 — 단, <b>칸 안의 경품명만</b> 바꾸는 것은 통과한다
-     *                        ({@link #pouchPrizeNameOnly} 참고)
+     *     pouches · rewards  같은 이유 — 단, <b>그 안의 경품명만</b> 바꾸는 것은 통과한다
+     *                        ({@link #NESTED_PRIZE_NAME} 참고)
      *
-     * ★ 이 집합은 <b>최상위 키</b>만 본다. 중첩된 값은 특례로 따로 다룬다 —
-     *   복주머니의 경품명이 그 경우다. 방식을 더할 때 경품명이 중첩되어 있다면
-     *   같은 특례가 필요한지 확인해야 한다.
+     * ★ 이 집합은 <b>최상위 키</b>만 본다. 중첩된 경품명은 아래 표가 따로 다룬다.
      */
     private static final Set<String> CHANGEABLE_AFTER_PARTICIPATION =
             Set.of("prizeName", "announcementAt");
+
+    /**
+     * 경품명이 <b>배열 안에 중첩된</b> 방식 — 키 → 그 안에서 칸을 가리키는 신분 필드.
+     *
+     * ★★ 왜 필요한가 — 최상위 키만 보면 이 방식들은 경품명을 영영 못 고친다
+     *   복주머니:    {"pouches":[{"pouchIndex":1,"winProbability":30,"prizeName":"…"}, …]}
+     *   승부 예측형: {"rewards":[{"rewardId":"r1","target":"…","selection":"DRAW",
+     *                            "winnerCount":2,"prizeName":"…"}, …]}
+     *   경품명 한 글자만 고쳐도 「바뀐 키 = pouches」·「= rewards」 로 잡혀 거부됐다.
+     *   이 잠금을 좁힌 목적 자체가 오타 수정인데, 그 두 방식만 못 누리는 상태였다.
+     *
+     * ★ 그렇다고 키를 허용 목록에 넣으면 안 된다. <b>같은 칸에 잠겨야 할 값이 있다</b> —
+     *   복주머니의 winProbability, 승부 예측형의 target · selection · winnerCount 다.
+     *   전부 참여자가 보고 참여한 조건이라 바뀌면 공정성이 깨진다.
+     *   그래서 칸 구성이 그대로이고 <b>경품명만</b> 다를 때에만 통과시킨다.
+     *
+     * ★ 칸은 배열 순서가 아니라 신분 필드로 짝짓는다. 순서로 비교하면 프론트가 정렬만
+     *   바꿔 보내도 거부되는데, 그건 지금 고치는 버그와 같은 종류다.
+     *
+     * ★ 방식을 더할 때 경품명이 중첩되어 있으면 여기 한 줄을 더하면 된다.
+     */
+    private static final Map<String, String> NESTED_PRIZE_NAME = Map.of(
+            "pouches", "pouchIndex",
+            "rewards", "rewardId");
 
     /**
      * 참여 기록이 있는 상태에서 이 변경이 허용되나.
@@ -79,60 +101,47 @@ final class ParticipationConfigLock {
 
         return changedKeys(left, right).stream()
                 .allMatch(key -> CHANGEABLE_AFTER_PARTICIPATION.contains(key)
-                        || (POUCHES.equals(key) && pouchPrizeNameOnly(left.get(key), right.get(key))));
+                        || prizeNameOnly(key, left.get(key), right.get(key)));
     }
 
-    private static final String POUCHES = "pouches";
-
     /**
-     * 복주머니에서 <b>경품명만</b> 달라졌나.
+     * 중첩된 배열에서 <b>경품명만</b> 달라졌나. 근거는 {@link #NESTED_PRIZE_NAME} 에 있다.
      *
-     * ★★ 왜 특례가 필요한가 — 최상위 키만 보면 복주머니는 경품명을 영영 못 고친다
-     *   복주머니의 경품명은 칸 안에 들어 있다:
-     *       {"pouches":[{"pouchIndex":1,"winProbability":30,"prizeName":"…"}, …]}
-     *   그래서 경품명 한 글자만 고쳐도 「바뀐 키 = pouches」 로 잡혀 거부됐다.
-     *   4개 방식 중 복주머니만 이 PR 의 목적(오타 수정)을 못 누리는 상태였다.
-     *
-     * ★ 그렇다고 pouches 를 허용 목록에 넣으면 안 된다. <b>같은 칸에 winProbability 가 있다</b> —
-     *   참여자가 보고 고른 확률이라 바뀌면 공정성이 깨진다. 그래서 칸 구성(번호·확률)이
-     *   그대로이고 경품명만 다를 때에만 통과시킨다.
-     *
-     * ★ 칸을 pouchIndex 로 짝지어 본다. 배열 순서로 비교하면 프론트가 정렬만 바꿔 보내도
-     *   거부되는데, 그건 지금 고치는 버그와 같은 종류다. pouchIndex 가 칸의 신분이다
-     *   (ParticipationValidator.readPouchIndexes 가 1..길이 중복 없음을 보장한다).
-     *
-     * ★ 모양이 조금이라도 수상하면 false 다 — 칸 수가 다르거나, 번호 집합이 다르거나,
+     * ★ 모양이 조금이라도 수상하면 false 다 — 칸 수가 다르거나, 신분 집합이 다르거나,
      *   Map·List 가 아니거나. 판단이 안 되는 것은 거부가 안전한 방향이다.
      */
-    private static boolean pouchPrizeNameOnly(Object before, Object after) {
-        if (!(before instanceof List<?> left) || !(after instanceof List<?> right)
+    private static boolean prizeNameOnly(String key, Object before, Object after) {
+        String idField = NESTED_PRIZE_NAME.get(key);
+
+        if (idField == null
+                || !(before instanceof List<?> left) || !(after instanceof List<?> right)
                 || left.size() != right.size()) {
             return false;
         }
 
-        Map<Object, Map<?, ?>> leftByIndex = byPouchIndex(left);
-        Map<Object, Map<?, ?>> rightByIndex = byPouchIndex(right);
+        Map<Object, Map<?, ?>> leftById = byId(left, idField);
+        Map<Object, Map<?, ?>> rightById = byId(right, idField);
 
-        if (leftByIndex == null || rightByIndex == null
-                || !leftByIndex.keySet().equals(rightByIndex.keySet())) {
+        if (leftById == null || rightById == null
+                || !leftById.keySet().equals(rightById.keySet())) {
             return false;
         }
 
-        return leftByIndex.keySet().stream().allMatch(index ->
-                changedKeysOf(leftByIndex.get(index), rightByIndex.get(index))
+        return leftById.keySet().stream().allMatch(id ->
+                changedKeysOf(leftById.get(id), rightById.get(id))
                         .stream().allMatch("prizeName"::equals));
     }
 
-    /** pouchIndex → 칸. 번호가 없거나 중복이면 null — 짝지을 수 없으면 비교하지 않는다 */
-    private static Map<Object, Map<?, ?>> byPouchIndex(List<?> pouches) {
+    /** 신분 필드 → 칸. 값이 없거나 중복이면 null — 짝지을 수 없으면 비교하지 않는다 */
+    private static Map<Object, Map<?, ?>> byId(List<?> items, String idField) {
         Map<Object, Map<?, ?>> out = new java.util.LinkedHashMap<>();
 
-        for (Object item : pouches) {
-            if (!(item instanceof Map<?, ?> pouch)) {
+        for (Object item : items) {
+            if (!(item instanceof Map<?, ?> entry)) {
                 return null;
             }
-            Object index = pouch.get("pouchIndex");
-            if (index == null || out.put(index, pouch) != null) {
+            Object id = entry.get(idField);
+            if (id == null || out.put(id, entry) != null) {
                 return null;
             }
         }

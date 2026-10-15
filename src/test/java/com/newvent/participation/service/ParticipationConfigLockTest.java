@@ -177,6 +177,83 @@ class ParticipationConfigLockTest {
         assertFalse(allows("LUCKY_POUCH", pouches("데이터 5GB", 30), renumbered));
     }
 
+    // ── 승부 예측형 — 경품명이 rewards 안에 중첩되어 있다 (#215) ──
+
+    /** 혜택 둘. 전원 지급 + 정답자 중 추첨 */
+    private static Map<String, Object> rewards(String drawPrize, int winnerCount, String selection) {
+        return Map.of("rewards", List.of(
+                Map.of("rewardId", "r1", "target", "ALL_PARTICIPANTS", "selection", "ALL",
+                        "winnerCount", 0, "prizeName", "참가 포인트 5,000P"),
+                Map.of("rewardId", "r2", "target", "CORRECT_PREDICTIONS", "selection", selection,
+                        "winnerCount", winnerCount, "prizeName", drawPrize)));
+    }
+
+    @Test
+    @DisplayName("★ 승부 예측형도 경품명은 고칠 수 있다 — rewards 안에 중첩되어 거부되던 것")
+    void 예측형_경품명은_바꿀수있다() {
+        assertTrue(allows("SPORTS_PREDICTION",
+                rewards("상푼권", 2, "DRAW"),
+                rewards("상품권", 2, "DRAW")));
+    }
+
+    @Test
+    @DisplayName("추첨 인원을 바꾸면 거부한다 — 참여자가 보고 참여한 조건이다")
+    void 예측형_인원변경은_거부한다() {
+        assertFalse(allows("SPORTS_PREDICTION",
+                rewards("상품권", 2, "DRAW"),
+                rewards("상품권", 50, "DRAW")));
+    }
+
+    @Test
+    @DisplayName("선정 방식을 바꾸면 거부한다 — 추첨이던 것이 전원 지급이 될 수 없다")
+    void 예측형_선정방식_변경은_거부한다() {
+        assertFalse(allows("SPORTS_PREDICTION",
+                rewards("상품권", 2, "DRAW"),
+                rewards("상품권", 2, "ALL")));
+    }
+
+    @Test
+    @DisplayName("경품명과 인원을 같이 바꾸면 거부한다 — 묶어서 통과시키지 않는다")
+    void 예측형_섞어바꾸면_거부한다() {
+        assertFalse(allows("SPORTS_PREDICTION",
+                rewards("상푼권", 2, "DRAW"),
+                rewards("상품권", 50, "DRAW")));
+    }
+
+    @Test
+    @DisplayName("혜택을 더하거나 rewardId 를 바꾸면 거부한다 — 짝지을 수 없다")
+    void 예측형_혜택구성_변경은_거부한다() {
+        Map<String, Object> added = Map.of("rewards", List.of(
+                Map.of("rewardId", "r1", "target", "ALL_PARTICIPANTS", "selection", "ALL",
+                        "winnerCount", 0, "prizeName", "참가 포인트 5,000P"),
+                Map.of("rewardId", "r2", "target", "CORRECT_PREDICTIONS", "selection", "DRAW",
+                        "winnerCount", 2, "prizeName", "상품권"),
+                Map.of("rewardId", "r3", "target", "CORRECT_PREDICTIONS", "selection", "DRAW",
+                        "winnerCount", 1, "prizeName", "한우세트")));
+
+        assertFalse(allows("SPORTS_PREDICTION", rewards("상품권", 2, "DRAW"), added));
+
+        Map<String, Object> renamed = Map.of("rewards", List.of(
+                Map.of("rewardId", "r1", "target", "ALL_PARTICIPANTS", "selection", "ALL",
+                        "winnerCount", 0, "prizeName", "참가 포인트 5,000P"),
+                Map.of("rewardId", "r9", "target", "CORRECT_PREDICTIONS", "selection", "DRAW",
+                        "winnerCount", 2, "prizeName", "상품권")));
+
+        assertFalse(allows("SPORTS_PREDICTION", rewards("상품권", 2, "DRAW"), renamed));
+    }
+
+    @Test
+    @DisplayName("혜택 순서가 바뀌어도 경품명만 다르면 통과한다 — rewardId 로 짝짓는다")
+    void 예측형_순서가바뀌어도_통과한다() {
+        Map<String, Object> reordered = Map.of("rewards", List.of(
+                Map.of("rewardId", "r2", "target", "CORRECT_PREDICTIONS", "selection", "DRAW",
+                        "winnerCount", 2, "prizeName", "상품권"),
+                Map.of("rewardId", "r1", "target", "ALL_PARTICIPANTS", "selection", "ALL",
+                        "winnerCount", 0, "prizeName", "참가 포인트 5,000P")));
+
+        assertTrue(allows("SPORTS_PREDICTION", rewards("상푼권", 2, "DRAW"), reordered));
+    }
+
     @Test
     @DisplayName("모양이 수상하면 거부한다 — 판단이 안 되는 것은 막는 쪽이 안전하다")
     void 복주머니_모양이틀리면_거부한다() {
