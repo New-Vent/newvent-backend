@@ -143,7 +143,8 @@ class EventServiceTest {
      * 게시 HTML 을 만드는 쪽. <b>실제 구현을 쓴다</b> — 상세 응답의 completedHtml 이
      * 공개 상세와 같은 함수를 지나는지(슬롯이 채워지는지)가 이 테스트의 관심사다.
      */
-    private final PublicEventService publicEventService = new PublicEventService(eventRepository);
+    private final PublicEventService publicEventService =
+            new PublicEventService(eventRepository, eventId -> java.util.Optional.empty());
 
     private final EventService eventService =
             new EventService(eventRepository, eventTemplateRepository, eventVersionRepository,

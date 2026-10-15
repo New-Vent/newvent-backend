@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
@@ -39,7 +40,15 @@ class PublicEventServiceTest {
 
     private final EventRepository eventRepository = mock(EventRepository.class);
 
-    private final PublicEventService publicEventService = new PublicEventService(eventRepository);
+    /** 기본은 참여를 받지 않는 이벤트다. 받는 쪽은 아래 게임 테스트가 따로 지정한다 */
+    private final PublishedGame publishedGame = mock(PublishedGame.class);
+
+    private final PublicEventService publicEventService =
+            new PublicEventService(eventRepository, publishedGame);
+
+    PublicEventServiceTest() {
+        when(publishedGame.of(any())).thenReturn(Optional.empty());
+    }
 
     @Test
     @DisplayName("공개 기간 안의 이벤트를 조회하면 그대로 반환")
@@ -294,6 +303,74 @@ class PublicEventServiceTest {
         assertTrue(page.contains("data-until=\"2026-10-31T14:59:59Z\""), page);
         assertTrue(page.contains("/assets/event-runtime.js"), page);
         assertNull(publicEventService.publishedPageOf(newEvent(2L, EventStatus.PUBLISHED, null, null)));
+    }
+
+    // ── 게시 페이지의 참여 ──────────────────────────────────────
+
+    /** 참여 버튼이 심긴 조각. 생성 경로가 cta 의 첫 버튼에 participate 를 단다 */
+    private static final String WITH_PARTICIPATE =
+            "<section data-block=\"hero\"><h1>제목</h1></section>"
+            + "<section data-block=\"cta\">"
+            + "<button data-behavior=\"participate\">참여하기</button></section>";
+
+    @Test
+    @DisplayName("★ 참여를 받으면 body 에 이벤트 id 와 방식을 적는다 — runtime 이 여기서 읽는다")
+    void 공개문서_참여정보를_싣는다() {
+        Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
+        setPublishedHtml(event, WITH_PARTICIPATE);
+        when(publishedGame.of(7L)).thenReturn(Optional.of(
+                new PublishedGame.Spec("LUCKY_POUCH", Map.of("pouches", List.of(
+                        Map.of("pouchIndex", 1, "winProbability", 30, "prizeName", "한우세트"),
+                        Map.of("pouchIndex", 2, "winProbability", 10, "prizeName", "쿠폰"))))));
+
+        String page = publicEventService.publishedPageOf(event);
+
+        assertTrue(page.contains("data-event-id=\"7\""), page);
+        assertTrue(page.contains("data-game=\"LUCKY_POUCH\""), page);
+        assertTrue(page.contains("data-pouch=\"1\""), "고르는 칸이 그려져야 한다: " + page);
+        assertTrue(page.contains("data-pouch=\"2\""), page);
+    }
+
+    @Test
+    @DisplayName("참여를 받지 않으면 data-game 을 적지 않는다 — runtime 이 '준비 중' 으로 안내한다")
+    void 공개문서_설정이없으면_방식을안적는다() {
+        Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
+        setPublishedHtml(event, WITH_PARTICIPATE);
+        when(publishedGame.of(7L)).thenReturn(Optional.empty());
+
+        String page = publicEventService.publishedPageOf(event);
+
+        assertFalse(page.contains("data-game="), page);
+        assertFalse(page.contains("ev-game"), "고르는 칸도 그리지 않는다: " + page);
+    }
+
+    @Test
+    @DisplayName("참여 버튼이 없으면 고르는 칸도 그리지 않는다 — 내지 못하는 입력을 띄우지 않는다")
+    void 공개문서_참여버튼이없으면_칸도없다() {
+        Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
+        setPublishedHtml(event, "<section data-block=\"hero\">"
+                + "<span data-behavior=\"countdown\"></span></section>");
+        when(publishedGame.of(7L)).thenReturn(Optional.of(
+                new PublishedGame.Spec("PRE_REGISTRATION", Map.of())));
+
+        String page = publicEventService.publishedPageOf(event);
+
+        assertFalse(page.contains("ev-game"), page);
+        assertTrue(page.contains("data-game=\"PRE_REGISTRATION\""), "방식은 적는다 — 버튼만 없는 것이다");
+    }
+
+    @Test
+    @DisplayName("기본형은 고르는 칸을 남기지 않는다 — 빈 상자는 여백만 만든다")
+    void 공개문서_기본형은_빈칸을안남긴다() {
+        Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
+        setPublishedHtml(event, WITH_PARTICIPATE);
+        when(publishedGame.of(7L)).thenReturn(Optional.of(
+                new PublishedGame.Spec("BASIC", Map.of("resultMode", "GUARANTEED", "prizeName", "쿠폰"))));
+
+        String page = publicEventService.publishedPageOf(event);
+
+        assertFalse(page.contains("ev-game"), page);
+        assertTrue(page.contains("data-game=\"BASIC\""), page);
     }
 
     // ── 목록 썸네일 (hero 만 잘라내기) ───────────────────────────

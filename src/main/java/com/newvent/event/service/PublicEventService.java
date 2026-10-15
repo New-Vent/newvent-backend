@@ -27,8 +27,15 @@ public class PublicEventService {
 
     private final EventRepository eventRepository;
 
-    public PublicEventService(EventRepository eventRepository) {
+    /**
+     * 게시 페이지에 그릴 참여 방식. <b>구현은 participation 패키지에 있다</b> —
+     * 이 패키지가 거기를 직접 보면 두 패키지가 서로를 보게 된다 ({@link PublishedGame} 주석).
+     */
+    private final PublishedGame publishedGame;
+
+    public PublicEventService(EventRepository eventRepository, PublishedGame publishedGame) {
         this.eventRepository = eventRepository;
+        this.publishedGame = publishedGame;
     }
 
     @Transactional(readOnly = true)
@@ -85,7 +92,14 @@ public class PublicEventService {
     // 슬롯을 채운 조각을 완전한 문서로 감싼다 — 공개 페이지 · 관리자 미리보기 공통 (PageShell.standalone)
     // 종료일은 여기서 넣는다. 저장본에는 굳히지 않는다
     public String pageOf(Event event, String fragment) {
-        return PageShell.standalone(fragment, event.getTitle(), event.getEndDate());
+        // ★ 참여 방식까지 실어 보낸다 — runtime 이 body 에서 읽어 참여 API 본문을 만든다.
+        //   설정이 없으면 null 이 가고, 그러면 고르는 칸도 안 그리고 data-game 도 안 적는다
+        PublishedGame.Spec game = publishedGame.of(event.getId()).orElse(null);
+        return PageShell.standalone(
+                fragment, event.getTitle(), event.getEndDate(),
+                event.getId(),
+                game == null ? null : game.gameCode(),
+                game == null ? null : game.config());
     }
 
      // 목록 썸네일용 HTML, 슬롯은 publishedHtmlOf 와 같은 규칙으로 채운 뒤 자른다(기간이 hero 안에 있다)
