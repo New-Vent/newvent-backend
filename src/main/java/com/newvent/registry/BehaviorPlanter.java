@@ -4,6 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -111,6 +112,41 @@ public final class BehaviorPlanter {
         if (btn == null || btn.hasAttr(Behavior.ATTR)) return false;
         btn.attr(Behavior.ATTR, Behavior.PARTICIPATE.key());
         return true;
+    }
+
+    /**
+     * 조각에 참여 이름표가 있도록 보장한다 — <b>보여 줄 때 부른다 (publishedHtmlOf).</b>
+     *
+     * ★★ 왜 필요한가 — 옛 페이지 호환
+     *   참여 이름표(data-behavior="participate")는 LLM 동작 배치기가 생성 때 심는다.
+     *   그 기능이 들어오기 전에 머지된 이벤트는 이름표가 없어서,
+     *     ① bindGame 이 자리를 못 잡아 게임 UI 가 안 그려지고
+     *     ② 프론트가 「참여 이름표가 있는지」로 참여 UI 를 띄울지 판단하므로 패널도 안 뜬다
+     *   운영에 머지된 페이지가 전부 그렇다는 것을 실측에서 확인했다. 재생성 없이 열어 준다.
+     *
+     * ★ 저장본은 건드리지 않는다 — Slots.fill 과 같은 자세다
+     *   조각을 돌려주기 직전에 보장하므로 event_versions 는 그대로다. 설정만 붙으면 바로 동작한다.
+     *
+     * ★ 이름표가 이미 있으면 바이트가 바뀌지 않는다 — 새 페이지는 비용이 거의 없다
+     *   어차피 다른 길에서도 파싱이 들어가므로 (예: PageShell.standalone) 유의미한 추가 비용은 없다.
+     *
+     * ★ 심을 자리가 없으면 조용히 돌려준다 — cta 블록이 없는 조각(옛 더미 등)에는 손대지 않는다
+     */
+    public static String ensureParticipate(String html) {
+        if (html == null || html.isBlank()) return html;
+
+        Document doc = Jsoup.parseBodyFragment(html);
+        doc.outputSettings().prettyPrint(false);
+
+        if (!withBehavior(doc.body(), Behavior.PARTICIPATE).isEmpty()) {
+            return html;                                     // 이미 있다
+        }
+
+        Element cta = doc.body().selectFirst(Block.CTA.selector());
+        if (cta == null || !participate(cta)) {
+            return html;                                     // 심을 자리가 없다
+        }
+        return doc.body().html();
     }
 
     // ── 백지 생성 ──────────────────────────────────────────────────
@@ -236,5 +272,44 @@ public final class BehaviorPlanter {
         if (endsAt == null) return;
         String until = endsAt.toInstant().toString();
         withBehavior(doc.body(), Behavior.COUNTDOWN).forEach(el -> el.attr("data-until", until));
+    }
+
+    /**
+     * 참여 방식대로 게임 자리를 그린다 — 예측 선택지 · 복주머니 · 전화번호 칸.
+     * <b>보여 줄 때만 부른다</b> (PageShell.standalone).
+     *
+     * ★★ 자리가 없으면 만든다 — 참여 버튼 바로 앞이다
+     *   게임 자리({@code data-behavior="game"})는 저장본에 없다. 생성 때 심지 않는 이유가 둘이다.
+     *     ① 생성 시점에는 참여 설정이 없다. 빈 칸만 저장될 뿐이다
+     *     ② 저장본에 넣으면 수정 경로의 checkPreserved 가 그걸 지키게 되어,
+     *        모델이 실수로 지우면 수정이 통째로 실패한다
+     *   그래서 보여 줄 때 만든다. <b>이미 게시된 페이지도 설정만 붙이면 바로 동작한다.</b>
+     *
+     * ★ 참여 버튼이 없으면 아무것도 하지 않는다. 고르기만 하고 낼 수 없는 화면이 된다
+     *
+     * @param gameCode 참여 방식. null 이면 참여를 받지 않는 이벤트라 그리지 않는다
+     * @param config   그 방식의 설정
+     * @return 그렸으면 true
+     */
+    public static boolean bindGame(Document doc, String gameCode, Map<String, Object> config) {
+        if (gameCode == null) return false;
+
+        List<Element> buttons = withBehavior(doc.body(), Behavior.PARTICIPATE);
+        if (buttons.isEmpty()) return false;
+
+        Element at = doc.body().selectFirst("[" + Behavior.ATTR + "~=" + Behavior.GAME.key() + "]");
+        if (at == null) {
+            Element button = buttons.getFirst();
+            // ★ 버튼이 <section> 바로 아래가 아닐 수 있다(래퍼 div). 그래도 버튼 앞에 둔다
+            at = new Element("div").attr(Behavior.ATTR, Behavior.GAME.key());
+            button.before(at);
+        }
+
+        if (GameWidget.draw(at, gameCode, config)) {
+            return true;
+        }
+        // 추가 입력이 없는 방식(BASIC) — 빈 상자를 남기면 여백만 생긴다
+        at.remove();
+        return false;
     }
 }

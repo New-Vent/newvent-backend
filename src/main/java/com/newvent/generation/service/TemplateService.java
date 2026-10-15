@@ -6,6 +6,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Service;
 
+import com.newvent.registry.BehaviorPlanter;
 import com.newvent.registry.PageShell;
 import com.newvent.registry.Slots;
 
@@ -76,7 +77,14 @@ public class TemplateService {
         // ★ 템플릿에는 래퍼와 notices 가 이미 있다. plant() 는 멱등이라 건드리지 않고,
         //   빠져 있는 테마 클래스만 붙인다. <body class="theme-*"> 는 저장 조각에
         //   남을 수 없으므로 래퍼가 유일하게 성립하는 자리다.
-        return PageShell.plant(stripHead(Slots.clear(sanitizeIfNeeded(t))), code);
+        //
+        // ★ 참여 이름표도 심는다 — 템플릿 5종에는 없다 (실측).
+        //   백지 생성은 BehaviorPlanter.decide 로 심지만 템플릿 경로는 그걸 지나지 않는다.
+        //   저장본에 심어 두면 수정 경로의 checkPreserved 가 지켜 주고,
+        //   publishedHtmlOf 의 보수층(ensureParticipate)이 매번 파싱할 필요가 없어진다.
+        return PageShell.plant(
+                BehaviorPlanter.ensureParticipate(stripHead(Slots.clear(sanitizeIfNeeded(t)))),
+                code);
     }
 
     /**
