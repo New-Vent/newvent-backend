@@ -25,8 +25,8 @@ import java.util.regex.Pattern;
  * ★ 이 검사는 페이지 전체 색감 경로(hero STYLE)에서만 쓴다
  *   영역 하나의 배경은 {@link Variant} 의 색 이름 변형(v-surface-yellow …)이 따로 받는다.
  *   그쪽은 막지 않는다 — 그래서 안내 문구가 그 길을 같이 알려 준다.
- *   한 요청에 둘이 섞이면("제목은 파랑, 혜택 배경은 노랑") 절 단위로 가른다 — 영역을 가리키는 말이 같은 절에 있는 색은
- *   영역 배경으로 보고 세지 않는다. 라우터가 그 영역을 짚었을 때만 그렇게 본다.
+ *   한 요청에 둘이 섞이면("전체는 파랑으로 바꾸고 혜택 배경은 노랑으로") 색마다 바로 앞의 대상 말로 가른다 —
+ *   영역을 가리키는 말이 가장 가까우면 영역 배경으로 보고 세지 않는다. 라우터가 그 영역을 짚었을 때만 그렇게 본다.
  *
  * ★ 피하려고 말한 색은 세지 않는다 — "노란색 말고 파란색으로" 는 파랑 요청이다.
  *
@@ -112,12 +112,18 @@ public final class ColorWords {
             + "(?:말고|말구|빼고|제외|아닌|아니라|아니고|아니면|대신|싫"
             + "|쓰지\\s*(?:말|마)|하지\\s*(?:말|마)|넣지\\s*(?:말|마)|안\\s*(?:쓰|써|넣|들어))");
 
-    /** 요청문을 절로 나누는 자리: 쉼표 · 마침표 · "그리고" · "및" · "~하고" · "~랑" */
-    private static final Pattern CLAUSE_BREAK = Pattern.compile(
-            "[,，.;!?\\n]|\\s(?:그리고|및)\\s|(?<=하)고\\s|(?<=[가-힣])랑\\s");
+    /** 문장 경계. 색의 대상은 같은 문장 안에서만 찾는다 (쉼표는 경계가 아니다) */
+    private static final Pattern SENTENCE_BREAK = Pattern.compile("[.!?\\n]");
 
     /**
-     * 영역을 가리키는 말. 같은 절에 이 말이 있으면 그 절의 색은 **영역 하나의 배경**이다.
+     * 페이지 전체(= hero 쪽)를 가리키는 말. 색 앞에 이 말이 가장 가까우면 그 색은 페이지 전체 색이다.
+     *
+     * ★ "바탕" · "배경" 은 넣지 않았다. 영역에도 붙는 말이라("혜택 배경") 대상을 정하지 못한다.
+     */
+    private static final Pattern PAGE_WORDS = Pattern.compile("전체|전부|모두|페이지|제목|히어로|색감|테마|분위기");
+
+    /**
+     * 영역을 가리키는 말. 색 앞에 이 말이 가장 가까우면 그 색은 **영역 하나의 배경**이다.
      *
      * ★ 영역 배경은 {@link Variant} 의 색 이름 변형(v-surface-yellow …)이 받으므로 팔레트 검사 대상이 아니다.
      *   hero 는 없다 — 제목 영역은 배경색 변형이 없고, 제목에 건 색은 페이지 전체 색감 경로로 간다.
@@ -150,14 +156,18 @@ public final class ColorWords {
      *
      * 다음 색은 세지 않는다.
      *   · "노란색 말고 파란색으로" 처럼 그 색을 피하려는 말({@link #NEGATED_AFTER})
-     *   · 영역 연산이 있고, 같은 절에 그 영역을 가리키는 말이 있는 색 — "혜택 배경은 노랑으로" (영역 하나의 배경)
+     *   · 영역 하나의 배경으로 말한 색 — "혜택 배경은 노랑으로". 색 앞(같은 문장)에서 **가장 가까운 대상 말**이
+     *     라우터가 짚은 영역을 가리키는 말이면 그렇다. 페이지 말("전체", "제목")이 더 가까우면 페이지 전체 색이다.
+     *
+     * ★ 연결어("~하고 · ~바꾸고 · ~하며 · ~해서")로 문장을 자르지 않는다. 어미가 너무 다양해서 놓친다 —
+     *   "전체는 노란색으로 바꾸고 혜택 배경은 파란색으로" 가 한 덩어리가 되어 전체 노랑이 영역 배경으로 통과했다(PR 리뷰).
+     *   색마다 바로 앞의 대상 말을 본다.
      *
      * @param areaBlocks 라우터가 STYLE 로 짚은 hero 가 아닌 영역들. 비어 있으면 모든 색이 페이지 전체 색이다
      * @return 지원하지 않는 색이 없으면 빈 값 — 색 말이 없는 요청과 지원하는 색만 있는 요청
      */
     public static Optional<Unsupported> firstUnsupported(String requestText, Collection<Block> areaBlocks) {
         if (requestText == null || requestText.isBlank()) return Optional.empty();
-        List<int[]> clauses = clausesOf(requestText);
         Group best = null;
         int bestAt = Integer.MAX_VALUE;
         for (int i = 0; i < GROUPS.size(); i++) {
@@ -167,7 +177,7 @@ public final class ColorWords {
             while (m.find()) {
                 if (m.start() >= bestAt) break;
                 if (NEGATED_AFTER.matcher(requestText.substring(m.end())).find()) continue;
-                if (isAreaScoped(requestText, clauses, m.start(), areaBlocks)) continue;
+                if (isAreaScoped(requestText, m.start(), areaBlocks)) continue;
                 bestAt = m.start();
                 best = grp;
                 break;
@@ -176,32 +186,44 @@ public final class ColorWords {
         return Optional.ofNullable(best).map(Unsupported::new);
     }
 
-    /** 절의 [시작, 끝) 목록 */
-    private static List<int[]> clausesOf(String text) {
-        List<int[]> out = new ArrayList<>();
-        Matcher m = CLAUSE_BREAK.matcher(text);
-        int from = 0;
-        while (m.find()) {
-            out.add(new int[]{from, m.start()});
-            from = m.end();
+    /**
+     * 이 위치의 색이 영역 하나의 배경으로 말한 색인가 — 색 앞(같은 문장)에서 가장 가까운 대상 말이 영역 말인가.
+     *
+     *   · 앞에 영역 말이 없다                     → 페이지 전체 색 ("노란색으로 바꿔줘", "전체는 노랑으로")
+     *   · 영역 말이 페이지 말보다 가깝다          → 영역 배경 ("전체는 파랑, 혜택 배경은 노랑")
+     *   · 페이지 말이 더 가깝다                   → 페이지 전체 색 ("혜택 배경은 파랑, 전체는 노랑")
+     *   · 단 "혜택 전체" 처럼 영역 말 바로 뒤에 붙은 페이지 말은 그 영역을 꾸미는 말이라 영역으로 본다
+     */
+    private static boolean isAreaScoped(String text, int at, Collection<Block> areaBlocks) {
+        if (areaBlocks == null || areaBlocks.isEmpty()) return false;
+        String before = sentenceBefore(text, at);
+
+        int[] area = null;
+        for (Block b : areaBlocks) {
+            Pattern words = AREA_WORDS.get(b);
+            int[] hit = words == null ? null : lastMatch(words, before);
+            if (hit != null && (area == null || hit[0] > area[0])) area = hit;
         }
-        out.add(new int[]{from, text.length()});
-        return out;
+        if (area == null) return false;
+        int[] page = lastMatch(PAGE_WORDS, before);
+        if (page == null || area[0] > page[0]) return true;
+        return page[0] - area[1] <= 2;
     }
 
-    /** 이 위치의 색이 들어 있는 절에, 라우터가 짚은 영역을 가리키는 말이 있는가 */
-    private static boolean isAreaScoped(String text, List<int[]> clauses, int at, Collection<Block> areaBlocks) {
-        if (areaBlocks == null || areaBlocks.isEmpty()) return false;
-        for (int[] c : clauses) {
-            if (at < c[0] || at >= c[1]) continue;
-            String clause = text.substring(c[0], c[1]);
-            for (Block b : areaBlocks) {
-                Pattern words = AREA_WORDS.get(b);
-                if (words != null && words.matcher(clause).find()) return true;
-            }
-            return false;
-        }
-        return false;
+    /** 색이 나온 문장에서 색 앞까지의 글 */
+    private static String sentenceBefore(String text, int at) {
+        int from = 0;
+        Matcher m = SENTENCE_BREAK.matcher(text);
+        while (m.find() && m.end() <= at) from = m.end();
+        return text.substring(from, at);
+    }
+
+    /** 마지막으로 걸린 자리 [시작, 끝). 없으면 null */
+    private static int[] lastMatch(Pattern p, String s) {
+        Matcher m = p.matcher(s);
+        int[] last = null;
+        while (m.find()) last = new int[]{m.start(), m.end()};
+        return last;
     }
 
     /** 지금 팔레트로 낼 수 있는 색 이름들 */

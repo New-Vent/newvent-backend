@@ -350,6 +350,33 @@ class EditServiceTest {
     }
 
     @Test
+    @DisplayName("영역이 여럿이면 영역마다 '이 영역 몫만 따른다' 를 모델에게 알린다 — 요청문이 통째로 가기 때문이다")
+    void 영역이_여럿이면_각_호출에_맡은_영역을_알린다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null), new RawRoute("STYLE", "benefits", null));
+        retry.willReturn(ok(NEW_HERO), ok(NEW_BENEFITS));
+
+        run("전체는 파란색으로 바꾸고 혜택 배경은 노란색으로 해줘");
+
+        assertEquals(2, retry.prompts().size());
+        for (String prompt : retry.prompts()) {
+            assertTrue(prompt.contains("[이번 호출은 한 영역만 고친다]"), "영역이 여럿인데 맡은 영역 안내가 없습니다:\n" + prompt);
+            assertTrue(prompt.contains("해당하는 부분만 따른다"), prompt);
+        }
+    }
+
+    @Test
+    @DisplayName("영역이 하나뿐이면 그 안내를 붙이지 않는다")
+    void 영역이_하나면_맡은_영역_안내가_없다() {
+        router.willReturn(new RawRoute("EDIT", "hero", "가을 대축제"));
+        retry.willReturn(ok(NEW_HERO));
+
+        run("제목을 가을 대축제로 바꿔줘");
+
+        assertEquals(1, retry.prompts().size());
+        assertFalse(retry.prompts().getFirst().contains("[이번 호출은 한 영역만 고친다]"), retry.prompts().getFirst());
+    }
+
+    @Test
     @DisplayName("섞인 요청이어도 제목 쪽에 건 없는 색은 되묻는다")
     void 제목_쪽_없는_색은_섞여도_되묻는다() {
         router.willReturn(new RawRoute("STYLE", "hero", null), new RawRoute("STYLE", "benefits", null));

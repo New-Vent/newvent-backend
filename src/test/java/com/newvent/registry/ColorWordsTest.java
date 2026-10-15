@@ -119,6 +119,48 @@ class ColorWordsTest {
         assertEquals("노랑", unsupportedName("바탕색은 노란색으로 바꿔줘"));
     }
 
+    /**
+     * 여러 요청을 이어 쓴 문장 — 연결어가 "하고"만 있는 게 아니다(PR #226 리뷰).
+     * 어미 목록으로 문장을 자르면 "바꾸고 · 바꾸며 · 해서 · 다음"에서 한 덩어리가 되어 전체 노랑이 통과했다.
+     */
+    @Test
+    @DisplayName("이어 쓴 요청에서 색의 대상을 가른다 — 연결어가 뭐든 색 앞의 가장 가까운 대상 말로 본다")
+    void 이어_쓴_요청에서_색의_대상을_가른다() {
+        Set<Block> benefits = Set.of(Block.BENEFITS);
+
+        // 노랑이 페이지 전체(전체 · 제목) 쪽 — 걸려야 한다
+        for (String text : new String[]{
+                "전체는 노란색으로 바꾸고 혜택 배경은 파란색으로 해줘",
+                "전체는 노란색으로 바꾼 다음 혜택 배경은 파란색으로 해줘",
+                "전체는 노란색으로 해서 혜택 배경은 파란색으로 해줘",
+                "제목은 노란색으로 바꾸며 혜택 배경은 파란색으로",
+                "전체 색감은 노랑으로 하고 혜택 배경은 파랑으로",
+                "혜택 배경은 파란색으로 바꾸고 전체는 노란색으로 해줘",
+                "혜택 배경은 파란색으로, 전체는 노란색으로",
+                "노란색으로 전체를 바꾸고 혜택 배경은 파란색으로"}) {
+            assertEquals("노랑", ColorWords.firstUnsupported(text, benefits).map(u -> u.group().name()).orElse(null), text);
+        }
+
+        // 노랑이 혜택 영역 배경 쪽 — 걸리면 안 된다
+        for (String text : new String[]{
+                "전체는 파란색으로 바꾸고 혜택 배경은 노란색으로 해줘",
+                "전체는 파란색으로 바꾼 다음 혜택 배경은 노란색으로 해줘",
+                "제목은 파란색으로 바꾸며 혜택 배경은 노란색으로",
+                "혜택 배경은 노란색으로 바꾸고 전체는 파란색으로 해줘",
+                "혜택 배경은 노란색으로, 전체는 파란색으로",
+                "혜택 전체를 노란색으로 바꿔줘"}) {
+            assertEquals(Optional.empty(), ColorWords.firstUnsupported(text, benefits), text);
+        }
+    }
+
+    @Test
+    @DisplayName("문장이 끝나면 앞 문장의 대상 말은 이어지지 않는다")
+    void 앞_문장의_대상_말은_이어지지_않는다() {
+        // 첫 문장의 '혜택' 이 둘째 문장의 노랑을 영역 배경으로 만들면 안 된다
+        assertEquals("노랑", ColorWords.firstUnsupported("혜택 배경은 파랑으로 해줘. 바탕색은 노란색으로 바꿔줘", Set.of(Block.BENEFITS))
+                .map(u -> u.group().name()).orElse(null));
+    }
+
     @Test
     @DisplayName("라우터가 짚은 영역의 말만 인정한다 — 다른 영역 말은 영역 배경의 근거가 아니다")
     void 짚지_않은_영역의_말은_근거가_아니다() {

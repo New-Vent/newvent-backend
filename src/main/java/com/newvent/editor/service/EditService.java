@@ -313,7 +313,7 @@ public class EditService {
             if (job.checkCancelled()) return;
             String beforeStep = BlockValidator.blockOf(doc, step.block());
 
-            Applied applied = apply(job, cmd, doc, step);
+            Applied applied = apply(job, cmd, doc, step, plan.size() > 1);
             if (applied == null) return;
 
             doc = applied.html();
@@ -672,7 +672,7 @@ public class EditService {
     /**
      * 연산 하나를 문서에 반영한다.
      */
-    private Applied apply(GenerationJob job, EditCommand cmd, String doc, Decision.Run step) {
+    private Applied apply(GenerationJob job, EditCommand cmd, String doc, Decision.Run step, boolean multiArea) {
         Block block = step.block();
         String before = BlockValidator.blockOf(doc, block);
 
@@ -735,7 +735,7 @@ public class EditService {
                     // ★★ 올라온 이미지 목록을 같이 넘긴다. 비면 안내가 한 줄도 안 나간다
                     PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks(),
                             step.op() == Op.STYLE, addItem, uploaded),
-                    userPrompt(cmd, step, before, serverLayout != null),
+                    userPrompt(cmd, step, before, serverLayout != null, multiArea),
                     // ★ 항목을 하나 더하는 요청이면 검증기에 그렇게 알린다. 안 알리면
                     //   ITEM_ADDED 로 4회가 전부 터지고 관리자는 이유를 못 듣는다
                     // ★★ **같은 목록**을 검증기에도 준다. 여기 없는 src 는 <img> 째로 떨어진다 —
@@ -852,7 +852,13 @@ public class EditService {
      *
      * ★ 현재 내용을 준다. 이게 없으면 모델은 무엇을 고칠지 모른다
      */
-    private static String userPrompt(EditCommand cmd, Decision.Run step, String before, boolean serverSetsLayout) {
+    /** 사용자에게도 모델에게도 읽히는 영역 이름 — "혜택 — 항목은 폼 값…" 에서 앞 낱말만 */
+    private static String areaName(Block block) {
+        return block.desc().split("[—.]")[0].strip();
+    }
+
+    private static String userPrompt(EditCommand cmd, Decision.Run step, String before, boolean serverSetsLayout,
+                                     boolean multiArea) {
         StringJoiner s = new StringJoiner("\n");
         if (cmd.title() != null && !cmd.title().isBlank()) {
             s.add("이벤트 제목: " + cmd.title().strip());
@@ -863,6 +869,16 @@ public class EditService {
         //   보여 주면 "좌우로 나눠줘" 를 읽고 hero 자체 모양(v-hero-split)을 바꾼다 — 배치를 서버로 옮긴 이유가 그것이다
         s.add(RequestFilter.clean(serverSetsLayout ? Layout.withoutLayoutTalk(cmd.requestText()) : cmd.requestText()));
         s.add("");
+
+        // ★ 영역마다 모델을 따로 부르는데 요청문은 통째로 간다. 여러 영역이 섞인 요청("전체는 파랑으로 바꾸고 혜택 배경은
+        //   노랑으로")에서 모델이 다른 영역의 색을 집었다 — 혜택 호출에서 노랑 대신 파랑을 골랐다(실측, PR #226 리뷰).
+        //   이 호출이 맡은 영역을 말해 주고 그 영역 몫만 따르게 한다. 영역이 하나뿐인 요청에는 붙이지 않는다.
+        if (multiArea) {
+            s.add("[이번 호출은 한 영역만 고친다]");
+            s.add("- 위 요청에는 다른 영역 이야기도 섞여 있다. **" + areaName(step.block()) + "** 영역에 해당하는 부분만 따른다.");
+            s.add("- 다른 영역에 대한 말(색 · 문구 · 모양)은 이 영역에 적용하지 않는다.");
+            s.add("");
+        }
 
         if (step.content() != null && !step.content().isBlank()) {
             s.add("[관리자가 직접 쓴 문구 — 이 문구를 그대로 쓴다]");
