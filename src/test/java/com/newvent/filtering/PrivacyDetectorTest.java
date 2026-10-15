@@ -55,6 +55,48 @@ class PrivacyDetectorTest {
     }
 
     /**
+     * 군 → 면 → 리, 읍 → 리처럼 읍·면·동·리가 이어지는 주소 (PR #229 리뷰).
+     * 지역 낱말 바로 뒤에 번지수가 오는 형태만 보던 때는 이런 주소를 전부 놓쳤다.
+     */
+    @Test
+    void detectsAddressesWhereEupMyeonDongRiFollowEachOther() {
+        for (String text : new String[]{
+                "경기 양평군 서종면 문호리 123", "경기도 양평군 서종면 문호리 123-4", "강원 홍천군 서면 팔봉리 12-3",
+                "충남 서산시 해미면 읍내리 123", "경북 안동시 와룡면 가구리 산 12", "전남 신안군 압해읍 송공리 123",
+                "경기 가평군 설악면 신천리 12-3", "충북 청주시 청원구 오창읍 양청리 123", "제주 서귀포시 성산읍 고성리 123",
+                "전북 완주군 소양면 화심리 산 5", "강원도 평창군 대관령면 횡계리 123", "인천 강화군 길상면 온수리 123",
+                "충남 태안군 안면읍 승언리 12-3", "전남 완도군 보길면 예송리 산 3",
+                // 면 아래 도로명 · 동 아래 도로명
+                "경기 양평군 서종면 문호리1길 12", "서울 강남구 역삼동 테헤란로 152"}) {
+            assertTrue(PrivacyDetector.types(text).contains("ADDRESS"), text);
+        }
+    }
+
+    /**
+     * 시·구 없이 광역 약칭만 쓴 지번 주소. 기존 정규식은 이것도 잡았다(퇴보 방지).
+     * 약칭 뒤는 번지수가 세 자리 이상이거나 "12-3" 꼴일 때만 본다.
+     */
+    @Test
+    void detectsAddressesWrittenWithOnlyAnAbbreviatedMetropolis() {
+        for (String text : new String[]{"서울 역삼동 123-4", "서울 역삼동 123", "부산 우동 1234", "경기 문산읍 123-4",
+                "경기 서종면 문호리 123", "제주 연동 123-4"}) {
+            assertTrue(PrivacyDetector.types(text).contains("ADDRESS"), text);
+        }
+    }
+
+    @Test
+    void abbreviatedMetropolisFollowedByOrdinaryWordsIsNotAnAddress() {
+        for (String text : new String[]{
+                "서울 이동 5분 거리 매장 방문 이벤트", "경기 활동 3회 이상 참여하면 포인트", "부산 운동 2시간 하면 포인트",
+                "서울 관리 3명 추첨", "대전 가입하면 3GB", "인천 참여하면 5000원 쿠폰", "서울 오면 3일 무료", "경기 보면 3번 더",
+                "대구 만나면 3번", "제주 리뷰 작성하면 2배 적립", "서울 거주자 신청하면 1000명 추첨", "서울 가입자 10명에게 드립니다",
+                "경기도 참여자 100명", "부산 지역 가입하면 5GB", "광주 이벤트 3일간 진행", "서울 정리 3단계",
+                "제주 방문 3회 인증", "세종 운영 5일", "서울 이용 시 3GB", "대전 동 3곳 운영"}) {
+            assertFalse(PrivacyDetector.types(text).contains("ADDRESS"), text);
+        }
+    }
+
+    /**
      * 부사 "다시"가 "시"로 끝나서 지역 낱말로 읽히고, 뒤의 "쓰면 401" 이 읍·면 + 번호로 읽히던 것.
      * 저장소 문서의 "이미 쓴 토큰을 다시 쓰면 401" 에서 발견했다.
      */
