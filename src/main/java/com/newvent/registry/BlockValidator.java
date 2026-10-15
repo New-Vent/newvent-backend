@@ -1,6 +1,7 @@
 package com.newvent.registry;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -209,6 +210,21 @@ public class BlockValidator {
      * @param html   모델이 돌려준 것 (sanitizeEdited 를 먼저 거친 것)
      */
     public static List<Failure> validateEdited(Block target, String before, String html) {
+        return validateEdited(target, before, html, false);
+    }
+
+    /**
+     * @param allowOneMore 항목을 **하나** 더하는 요청인가.
+     *
+     * ★★ 전에는 이 구분이 없어서 항목 추가가 어느 블록에서도 불가능했다.
+     *   혜택 · 경품은 관문(Gate)이 거절했고, 그 밖의 목록 블록(참여 방법 · FAQ ·
+     *   일정 …)은 checkItemCount 가 ITEM_ADDED 로 막았다. 관리자가 "참여 방법에
+     *   선착순 3,000명 추가해줘" 를 하면 길이 아예 없었다 — 실측.
+     *
+     * ★ 하나만 허용한다. 열어 두면 모델이 한 번에 다섯 개를 지어낸다.
+     */
+    public static List<Failure> validateEdited(Block target, String before, String html,
+                                               boolean allowOneMore) {
         List<Failure> f = new ArrayList<>();
         Document doc = Jsoup.parseBodyFragment(html == null ? "" : html);
 
@@ -224,7 +240,7 @@ public class BlockValidator {
             }
         }
         checkShape(target, el, f, true);
-        checkItemCount(target, before, el, f);
+        checkItemCount(target, before, el, f, allowOneMore);
         checkPreserved(before, html, f);
         return f;
     }
@@ -268,7 +284,8 @@ public class BlockValidator {
      *
      *  ★ container() 가 null 인 블록(hero·notices·cta)은 검사하지 않는다.
      */
-    private static void checkItemCount(Block target, String before, Element el, List<Failure> f) {
+    private static void checkItemCount(Block target, String before, Element el, List<Failure> f,
+                                       boolean allowOneMore) {
     	if (target.container() == null) return;
 
     	Document beforeDoc = Jsoup.parseBodyFragment(before == null ? "" : before);
@@ -281,11 +298,13 @@ public class BlockValidator {
     	int wasKids = beforeBox.children().size();
     	int nowKids = afterBox.children().size();
     	// ★ 둘 다 늘지 않았으면 통과 (삭제 허용 — "복주머니 2개" 유지)
-    	if (nowMust <= wasMust && nowKids <= wasKids) return;
+    	// ★ 관리자가 항목 하나를 더해 달라고 했으면 한 칸까지 봐준다
+    	int slack = allowOneMore ? 1 : 0;
+    	if (nowMust <= wasMust + slack && nowKids <= wasKids + slack) return;
 
     	f.add(Failure.of(FailureCode.ITEM_ADDED, target.key(),
-    	        target.key() + " 항목이 늘었습니다. " +
-    	        "항목 추가는 서버만 합니다. 문구만 고치세요."));
+    	        target.key() + " 항목이 " + (allowOneMore ? "둘 이상 " : "") + "늘었습니다. " +
+    	        (allowOneMore ? "한 번에 하나만 더합니다." : "항목 추가는 서버만 합니다. 문구만 고치세요.")));
     }
 
     // ── 보존 검사 ──────────────────────────────────────────────────
@@ -303,6 +322,7 @@ public class BlockValidator {
      * ★ 대신 이 둘은 고정이다
      *   data-slot  서버가 값을 쓰는 자리. 없어지면 그 이벤트는 영영 못 채운다
      *   id         getElementById 로 직접 찾는다 (#demoTimer · #regCount · #pouchSection)
+     *   behavior   data-behavior 이름 — runtime.js 가 이걸 보고 동작한다
      *              없어지면 타이머가 멈추고, 복제하면 id 중복으로 첫 번째만 잡힌다
      *   class      단, **이름표 붙은 요소의 것만.** 아래 diffClasses 참고
      */
@@ -313,11 +333,36 @@ public class BlockValidator {
                 FailureCode.SLOT_INVENTED, "data-slot=\"%s\" 를 새로 만들었습니다. "
                         + "data-slot 은 서버만 심습니다. 원래 있던 것만 그대로 두세요.");
 
-        diff(Slots.idsOf(before), Slots.idsOf(after), f,
+        // 카드 삭제 시 직접 편집용 문구 ID는 없어져도 되지만, 기능용 ID는 반드시 보존한다.
+        Set<String> beforeIds = new LinkedHashSet<>(Slots.idsOf(before));
+        Set<String> afterIds = new LinkedHashSet<>(Slots.idsOf(after));
+        for (Element holder : Jsoup.parseBodyFragment(before).select("span[id^=nv-direct-text-]")) {
+            beforeIds.remove(holder.id());
+            afterIds.remove(holder.id());
+        }
+        diff(beforeIds, afterIds, f,
                 FailureCode.ID_LOST, "id=\"%s\" 를 지웠습니다. 화면 기능이 그 id 로 요소를 찾습니다. "
                         + "원래 있던 id 를 그대로 두세요.",
                 FailureCode.ID_INVENTED, "id=\"%s\" 를 새로 만들었습니다. "
                         + "id 는 화면 기능이 쓰는 이름이라 임의로 추가하면 안 됩니다.");
+
+        // ★ 동작도 이름표다. 지우면 버튼이 조용히 죽고, 지어내면 서버가 심지 않은 동작이 생긴다
+        diff(Behavior.keysOf(before), Behavior.keysOf(after), f,
+                FailureCode.BEHAVIOR_LOST, "data-behavior=\"%s\" 를 지웠습니다. 버튼의 동작이 이 속성에 걸려 있습니다. "
+                        + "원래 있던 data-behavior 를 그대로 두세요.",
+                FailureCode.BEHAVIOR_INVENTED, "data-behavior=\"%s\" 를 새로 만들었습니다. "
+                        + "동작은 서버만 붙입니다. 원래 있던 것만 그대로 두세요.");
+
+        // ★ 버튼은 늘 수 없다. 수정 정화는 원래 버튼을 지키려고 <button> 을 허용하는데,
+        //   그 틈으로 동작(data-behavior) 없는 버튼이 들어오면 눌러도 아무 일이 없는 버튼이 게시된다.
+        //   줄어드는 것(카드 삭제)은 허용한다. 카드 추가는 서버가 먼저 복제하므로(duplicateCard) 개수가 같다
+        int wasButtons = Jsoup.parseBodyFragment(before == null ? "" : before).select("button").size();
+        int nowButtons = Jsoup.parseBodyFragment(after == null ? "" : after).select("button").size();
+        if (nowButtons > wasButtons) {
+            f.add(Failure.of(FailureCode.BUTTON_INVENTED,
+                    "버튼(<button>)을 새로 만들었습니다. 버튼은 동작이 붙어야 해서 서버만 만듭니다. "
+                            + "원래 있던 버튼만 그대로 두고 문구만 고치세요."));
+        }
 
         diffClasses(Slots.classMap(before), Slots.classMap(after), f);
     }
@@ -372,7 +417,7 @@ public class BlockValidator {
     private static final Set<String> ALLOWED_CSS = Set.of(
             "color", "background-color",
             "font-size", "font-weight", "font-style", "line-height",
-            "text-align", "text-decoration",
+            "text-align", "text-decoration", "white-space",
             "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
             "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
             "border", "border-color", "border-width", "border-style", "border-radius");
@@ -388,7 +433,19 @@ public class BlockValidator {
      *   data-slot 을 만들면 서버의 쓰기 지점을 모델이 만드는 셈이 된다 (REQ-LLM-46).
      */
     public static String sanitizeGenerated(String html) {
-        return clean(html, false);
+        return sanitizeGenerated(html, List.of());
+    }
+
+    /**
+     * @param allowedAssets 이 이벤트에 올라온 이미지. 여기 없는 src 는 &lt;img&gt; 째로 지운다.
+     *
+     * ★★ 기본값이 빈 목록이다 — 즉 **이미지를 아예 안 받는다.** 지금 열려 있는 구멍을 막는 쪽이
+     *   기본이어야 한다. Safelist.relaxed 는 img[src] 에 http/https/ftp 를 허용해서,
+     *   모델이 지어낸 바깥 주소가 그대로 게시된다(실측: https://… 통과).
+     *   호출하는 쪽이 목록을 깜빡해도 조용히 열리면 안 된다.
+     */
+    public static String sanitizeGenerated(String html, List<Asset.Ref> allowedAssets) {
+        return clean(html, false, allowedAssets);
     }
 
     /**
@@ -408,7 +465,12 @@ public class BlockValidator {
      *   계약 4-⑤ 도 "CTA 버튼에 onclick 인라인 핸들러를 넣지 않습니다" 로 같은 방향이다.
      */
     public static String sanitizeEdited(String html) {
-        return clean(html, true);
+        return sanitizeEdited(html, List.of());
+    }
+
+    /** @param allowedAssets {@link #sanitizeGenerated(String, Set)} 참고 */
+    public static String sanitizeEdited(String html, List<Asset.Ref> allowedAssets) {
+        return clean(html, true, allowedAssets);
     }
 
     /**
@@ -417,6 +479,10 @@ public class BlockValidator {
      *   순서:  sanitize(모델 출력) → merge   (반대로 하지 말 것)
      */
     private static String clean(String html, boolean keepInteractive) {
+        return clean(html, keepInteractive, List.of());
+    }
+
+    private static String clean(String html, boolean keepInteractive, List<Asset.Ref> allowedAssets) {
         Safelist s = Safelist.relaxed()
                 .addAttributes(":all", "style", "data-block", "class")
                 .addTags("section")
@@ -432,6 +498,14 @@ public class BlockValidator {
                 //   "#" 은 빈 문자열이 되어 어느 프로토콜에도 안 맞고 속성째 제거된다.
                 .addProtocols("a", "href", "#");
 
+        // ★★ 에셋 주소는 **절대 URL** 이어야 한다.
+        //   Safelist 는 img[src] 를 absUrl 로 바꾼 뒤 프로토콜을 보는데, baseUri 가 비어
+        //   있어서 상대 경로("/api/public/assets/…")는 빈 문자열이 되고 속성째 떨어진다.
+        //   바로 위 a[href="#"] 가 특례로 살아 있는 것과 같은 함정이고, "#" 처럼 "/" 를 더하는
+        //   건 안 통한다 — jsoup 은 "#" 만 따로 처리하고 나머지는 "프로토콜:" 로 맞춰 본다.
+        //   그래서 서버가 에셋 주소를 https://… 로 내려 준다(asset.public-base-url).
+        //   대조는 dropForeignImages 가 한다.
+
         if (keepInteractive) {
             s = s.addTags("button", "input")
                  .addAttributes(":all",
@@ -439,8 +513,9 @@ public class BlockValidator {
                          "id",             // getElementById 로 찾는 것들
                          "type",           // <button type="button">
                          "value", "placeholder",
-                         "data-href",      // <button> 일 때 서버가 넣는 링크
-                         "data-demo-msg", "data-state", "data-vote");
+                         "data-href")      // <button> 일 때 서버가 넣는 링크
+                 // ★ 동작(data-behavior)과 그것이 읽는 data-* 만. 목록은 Behavior 가 정한다
+                 .addAttributes(":all", Behavior.ATTRIBUTES.toArray(String[]::new));
         }
         String cleaned = Jsoup.clean(html, "", s, new Document.OutputSettings().prettyPrint(false));
 
@@ -452,8 +527,28 @@ public class BlockValidator {
             if (safe.isEmpty()) el.removeAttr("style");
             else el.attr("style", safe);
         }
+        dropForeignImages(doc, allowedAssets);
         cleanLooks(doc);
+        // ★ 속성은 열었지만 값은 아직 안 봤다 — 목록에 없는 behavior 이름은 여기서 지운다
+        if (keepInteractive) Behavior.sanitize(doc);
         return doc.body().html();
+    }
+
+    /**
+     * 허용 목록에 없는 &lt;img&gt; 를 지운다. **주소를 모델에게 맡기지 않는 줄이다.**
+     *
+     * ★ 통째로 지운다. src 만 떼면 깨진 아이콘이 남고, 그게 그대로 게시된다.
+     * ★ 배치 이름(ev-asset-*)은 Asset.sanitize 가 블록별로 따로 거른다 —
+     *   ev-asset-* 는 v- 도 t- 도 아니라서 cleanLooks 를 그냥 지나간다.
+     */
+    private static void dropForeignImages(Document doc, List<Asset.Ref> allowedAssets) {
+        Set<String> urls = Asset.urls(allowedAssets);
+        for (Element img : doc.body().select("img")) {
+            if (!urls.contains(img.attr("src"))) img.remove();
+        }
+        for (Element sec : doc.body().select("section[data-block]")) {
+            Block.find(sec.attr("data-block")).ifPresent(b -> Asset.sanitize(sec, b, allowedAssets));
+        }
     }
 
     /**
@@ -493,6 +588,42 @@ public class BlockValidator {
                 if (ok) paletteKept = true;
                 else el.removeClass(c);
             }
+
+            // ★ 테마도 팔레트와 같은 규칙이다 — hero 에 하나만, 목록에 있는 것만.
+            //   지어낸 이름(theme-두쫀쿠)은 CSS 가 없어 효과도 없지만, 남겨 두면
+            //   다음 수정에서 모델이 그걸 보고 따라 쓴다. 들어오는 자리에서 지운다.
+            //
+            // ★★ 단, **루트(.ev-container)는 건드리지 않는다.**
+            //   이 반복문은 class 가 있는 모든 요소를 돈다. 루트는 section 이 아니라
+            //   b == null 이 되어 "hero 가 아니다" 로 판정되고, 그대로 두면 템플릿이
+            //   들고 온 theme-sports 가 지워진다. 그러면 PageShell.ensureRoot 가
+            //   "테마 없음" 으로 보고 기본 테마를 박아 **템플릿 테마가 전부 basic 이 된다**
+            //   (SavedTemplateHtmlTest 5건으로 실제로 잡혔다).
+            //   루트의 테마는 서버(PageShell)가 쥔다. 여기는 모델 출력만 다룬다.
+            //
+            // ★ 팔레트 쪽에 같은 가드가 없는 것은 SavedTemplateHtml 이 루트 팔레트를
+            //   따로 집어 두었다가 되붙여서 가려져 있을 뿐이다. 테마에는 그 보정이 없다.
+            //
+            // ★ 기본 테마를 "넣는" 일은 여기서 하지 않는다. 이 함수는 RetryService 를 거쳐
+            //   **수정 경로도** 지난다. 수정마다 블록에 theme-* 가 박히면 루트 테마가
+            //   매번 리셋되고, EditService 의 "안 바뀌었으면 실패" 검사도 전후가 늘
+            //   달라져 무력해진다. 기본값은 PageShell.ensureRoot 한 곳에서만 박는다.
+            boolean isRoot = PageShell.isRoot(el);
+            boolean themeKept = false;
+            for (String c : List.copyOf(el.classNames())) {
+                if (isRoot || !Theme.looksLike(c)) continue;
+                boolean ok = b == Block.HERO && !themeKept && Theme.find(c).isPresent();
+                if (ok) themeKept = true;
+                else el.removeClass(c);
+            }
+            // 페이지 배치(layout-*)도 테마와 같은 규칙이다
+            boolean layoutKept = false;
+            for (String c : List.copyOf(el.classNames())) {
+                if (isRoot || !Layout.looksLike(c)) continue;
+                boolean ok = b == Block.HERO && !layoutKept && Layout.find(c).isPresent();
+                if (ok) layoutKept = true;
+                else el.removeClass(c);
+            }
             if (el.classNames().isEmpty()) el.removeAttr("class");
         }
     }
@@ -518,6 +649,13 @@ public class BlockValidator {
 
     	Element copy = src.clone();
     	emptyText(copy);
+        // 직접 편집용 문구 ID는 복제본마다 새로 부여해 원본과 충돌하지 않게 한다.
+        Set<String> usedIds = Slots.idsOf(doc.body().html());
+        for (Element holder : copy.select("span[id^=nv-direct-text-]")) {
+            String id = holder.id() + "-copy";
+            while (!usedIds.add(id)) id += "-next";
+            holder.attr("id", id);
+        }
     	src.parent().appendChild(copy);
     	return doc.body().html();
     }

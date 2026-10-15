@@ -10,6 +10,8 @@ import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.event.repository.EventVersionRepository;
+import com.newvent.generation.domain.ChatMessage;
+import com.newvent.generation.repository.ChatMessageRepository;
 
 /**
  * {@code event_versions} 에 실제로 쓰는 구현. <b>이게 들어오면서 생성 결과가 서버 재시작을 넘긴다.</b>
@@ -28,23 +30,29 @@ import com.newvent.event.repository.EventVersionRepository;
  * ★ is_checkpoint 는 건드리지 않는다
  *   새 행은 항상 false 다. 관리자가 "저장" 을 누르면 EventVersionService 가 켠다.
  *
- * ★ requestMessage 는 아직 null 이다
- *   {@code chat_messages} 에 쓰는 사람이 없다. 그 배선이 생기면 인자가 하나 늘어난다.
+ * ★ requestMessage 는 채팅 요청으로 만든 버전에만 건다
+ *   생성·수정(GenerationService · EditService)이 요청 메시지 id 를 넘긴다. 되돌리기 · 직접 편집 ·
+ *   템플릿으로 만들기는 채팅이 아니라서 null 이다. 메시지는 이 트랜잭션 전에 이미 커밋돼 있다 -
+ *   여기서는 id 로 찾아 FK 만 건다.
  */
 @Service
 public class JpaVersionStore implements VersionStore {
 
     private final EventRepository events;
     private final EventVersionRepository versions;
+    private final ChatMessageRepository chatMessages;
 
-    public JpaVersionStore(EventRepository events, EventVersionRepository versions) {
+    public JpaVersionStore(EventRepository events, EventVersionRepository versions,
+                           ChatMessageRepository chatMessages) {
         this.events = events;
         this.versions = versions;
+        this.chatMessages = chatMessages;
     }
 
     @Override
     @Transactional
-    public Saved save(Long eventId, String html, Long sourceVersionId) {
+    public Saved save(Long eventId, String html, Long sourceVersionId,
+                      String changeSummary, Long requestMessageId) {
         // ★ 이 클래스 주석의 "이벤트당 직렬화에 의존한다" 를 여기서 실제로 만든다.
         //   아래 max+1 과 insert 사이에 다른 트랜잭션이 끼어들면
         //   uk_event_versions_event_version_no 로 500 이 난다.
@@ -65,8 +73,13 @@ public class JpaVersionStore implements VersionStore {
                 : versions.findByIdAndEventId(sourceVersionId, eventId)
                         .orElseThrow(() -> new EventException(EventErrorCode.VERSION_NOT_FOUND));
 
+        // ★ eventId 를 같이 건다 - 남의 이벤트의 메시지를 이 버전의 요청으로 걸 수 없다.
+        //   찾지 못하면 연결 없이 저장한다. 채팅 내역이 없다고 버전 저장이 실패하면 안 된다.
+        ChatMessage requestMessage = (requestMessageId == null) ? null
+                : chatMessages.findByIdAndEventId(requestMessageId, eventId).orElse(null);
+
         EventVersion saved = versions.save(EventVersion.create(
-                events.getReferenceById(eventId), nextNo, html, source));
+                events.getReferenceById(eventId), nextNo, html, source, changeSummary, requestMessage));
 
         return new Saved(saved.getId(), saved.getVersionNo());
     }

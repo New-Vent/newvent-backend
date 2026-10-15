@@ -48,6 +48,12 @@ class PageShellTest {
         return Jsoup.parseBodyFragment(html).body().selectFirst(".ev-container, .event-page");
     }
 
+    /** hero 의 class 에 하나를 끼워 넣는다 — 모델이 고른 모양을 흉내 낸다 */
+    private static String heroClass(String fragment, String cssClass) {
+        return fragment.replace("<section data-block=\"hero\">",
+                                "<section data-block=\"hero\" class=\"" + cssClass + "\">");
+    }
+
     // ── 래퍼 ──────────────────────────────────────────────────────
 
     @Test
@@ -70,14 +76,90 @@ class PageShellTest {
         }
     }
 
+    // ── 테마 ──────────────────────────────────────────────────────
+
+    /**
+     * ★ 동작이 <b>뒤집혔다.</b> 예전에는 백지에 테마를 붙이지 않았다 —
+     *   그때는 백지용 테마가 없어서 붙일 게 없었고 :root 기본값에 맡길 수밖에 없었다.
+     *   지금은 {@link Theme} 에 BASIC · BLOOM · AURORA 가 있다.
+     *
+     * ★ 테마가 없으면 event.css 의 :root 기본값만 걸린다 —
+     *   같은 흰 카드가 세로로 쌓인 화면이다. 그래서 반드시 하나 박는다.
+     *
+     * ★ 기본값은 성격이 없어야 한다. BLOOM 처럼 센 테마를 기본으로 두면
+     *   "법인 요금제 비교" 에 구름이 뜬다. 조용한 기본값은 조금 안 맞아도 괜찮지만
+     *   시끄러운 기본값은 그냥 틀린다.
+     */
     @Test
-    @DisplayName("② 백지에는 테마를 붙이지 않는다 — :root 기본값을 쓴다")
-    void 백지는_테마가_없다() {
+    @DisplayName("② 백지에도 테마를 붙인다 — 모델이 안 고르면 기본 테마")
+    void 백지에_기본_테마를_붙인다() {
         Element root = rootOf(PageShell.ensureRoot(백지, null));
 
-        assertTrue(root.classNames().stream().noneMatch(c -> c.startsWith("theme-")),
-                "백지는 템플릿이 없으므로 테마를 고를 근거가 없습니다. "
-                + "event.css 의 :root 기본값이 쓰입니다. 실제 class: " + root.classNames());
+        assertTrue(root.hasClass(Theme.DEFAULT.cssClass()),
+                "백지에 기본 테마가 안 붙었습니다. 테마가 없으면 :root 기본값만 걸려 "
+                + "같은 흰 카드가 세로로 쌓입니다. 실제 class: " + root.classNames());
+    }
+
+    /**
+     * ★ 모델은 블록 하나만 출력한다. 루트를 못 만지므로 hero 의 class 에 고르게 하고
+     *   서버가 루트로 옮긴다 — 팔레트와 같은 길이다(PageShell.hoistPalette).
+     * ★ 올린 뒤에는 hero 에서 지운다. 남겨 두면 다음 수정에서 모델이 보고 따라 쓴다
+     *   (v-* 에서 겪은 그 경로다).
+     */
+    @Test
+    @DisplayName("②-b 백지 — 모델이 hero 에 고른 테마를 루트로 올린다")
+    void 모델이_고른_테마를_루트로_올린다() {
+        String out = PageShell.ensureRoot(heroClass(백지, "theme-bloom"), null);
+
+        Element root = rootOf(out);
+        assertTrue(root.hasClass("theme-bloom"),
+                "모델이 고른 테마가 루트로 안 올라왔습니다. 실제 class: " + root.classNames());
+        assertFalse(root.hasClass(Theme.DEFAULT.cssClass()),
+                "모델이 골랐는데 기본 테마까지 같이 박혔습니다. 테마는 하나여야 합니다. "
+                + "실제 class: " + root.classNames());
+
+        Element hero = Jsoup.parseBodyFragment(out).body().selectFirst(Block.HERO.selector());
+        assertFalse(hero.hasClass("theme-bloom"),
+                "hero 에 테마가 남았습니다. 루트로 올렸으면 원래 자리에서는 지워야 합니다.");
+    }
+
+    /**
+     * ★ 지어낸 이름(theme-두쫀쿠)은 CSS 가 없어 효과도 없지만, 남겨 두면
+     *   다음 수정에서 모델이 그걸 보고 따라 쓴다. {@code BlockValidator.cleanLooks} 가
+     *   들어오는 자리에서 지우고, 지운 뒤에는 기본 테마로 떨어져야 한다.
+     */
+    @Test
+    @DisplayName("②-c 백지 — 모델이 지어낸 테마는 지우고 기본 테마로 떨어진다")
+    void 지어낸_테마는_기본으로_떨어진다() {
+        String 정화됨 = BlockValidator.sanitizeGenerated(heroClass(백지, "theme-두쫀쿠"));
+        assertFalse(정화됨.contains("theme-두쫀쿠"),
+                "지어낸 테마가 안 지워졌습니다.\n─── 출력 ───\n" + 정화됨);
+
+        Element root = rootOf(PageShell.ensureRoot(정화됨, null));
+        assertTrue(root.hasClass(Theme.DEFAULT.cssClass()),
+                "지어낸 테마를 지운 뒤 기본 테마가 안 박혔습니다. 실제 class: " + root.classNames());
+    }
+
+    /**
+     * ★★ 이 테스트가 막는 사고 — 실제로 났다(SavedTemplateHtmlTest 5건).
+     *   {@code cleanLooks} 는 class 가 있는 <b>모든 요소</b>를 돈다. 루트는 section 이 아니라
+     *   "hero 가 아니다" 로 판정되어 theme-sports 가 지워졌고, 그다음 ensureRoot 가
+     *   "테마 없음" 으로 보고 기본 테마를 박아 <b>템플릿 테마가 전부 basic 이 됐다.</b>
+     *   루트의 테마는 서버가 쥔다. 정화는 모델 출력만 다룬다.
+     */
+    @Test
+    @DisplayName("②-d ★ 정화를 지나도 루트의 템플릿 테마는 살아남는다")
+    void 루트_테마는_정화에서_살아남는다() {
+        String 테마템플릿 = 템플릿.replace("\"ev-container event-page\"",
+                                        "\"ev-container event-page theme-sports\"");
+        String 정화됨 = BlockValidator.sanitizeEdited(테마템플릿);
+
+        Element root = rootOf(PageShell.ensureRoot(정화됨, null));
+        assertTrue(root.hasClass("theme-sports"),
+                "루트의 템플릿 테마가 지워졌습니다. 템플릿 5종이 전부 기본 테마가 됩니다. "
+                + "실제 class: " + root.classNames());
+        assertFalse(root.hasClass(Theme.DEFAULT.cssClass()),
+                "이미 테마가 있는데 기본 테마까지 박혔습니다. 실제 class: " + root.classNames());
     }
 
     @Test
@@ -103,6 +185,19 @@ class PageShellTest {
         String 두번 = PageShell.plant(한번, "sports_cheer");
 
         assertEquals(한번, 두번, "두 번 심었습니다.");
+    }
+
+    /**
+     * ★ 기본 테마가 박힌 뒤에 다시 걸어도 테마가 둘이 되면 안 된다.
+     *   ④ 의 멱등성을 테마 쪽에서만 따로 본다 — 실패했을 때 어디가 깨졌는지 바로 보이게.
+     */
+    @Test
+    @DisplayName("④-b 두 번 걸어도 테마는 하나다")
+    void 테마는_하나다() {
+        String 두번 = PageShell.plant(PageShell.plant(백지, null), null);
+
+        long n = rootOf(두번).classNames().stream().filter(Theme::looksLike).count();
+        assertEquals(1, n, "루트의 테마가 " + n + "개입니다. 실제 class: " + rootOf(두번).classNames());
     }
 
     // ── 유의사항 ──────────────────────────────────────────────────
@@ -157,5 +252,115 @@ class PageShellTest {
         assertTrue(out.contains("  <h1>스모크 이벤트</h1>"),
                 "hero 안쪽 들여쓰기가 바뀌었습니다 — pretty-print 가 켜져 있습니다.\n"
                 + "─── 출력 ───\n" + out);
+    }
+
+
+    // ── ⑨ 블록 순서 ───────────────────────────────────────────────
+    //
+    // ★ 지금까지 순서는 레지스트리 선언 순서로 고정이었다. benefits 가 steps 보다
+    //   앞이라 "참여 방법을 위로" 는 할 방법이 없었다 — 채팅으로 시켜도 저장 직전에
+    //   서버가 원위치시킨다. 그 정렬의 **기준**만 관리자가 정할 수 있게 했다.
+
+    private static String 페이지(String... keys) {
+        StringBuilder b = new StringBuilder("<div class=\"ev-container event-page theme-basic\">");
+        for (String k : keys) {
+            b.append("<section data-block=\"").append(k).append("\"><p>").append(k).append("</p></section>");
+        }
+        return b.append("</div>").toString();
+    }
+
+    private static String 순서(String html) {
+        StringBuilder b = new StringBuilder();
+        for (Element e : Jsoup.parseBodyFragment(html).select("section[data-block]")) {
+            if (b.length() > 0) b.append(" ");
+            b.append(e.attr("data-block"));
+        }
+        return b.toString();
+    }
+
+    private static final String 여섯 = 페이지("hero", "benefits", "steps", "faq", "notices", "cta");
+
+    @Test
+    @DisplayName("⑨-1 순서를 정하지 않으면 전과 같다 - 레지스트리 순서")
+    void 순서를_정하지_않으면_전과_같다() {
+        assertEquals("hero benefits steps faq notices cta", 순서(PageShell.settle(여섯)));
+    }
+
+    @Test
+    @DisplayName("⑨-2 관리자가 정한 순서대로 세운다")
+    void 정한_순서대로_세운다() {
+        String moved = PageShell.applyOrder(여섯,
+                java.util.List.of(Block.HERO, Block.STEPS, Block.BENEFITS, Block.FAQ));
+
+        assertEquals("hero steps benefits faq notices cta", 순서(moved));
+    }
+
+    // ★ 이게 깨지면 기능 전체가 무의미하다. settle 은 수정이 저장될 때마다 돈다
+    @Test
+    @DisplayName("⑨-3 ★ 수정이 들어와도 순서가 되돌아가지 않는다")
+    void 수정해도_되돌아가지_않는다() {
+        String moved = PageShell.applyOrder(여섯,
+                java.util.List.of(Block.HERO, Block.STEPS, Block.BENEFITS, Block.FAQ));
+
+        String again = PageShell.settle(PageShell.settle(moved));
+
+        assertEquals("hero steps benefits faq notices cta", 순서(again));
+    }
+
+    @Test
+    @DisplayName("⑨-4 유의사항·참여버튼은 맨 앞으로 보내도 맨 끝에 남는다")
+    void 고정_블록은_안_움직인다() {
+        String out = PageShell.applyOrder(여섯,
+                java.util.List.of(Block.CTA, Block.NOTICES, Block.HERO, Block.STEPS));
+
+        assertEquals("hero steps benefits faq notices cta", 순서(out));
+        assertFalse(Block.NOTICES.canMove());
+        assertFalse(Block.CTA.canMove());
+    }
+
+    // ★ 프론트가 블록 하나를 빼먹어도 그 블록이 사라지면 안 된다
+    @Test
+    @DisplayName("⑨-5 목록에 없는 블록은 레지스트리 순서로 뒤에 붙는다")
+    void 빠진_블록은_뒤에_붙는다() {
+        String out = PageShell.applyOrder(여섯, java.util.List.of(Block.STEPS));
+
+        assertEquals("steps hero benefits faq notices cta", 순서(out));
+    }
+
+    @Test
+    @DisplayName("⑨-6 중복과 고정 블록은 저장되는 순서 목록에서 빠진다")
+    void 목록을_믿지_않는다() {
+        String out = PageShell.applyOrder(여섯,
+                java.util.List.of(Block.STEPS, Block.STEPS, Block.CTA, Block.HERO));
+
+        assertEquals("steps,hero",
+                Jsoup.parseBodyFragment(out).selectFirst(".ev-container").attr("data-block-order"));
+    }
+
+    @Test
+    @DisplayName("⑨-7 보이는 순서를 그대로 읽어 준다 - 순서 변경 화면이 쓴다")
+    void 보이는_순서를_읽는다() {
+        String moved = PageShell.applyOrder(여섯,
+                java.util.List.of(Block.HERO, Block.STEPS, Block.BENEFITS, Block.FAQ));
+
+        assertEquals(java.util.List.of(Block.HERO, Block.STEPS, Block.BENEFITS,
+                        Block.FAQ, Block.NOTICES, Block.CTA),
+                PageShell.blocksOf(moved));
+    }
+
+    // ── 문서 조립 (standalone) ───────────────────────────────────────
+
+    @Test
+    @DisplayName("문서 조립 — 래퍼가 없는 조각(더미 · 초안)은 .ev-container 로 감싼다. 있으면 그대로 둔다")
+    void standalone은_래퍼를_보장한다() {
+        Document bare = Jsoup.parse(PageShell.standalone("<section data-block=\"hero\"><h1>t</h1></section>", "t", null));
+        Element root = bare.body().child(0);
+        assertTrue(root.hasClass("ev-container") && root.hasClass("event-page"), bare.body().html());
+        assertNotNull(root.selectFirst("[data-block=hero] h1"));
+
+        Document wrapped = Jsoup.parse(PageShell.standalone(
+                "<div class=\"ev-container event-page theme-sale\"><section data-block=\"hero\"></section></div>", "t", null));
+        assertEquals(1, wrapped.select(".ev-container").size(), "두 번 감쌌습니다");
+        assertTrue(wrapped.body().hasClass("theme-sale"));
     }
 }

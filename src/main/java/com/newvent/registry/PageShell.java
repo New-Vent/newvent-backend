@@ -3,13 +3,20 @@ package com.newvent.registry;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.StringJoiner;
+import java.util.function.Predicate;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
+import org.jsoup.select.Elements;
 
 /**
  * 저장되는 조각이 **혼자서도 성립하도록** 서버가 보장하는 것들.
@@ -35,6 +42,20 @@ public final class PageShell {
     /** 래퍼를 찾는 선택자. 둘 중 하나라도 있으면 이미 래퍼가 있는 것이다. */
     private static final String ROOT_SELECTOR = ".ev-container, .event-page";
 
+    /** 관리자가 정한 블록 순서. 래퍼에 붙는다 — 자세한 건 {@link #readOrder} 주석에 있다. */
+    private static final String ORDER_ATTR = "data-block-order";
+
+
+    /** 이 요소가 래퍼인가. 이름은 ROOT_SELECTOR 한 곳에만 둔다. */
+    public static boolean isRoot(Element el) {
+        return el != null && el.is(ROOT_SELECTOR);
+    }
+
+    /** 범위 안에서 래퍼를 찾는다. 없으면 null. */
+    public static Element rootOf(Element scope) {
+        return scope == null ? null : scope.selectFirst(ROOT_SELECTOR);
+    }
+
     private static final String NOTICES_RESOURCE = "/notices/common.html";
 
     /**
@@ -55,16 +76,91 @@ public final class PageShell {
 
     private PageShell() {}
 
-    /** 게시된 HTML 조각을 독립적인 문서로 감싼다. 조각의 스크립트와 마크업은 그대로 유지한다. */
-    public static String standalone(String fragment, String title) {
-        String safeTitle = new Element("title").text(title).outerHtml();
+    /** 이벤트 페이지의 동작을 실행하는 파일 — 프론트 nginx 의 /assets/ 가 event.css 와 같이 서빙한다 */
+    static final String RUNTIME_SRC = "/assets/event-runtime.js";
+
+    /**
+     * 게시된 HTML 조각을 독립적인 문서로 감싼다 — /e/{id} · 공개 상세 API · 관리자 미리보기 공통.
+     *
+     *   &lt;body class="theme-…"&gt;
+     *     조각
+     *     &lt;script src="/assets/event-runtime.js" defer&gt;
+     *
+     * ★ behavior 가 있는 조각(새 방식)
+     *   조각 안의 &lt;script&gt; 를 지운다 — 실행 코드는 runtime.js 하나뿐이다.
+     *   종료 시각을 타이머에 묶는다 — BehaviorPlanter.bind. **저장본에는 굳히지 않는다** (Slots.fill 과 같은 이유)
+     *
+     * ★ behavior 가 없는 조각(이전에 만든 페이지)은 스크립트와 마크업을 그대로 둔다
+     *   옛 &lt;script&gt; 가 지금처럼 동작한다. runtime.js 는 같이 실리지만 [data-behavior] 가 없어 아무것도 하지 않는다.
+     *
+     * ★ 테마는 body 에도 붙인다
+     *   저장본에서는 래퍼(.ev-container)가 theme-* 를 들고 있다. event.css 의 테마 규칙은 조상 어디에 있어도 걸리지만,
+     *   body 배경처럼 body 자체를 보는 규칙이 있다.
+     *
+     * @param title  &lt;title&gt; — 이벤트 제목. 없으면 "이벤트"
+     * @param endsAt 이벤트 종료 시각 — countdown 의 data-until. 없으면 null
+     */
+    public static String standalone(String fragment, String title, OffsetDateTime endsAt) {
+        return standalone(fragment, title, endsAt, null, null, null);
+    }
+
+    /**
+     * 참여 정보까지 실어 내보낸다 — <b>게시 페이지에서 참여가 실제로 가는 길이다.</b>
+     *
+     * ★★ runtime 이 body 에서 읽는다 (event-runtime.js 의 participate)
+     *     data-event-id   참여 API 를 부를 이벤트
+     *     data-game       참여 방식 — 이게 없으면 runtime 이 「참여 기능은 준비 중이에요」로 안내한다
+     *   그리고 고르는 칸(.ev-game)은 {@link BehaviorPlanter#bindGame} 이 설정대로 그린다.
+     *
+     * ★ 참여 여부(data-participated)는 여기서 적지 않는다. <b>로그인한 사용자별</b>이라
+     *   공유 링크 페이지는 알 수 없다. 사용자 앱이 iframe 에 넣을 때 붙인다.
+     *
+     * @param eventId  참여 API 가 쓸 이벤트 id. null 이면 적지 않는다 (템플릿 미리보기 등)
+     * @param gameCode 참여 방식. null 이면 참여를 받지 않는 이벤트다
+     * @param gameConfig 그 방식의 설정 — 고르는 칸을 그리는 데 쓴다
+     */
+    public static String standalone(String fragment, String title, OffsetDateTime endsAt,
+                                    Long eventId, String gameCode, Map<String, Object> gameConfig) {
+        Document doc = Jsoup.parseBodyFragment(fragment == null ? "" : fragment);
+        doc.outputSettings().prettyPrint(false);
+        if (!doc.select("[" + Behavior.ATTR + "]").isEmpty()) {
+            // ★★ 승인된 템플릿 스크립트는 남긴다 — 모델이 지어낸 것만 지운다
+            //   전에는 behavior 가 하나라도 있으면 모든 script 를 지웠다. 그런데 보수층
+            //   ({@link BehaviorPlanter#ensureParticipate})이 참여 이름표를 심기 시작하면서
+            //   그 조건이 처음으로 참이 됐고, flash_sale 의 타이머 · holiday_gift 의 복주머니
+             //   같은 **runtime 이 대체하지 않는** 자체 연출이 통째로 사라졌다.
+            //   {@link ApprovedScripts} 가 템플릿 리소스에서 뽑은 승인본 집합이다 — 바이트가 똑같은 것만 살린다.
+            doc.select("script").stream()
+                    .filter(s -> !ApprovedScripts.contains(s))
+                    .forEach(Element::remove);
+            doc.select("noscript").remove();
+            BehaviorPlanter.bind(doc, endsAt);
+            BehaviorPlanter.bindGame(doc, gameCode, gameConfig);
+        }
+
+        Element body = doc.body();
+        if (eventId != null) body.attr("data-event-id", String.valueOf(eventId));
+        if (gameCode != null) body.attr("data-game", gameCode);
+        Element root = doc.selectFirst(ROOT_SELECTOR);
+        if (root == null) {
+            // ★ 래퍼가 없는 조각(더미 · 초안)은 감싼다 — event.css 가 전부 래퍼 기준이라 없으면 무스타일이다.
+            //   예전에는 프론트(serverDocument)가 감쌌다. 이제 완전한 문서로 내보내므로 여기서 한다
+            root = new Element("div").addClass("ev-container").addClass("event-page");
+            for (Node n : new ArrayList<>(body.childNodes())) root.appendChild(n);
+            body.appendChild(root);
+        } else {
+            root.classNames().stream().filter(c -> c.startsWith(Theme.PREFIX)).findFirst().ifPresent(body::addClass);
+        }
+        body.appendElement("script").attr("src", RUNTIME_SRC).attr("defer", "");
+
+        String safeTitle = new Element("title").text(title == null || title.isBlank() ? "이벤트" : title).outerHtml();
         return "<!DOCTYPE html>\n<html lang=\"ko\">\n<head>\n"
                 + "<meta charset=\"UTF-8\">\n"
                 + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
                 + safeTitle + "\n"
                 + "<link rel=\"stylesheet\" href=\"/assets/event.css\">\n"
                 + "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&amp;display=swap\">\n"
-                + "</head>\n<body>\n" + fragment + "\n</body>\n</html>";
+                + "</head>\n" + body.outerHtml() + "\n</html>";
     }
 
     /**
@@ -91,7 +187,8 @@ public final class PageShell {
     /**
      * 저장 직전에 한 번 부른다. 래퍼 → 테마 → 유의사항 순서다.
      *
-     * @param templateCode 템플릿 코드. **백지면 null** — 그때는 테마를 붙이지 않는다.
+     * @param templateCode 템플릿 코드. **백지면 null** — 그때는 모델이 고른 테마,
+     *                     그것도 없으면 {@link Theme#DEFAULT} 가 붙는다.
      */
     public static String plant(String fragment, String templateCode) {
         return ensureNotices(ensureRoot(fragment, templateCode));
@@ -102,6 +199,7 @@ public final class PageShell {
      *
      * ★ 이미 theme-* 가 붙어 있으면 건드리지 않는다.
      *   관리자가 만든 템플릿이 자기 테마를 들고 올 수 있다.
+     * ★ 테마가 하나도 없으면 반드시 하나 박는다 — 템플릿이면 코드로, 백지면 기본 테마로.
      */
     public static String ensureRoot(String fragment, String templateCode) {
         Document doc = parse(fragment);
@@ -123,12 +221,22 @@ public final class PageShell {
         }
 
         final Element target = root;
-        boolean themed = target.classNames().stream().anyMatch(c -> c.startsWith(Theme.PREFIX));
-        if (!themed) {
-            Theme.of(templateCode).ifPresent(t -> target.addClass(t.cssClass()));
-        }
         orderBlocks(target);
+        // ★ 먼저 올린다. 모델이 hero 에 고른 테마 · 팔레트를 루트로 옮긴다.
+        //   순서를 뒤집으면 기본 테마가 먼저 박혀서 모델이 고른 테마가 밀린다.
         hoist(doc, target);
+
+        // ★ 기본 테마는 여기서만 박는다 — BlockValidator.cleanLooks 에 넣으면 안 된다.
+        //   cleanLooks 는 RetryService 를 거쳐 **수정 경로도** 지난다. 거기서 기본값을
+        //   넣으면 수정마다 블록에 theme-* 가 박혀 루트 테마가 리셋되고,
+        //   EditService 의 "안 바뀌었으면 실패" 검사도 전후가 늘 달라져 무력해진다.
+        //
+        // ★ 테마가 없으면 event.css 의 :root 기본값 = 같은 흰 카드가 세로로 쌓인 화면이다.
+        //   Theme.DEFAULT(BASIC)는 성격이 없어서 어떤 이벤트에 박혀도 틀리지 않는다.
+        boolean themed = target.classNames().stream().anyMatch(Theme::looksLike);
+        if (!themed) {
+            target.addClass(Theme.of(templateCode).orElse(Theme.DEFAULT).cssClass());
+        }
         return doc.body().html();
     }
 
@@ -166,8 +274,10 @@ public final class PageShell {
                 slots.add(child);
             }
         }
+        List<Block> wanted = readOrder(root);
         List<Element> sorted = new ArrayList<>(slots);
-        sorted.sort(java.util.Comparator.comparingInt(e -> Block.of(e.attr("data-block")).ordinal()));
+        sorted.sort(java.util.Comparator.comparingInt(
+                e -> rank(wanted, Block.of(e.attr("data-block")))));
         if (sorted.equals(slots)) return;
 
         List<Element> markers = new ArrayList<>(slots.size());
@@ -181,6 +291,83 @@ public final class PageShell {
     }
 
     /**
+     * 관리자가 정한 순서를 읽는다. 없으면 빈 목록 — 그러면 레지스트리 순서가 된다.
+     *
+     * ★ 왜 DB 컬럼이 아니라 HTML 속성인가
+     *   - 모델은 이 속성을 심을 수 없다. BlockValidator.sanitizeEdited 의 Safelist 가
+     *     data-block 만 허용해서 모델 출력의 data-block-order 는 지워진다.
+     *     즉 **서버만 쓸 수 있는 자리**다.
+     *   - HTML 안에 있으니 버전을 복원하면 순서도 같이 복원된다. 컬럼이면 따로 맞춰야 한다.
+     *   - 마이그레이션이 필요 없다.
+     *
+     * ★ 모르는 이름과 중복은 조용히 버린다. 프론트가 블록 하나를 빼먹어도
+     *   그 블록이 사라지면 안 된다 — rank() 가 레지스트리 순서로 뒤에 붙인다.
+     */
+    private static List<Block> readOrder(Element root) {
+        String raw = root.attr(ORDER_ATTR);
+        if (raw.isBlank()) return List.of();
+
+        List<Block> out = new ArrayList<>();
+        for (String key : raw.split(",")) {
+            Block.find(key.trim()).filter(b -> !out.contains(b)).ifPresent(out::add);
+        }
+        return out;
+    }
+
+    /**
+     * 정렬 기준. 작을수록 앞이다.
+     *
+     *   0 ~  99 : 관리자가 정한 순서 (목록에 적힌 자리)
+     * 100 ~ 199 : 목록에 없는 블록 — 레지스트리 순서로 그 뒤에
+     * 200 ~     : 고정 블록(canMove()==false) — 목록과 무관하게 맨 끝, 레지스트리 순서로
+     *
+     * ★ 목록이 비면 모든 블록이 100번대·200번대로 가고, 둘 다 레지스트리 순서다.
+     *   = 지금까지의 동작과 **글자 하나 다르지 않다.** 템플릿 5종의 바이트 왕복도 그대로다.
+     */
+    private static int rank(List<Block> wanted, Block b) {
+        if (!b.canMove()) return 200 + b.ordinal();
+        int at = wanted.indexOf(b);
+        return at >= 0 ? at : 100 + b.ordinal();
+    }
+
+    /**
+     * 관리자가 정한 순서를 적고 그대로 세운다. **순서 변경 API 가 부르는 입구다.**
+     *
+     * ★ 모델을 부르지 않는다. 삭제와 같다 — 순서를 바꾸는 데 모델이 필요 없다.
+     * ★ 고정 블록을 목록에 넣어도 무시된다(rank 참고). 프론트를 믿지 않는다.
+     * ★ 루트가 없으면 그대로 돌려준다. 래퍼를 만드는 건 ensureRoot 의 몫이다.
+     */
+    public static String applyOrder(String fragment, List<Block> order) {
+        Document doc = parse(fragment);
+        Element root = doc.body().selectFirst(ROOT_SELECTOR);
+        if (root == null) return fragment;
+
+        // ★ 중복과 고정 블록은 여기서 버린다. 프론트를 믿지 않는다 —
+        //   읽을 때(readOrder)도 한 번 더 거르지만, 저장되는 값부터 깨끗한 게 맞다
+        StringJoiner keys = new StringJoiner(",");
+        Set<Block> seen = EnumSet.noneOf(Block.class);
+        for (Block b : order) {
+            if (b.canMove() && seen.add(b)) keys.add(b.key());
+        }
+        // ★ 빈 속성은 남기지 않는다. 옮길 게 하나도 없으면 레지스트리 순서로 되돌린다는 뜻이다
+        if (keys.length() == 0) root.removeAttr(ORDER_ATTR);
+        else root.attr(ORDER_ATTR, keys.toString());
+        orderBlocks(root);
+        return doc.body().html();
+    }
+
+    /**
+     * 지금 문서에 있는 블록을 보이는 순서대로. **순서 변경 화면이 목록을 그릴 때 쓴다.**
+     */
+    public static List<Block> blocksOf(String fragment) {
+        List<Block> out = new ArrayList<>();
+        for (Element el : parse(fragment).body().select("section[data-block]")) {
+            Block.find(el.attr("data-block")).filter(b -> !out.contains(b)).ifPresent(out::add);
+        }
+        return out;
+    }
+
+    /**
      * hero 섹션에 붙은 팔레트를 루트로 옮긴다. **수정 결과를 저장하기 직전에 부른다.**
      * 생성 · 템플릿 경로는 {@link #ensureRoot} 가 같은 일을 한다.
      *
@@ -190,6 +377,29 @@ public final class PageShell {
      *
      * ★ 루트가 없으면 그대로 돌려준다. 래퍼를 만드는 건 ensureRoot 의 몫이다
      */
+    /**
+     * 페이지 전체 배경 이미지를 루트로 옮긴다.
+     *
+     * ★ 왜 옮기나 — 모델은 **영역 하나**의 HTML 만 쓴다. 루트에는 손이 닿지 않는다.
+     *   그래서 hero 안에 쓰게 하고 서버가 옮긴다. 팔레트 · 테마와 똑같은 길이다.
+     * ★ 맨 앞에 둔다. CSS 가 z-index 로 눌러 두지만, 순서까지 맞춰 두면
+     *   미리보기에서 글자를 가리는 사고가 한 겹 더 막힌다.
+     * ★ 하나만 남긴다. 두 장이 겹치면 어느 쪽이 보이는지 아무도 모른다.
+     * ★ 이미 루트에 있는 것은 그대로 둔다 — 영역 수정 때마다 다시 옮기지 않는다.
+     */
+    private static void hoistPageAsset(Document doc, Element root) {
+        Elements all = doc.body().select("img." + Asset.PAGE.cssClass());
+        if (all.isEmpty()) return;
+
+        Element keep = all.first();
+        for (Element e : all) {
+            if (e != keep) e.remove();
+        }
+        if (keep.parent() != root || keep.elementSiblingIndex() != 0) {
+            root.prependChild(keep);
+        }
+    }
+
     public static String hoistPalette(String fragment) {
         Document doc = parse(fragment);
         Element root = doc.body().selectFirst(ROOT_SELECTOR);
@@ -199,30 +409,130 @@ public final class PageShell {
     }
 
     /**
-     * 섹션들의 palette-* 를 걷어 루트에 하나만 남긴다.
+     * 섹션들의 palette-* · theme-* 를 걷어 루트에 하나만 남긴다.
      *   새 팔레트가 없으면     루트는 그대로 (이번 수정이 색을 안 건드렸다)
      *   palette-base 면        루트의 팔레트를 지운다 (원래대로)
      *   그 밖                  루트의 팔레트를 그걸로 바꾼다
      */
     private static void hoist(Document doc, Element root) {
+        hoistPageAsset(doc, root);
+        String palette = pickFromHero(doc, Palette::looksLike, c -> Palette.find(c).isPresent());
+        String theme   = pickFromHero(doc, Theme::looksLike,   c -> Theme.find(c).isPresent());
+
+        if (palette != null) {
+            for (String c : List.copyOf(root.classNames())) {
+                if (Palette.looksLike(c)) root.removeClass(c);
+            }
+            if (!palette.equals(Palette.BASE.cssClass())) root.addClass(palette);
+        }
+        // ★ 테마에는 base 가 없다. "테마 없음" 은 ensureRoot 가 기본 테마를 박아 막는다
+        if (theme != null) {
+            for (String c : List.copyOf(root.classNames())) {
+                if (Theme.looksLike(c)) root.removeClass(c);
+            }
+            root.addClass(theme);
+        }
+        settleLayout(doc, root, pickFromHero(doc, Layout::looksLike, c -> Layout.find(c).isPresent()));
+    }
+
+    public static String layoutBlocked(String fragment, Layout layout) {
+        Document doc = parse(fragment);
+        Element root = doc.body().selectFirst(ROOT_SELECTOR);
+        if (root == null) return "페이지가 아직 없습니다.";
+
+        boolean template = false;
+        int content = 0;
+        for (Element sec : root.select("> section[data-block]")) {
+            Block b = Block.find(sec.attr("data-block")).orElse(null);
+            if (b == null || b == Block.NOTICES) continue;
+            if (sec.hasClass("ev-block")) template = true;
+            if (b != Block.HERO && b != Block.CTA) content++;
+        }
+        String current = root.classNames().stream().filter(Layout::looksLike).findFirst()
+                .orElse(Layout.DEFAULT.cssClass());
+        if (current.equals(layout.cssClass())) return "이미 그 배치입니다.";
+        if (layout == Layout.DEFAULT) return null;
+        if (template) return "템플릿으로 만든 페이지는 배치를 바꿀 수 없습니다. 색감은 바꿀 수 있습니다.";
+        if (content < layout.minContentBlocks()) {
+            return "이 배치는 내용 영역이 " + layout.minContentBlocks() + "개 이상일 때 쓸 수 있습니다. "
+                    + "지금은 " + content + "개입니다. 영역을 추가한 뒤 다시 요청해 주세요.";
+        }
+        return null;
+    }
+
+    /**
+     * 배치를 고른다 — hero 에 그 class 하나만 붙인다. 루트로 옮기는 것은 저장 직전의 {@link #settle} · {@link #plant} 다.
+     * hero 의 다른 class(모양 변형)와 문구는 건드리지 않는다.
+     */
+    public static String pickLayout(String fragment, Layout layout) {
+        Document doc = parse(fragment);
+        Element hero = doc.body().selectFirst(Block.HERO.selector());
+        if (hero == null) return fragment;
+        for (String c : List.copyOf(hero.classNames())) {
+            if (Layout.looksLike(c)) hero.removeClass(c);
+        }
+        hero.addClass(layout.cssClass());
+        return doc.body().html();
+    }
+
+    /**
+     * 페이지 배치(layout-*)를 루트에 하나만 남긴다. 팔레트와 같은 규칙에 조건 둘이 더 붙는다.
+     *   새 배치가 없으면      루트는 그대로 (이번 수정이 배치를 안 건드렸다)
+     *   layout-stack 이면     루트의 배치를 지운다 (기본 = class 없음)
+     *   그 밖                 루트의 배치를 그걸로 바꾼다
+     *
+     * ★ 조건은 **매번** 다시 본다 — 고를 때만 보면 나중에 영역을 지워서 격자가 비어도 남는다
+     *   템플릿 페이지        배치를 걸지 않는다. 템플릿 블록(.ev-block)은 자기 디자인이 있다
+     *   내용 영역이 모자람   기본으로 되돌린다 ({@link Layout#minContentBlocks})
+     */
+    private static void settleLayout(Document doc, Element root, String picked) {
+        if (picked != null) {
+            for (String c : List.copyOf(root.classNames())) {
+                if (Layout.looksLike(c)) root.removeClass(c);
+            }
+            if (!picked.equals(Layout.DEFAULT.cssClass())) root.addClass(picked);
+        }
+
+        // 유의사항은 세지 않는다
+        boolean template = false;
+        int content = 0;
+        for (Element sec : root.select("> section[data-block]")) {
+            Block b = Block.find(sec.attr("data-block")).orElse(null);
+            if (b == null || b == Block.NOTICES) continue;
+            if (sec.hasClass("ev-block")) template = true;
+            if (b != Block.HERO && b != Block.CTA) content++;
+        }
+        for (String c : List.copyOf(root.classNames())) {
+            if (!Layout.looksLike(c)) continue;
+            Layout l = Layout.find(c).orElse(null);
+            if (l == null || template || content < l.minContentBlocks()) root.removeClass(c);
+        }
+    }
+
+    /**
+     * hero 섹션에서 첫 유효 값을 집고, <b>모든 섹션에서 그 접두사를 지운다.</b>
+     *
+     * ★ hero 에서만 집는 이유 — 페이지 전체 값이라 자리가 하나여야 한다. 블록마다 다른 걸
+     *   고르면 "마지막에 이긴 것" 이 되어 수정할 때마다 결과가 달라진다. 프롬프트가
+     *   hero 에만 안내하므로 서버도 hero 만 믿는다.
+     * ★ hero 가 아닌 자리의 것은 집지 않고 지운다 — 남겨 두면 다음 수정에서
+     *   모델이 그걸 보고 따라 쓴다(v-* 에서 겪은 그 경로다).
+     */
+    private static String pickFromHero(Document doc,
+                                       Predicate<String> looksLike,
+                                       Predicate<String> known) {
         String picked = null;
         for (Element sec : doc.body().select("section[data-block]")) {
             for (String c : List.copyOf(sec.classNames())) {
-                if (!Palette.looksLike(c)) continue;
-                if (picked == null && Palette.find(c).isPresent()
-                        && sec.is(Block.HERO.selector())) {
+                if (!looksLike.test(c)) continue;
+                if (picked == null && known.test(c) && sec.is(Block.HERO.selector())) {
                     picked = c;
                 }
                 sec.removeClass(c);
             }
             if (sec.classNames().isEmpty()) sec.removeAttr("class");
         }
-        if (picked == null) return;
-
-        for (String c : List.copyOf(root.classNames())) {
-            if (Palette.looksLike(c)) root.removeClass(c);
-        }
-        if (!picked.equals(Palette.BASE.cssClass())) root.addClass(picked);
+        return picked;
     }
 
     /**

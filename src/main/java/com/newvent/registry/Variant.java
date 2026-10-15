@@ -3,6 +3,7 @@ package com.newvent.registry;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -82,6 +83,7 @@ public enum Variant {
     BENEFITS_CHECKLIST(Block.BENEFITS, Group.LAYOUT, "v-benefits-checklist", "체크 표시 목록"),
     BENEFITS_STRIPE(Block.BENEFITS, Group.LAYOUT, "v-benefits-stripe", "한 줄씩 색이 번갈아 바뀌는 목록"),
     BENEFITS_THREE_COL(Block.BENEFITS, Group.LAYOUT, "v-benefits-three-col", "3열 카드"),
+    BENEFITS_BENTO(Block.BENEFITS, Group.LAYOUT, "v-benefits-bento", "벤토 격자 — 첫 혜택은 큰 칸, 나머지는 작은 칸"),
 
     // ── compare ──
     COMPARE_STRIPED(Block.COMPARE, Group.LAYOUT, "v-compare-striped", "줄무늬 표 (기본)"),
@@ -148,12 +150,14 @@ public enum Variant {
     STATS_INLINE(Block.STATS, Group.LAYOUT, "v-stats-inline", "한 줄에 나란히"),
     STATS_RING(Block.STATS, Group.LAYOUT, "v-stats-ring", "원형 테두리 안 숫자"),
     STATS_BAR(Block.STATS, Group.LAYOUT, "v-stats-bar", "숫자 아래 강조 막대"),
+    STATS_BENTO(Block.STATS, Group.LAYOUT, "v-stats-bento", "벤토 격자 — 첫 숫자는 큰 칸, 나머지는 작은 칸"),
 
     // ── prize ──
     PRIZE_LIST(Block.PRIZE, Group.LAYOUT, "v-prize-list", "등수 목록 (기본)"),
     PRIZE_PODIUM(Block.PRIZE, Group.LAYOUT, "v-prize-podium", "1 · 2 · 3등 단상 (앞의 세 항목)"),
     PRIZE_CARDS(Block.PRIZE, Group.LAYOUT, "v-prize-cards", "경품 카드"),
     PRIZE_RIBBON(Block.PRIZE, Group.LAYOUT, "v-prize-ribbon", "첫 항목에 리본을 단 1등 강조"),
+    PRIZE_BENTO(Block.PRIZE, Group.LAYOUT, "v-prize-bento", "벤토 격자 — 첫 경품은 큰 칸, 나머지는 작은 칸"),
 
     // ── coupon ──
     COUPON_TICKET(Block.COUPON, Group.LAYOUT, "v-coupon-ticket", "양옆이 파인 쿠폰 티켓 (기본)"),
@@ -213,6 +217,29 @@ public enum Variant {
             EnumSet.of(Block.INTRO, Block.STATS, Block.BENEFITS, Block.PRIZE, Block.COMPARE,
                     Block.AUDIENCE, Block.STEPS, Block.SCHEDULE, Block.FAQ);
 
+    /**
+     * 항목이 몇 개 이상이어야 말이 되는 변형. <b>프롬프트가 아니라 서버가 지킨다.</b>
+     *
+     * ★ 왜 프롬프트로 안 하나 — 해 봤고, 정반대로 터졌다.
+     *   "항목이 3개 미만이면 캐러셀(v-benefits-carousel · v-steps-carousel)을 고르지 마라" 를
+     *   넣었더니, 그 줄이 프롬프트에서 <b>v-benefits-carousel 이라는 이름이 나오는 유일한 자리</b>가
+     *   됐다(표본에는 pricing · checklist · stripe · three-col 만 실렸다).
+     *   모델은 금지문에서 이름을 배워서 혜택 2개짜리에 캐러셀을 골랐다(여름 수영장 2차 실측).
+     *   <b>금지하려고 쓴 이름이 추천이 됐다.</b>
+     *
+     * ★ 그래서 말하지 않고 지운다. 모델이 골라도 여기서 떨어진다.
+     *   event.css 가 li { flex: 0 0 78% } 라서 2개면 둘째 카드가 잘린 채 멈춘다.
+     *   시상대(v-prize-podium)도 1 · 2 · 3등 자리를 CSS 가 정해 두어 3개 미만이면 빈다.
+     *   벤토(v-*-bento)는 큰 칸 하나 옆에 작은 칸 둘이 서야 격자가 찬다. 2개면 큰 칸 옆이 반쯤 빈다.
+     */
+    private static final Map<Variant, Integer> NEEDS_ITEMS = Map.of(
+            BENEFITS_CAROUSEL, 3,
+            STEPS_CAROUSEL, 3,
+            PRIZE_PODIUM, 3,
+            BENEFITS_BENTO, 3,
+            STATS_BENTO, 3,
+            PRIZE_BENTO, 3);
+
     private final Block block;
     private final Group group;
     private final String cssClass;
@@ -237,6 +264,16 @@ public enum Variant {
     public String cssClass() { return cssClass; }
     public String desc()     { return desc; }
     public boolean namedColor() { return namedColor; }
+
+    /** 이 모양이 말이 되려면 있어야 하는 항목 수. 조건이 없으면 0 */
+    public int needsItems() {
+        return NEEDS_ITEMS.getOrDefault(this, 0);
+    }
+
+    /** 그 블록의 전용 모양 — 선언 순서. 첫 번째가 기본이다 (class 를 안 붙인 것과 같다) */
+    public static List<Variant> layoutsOf(Block b) {
+        return Arrays.stream(values()).filter(v -> v.block == b && v.group == Group.LAYOUT).toList();
+    }
 
     /** 그 블록에 쓸 수 있는 변형 전부 — 전용 배치 먼저, 배경 나중 */
     public static List<Variant> of(Block b) {
@@ -305,12 +342,21 @@ public enum Variant {
      */
     public static void sanitize(Element section, Block b) {
         List<Variant> allowed = of(b);
+        // ★ 항목 수는 한 번만 센다. must 가 없는 블록(hero · cta)은 셀 것이 없다.
+        int items = (b.must() == null) ? Integer.MAX_VALUE : section.select(b.must()).size();
         EnumSet<Group> used = EnumSet.noneOf(Group.class);
         for (String c : List.copyOf(section.classNames())) {
             if (!looksLike(c)) continue;
             Optional<Variant> v = find(c).filter(allowed::contains);
             if (v.isEmpty() || !used.add(v.get().group)) {
                 section.removeClass(c);
+                continue;
+            }
+            // ★ 항목이 모자란 모양은 뗀다. class 만 떼고 내용은 그대로 둔다 —
+            //   기본 모양으로 그려지며, 잘린 카드보다 낫다.
+            if (items < NEEDS_ITEMS.getOrDefault(v.get(), 0)) {
+                section.removeClass(c);
+                used.remove(v.get().group);     // 같은 묶음에서 다른 것을 쓸 자리를 돌려준다
             }
         }
     }

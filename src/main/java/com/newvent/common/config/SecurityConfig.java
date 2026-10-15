@@ -77,12 +77,19 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                        // OpenAPI 문서. /api 로 시작하지 않아 아래 규칙에 안 걸리고 anyRequest() 로 떨어진다.
+                        // prod 는 application-prod.yaml 이 springdoc 자체를 꺼서 이 경로에 핸들러가 없다(404).
+                        .requestMatchers(HttpMethod.GET,
+                                "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs", "/v3/api-docs/**").permitAll()
                         // ★ /api/admin/** · /api/** 규칙보다 앞에 있어야 한다. 뒤에 두면 로그인하려면 로그인이 필요해진다
                         .requestMatchers(HttpMethod.POST, AccountType.publicPaths()).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/public/users/signup").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/public/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/public/events/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/e/*").permitAll()
+                        // ★ 올린 이미지는 로그인 없이 보여야 한다 — 게시된 페이지에 <img src> 로 박힌다.
+                        //   GET 만 연다. 업로드 · 삭제는 /api/admin/… 쪽이고 그대로 인증이 필요하다
+                        .requestMatchers(HttpMethod.GET, "/api/public/assets/*").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/users/**").hasRole("USER")
                         .requestMatchers("/api/**").hasAnyRole("USER", "ADMIN")

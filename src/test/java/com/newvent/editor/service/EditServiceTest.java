@@ -1,6 +1,11 @@
 package com.newvent.editor.service;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -9,6 +14,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.IntConsumer;
 
+import org.jsoup.Jsoup;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -67,7 +73,7 @@ class EditServiceTest {
 
         FakeRetry() {
             // ★ Direct 라 reserve() 가 no-op 이다 — 상한 검사가 테스트에 끼어들지 않는다.
-            //   maxRetry = 1 → maxAttempts() = 2. run() 을 덮었으니 값 자체는 쓰이지 않는다
+            //   maxRetry = 1 → maxAttempts() = 2. runEdit() 을 덮었으니 값 자체는 쓰이지 않는다
             super(new LlmCallGateway.Direct(null),
                     new LlmProps(null, null, null, null, 0, 1, 0));
         }
@@ -83,7 +89,7 @@ class EditServiceTest {
         List<String> prompts() { return prompts; }
 
         @Override
-        public RetryService.Result run(LlmCallContext ctx, String system,
+        public RetryService.Result runEdit(LlmCallContext ctx, String system,
                                        String user, HtmlPolicy policy) {
             prompts.add(user);
             onCall.accept(prompts.size());
@@ -107,7 +113,11 @@ class EditServiceTest {
     }
 
     private static RetryService.Result ok(String html) {
-        return new RetryService.Result(true, html, List.of());
+        return ok(html, "영역 내용 수정");
+    }
+
+    private static RetryService.Result ok(String html, String changeSummary) {
+        return new RetryService.Result(true, html, List.of(), changeSummary);
     }
 
     private static RetryService.Result validationFail() {
@@ -142,11 +152,26 @@ class EditServiceTest {
             <section data-block="notices"><p>유의사항</p></section>
             <section data-block="cta"><button class="btn">참여하기</button></section>""";
 
+    /**
+     * ★ BASE 의 steps 와 <b>달라야 한다.</b> 예전에는 글자 하나까지 같았고,
+     *   그래서 "바뀐 게 없으면 저장하지 않는다" 가 들어오자 이 테스트가 깨졌다.
+     *   이 테스트가 보려는 것은 "ADD 가 삽입이 아니라 병합인가" 이고,
+     *   내용이 같았던 건 우연이다. 달라야 병합이 실제로 갈아끼웠는지까지 보인다.
+     */
     private static final String NEW_STEPS =
+            "<section data-block=\"steps\"><ol><li>앱 열고 로그인</li><li>버튼 누르기</li></ol></section>";
+
+    /** BASE 의 steps 와 <b>똑같은</b> 응답. 모델이 아무것도 안 바꾼 상황을 만든다 */
+    private static final String SAME_STEPS =
             "<section data-block=\"steps\"><ol><li>앱 열기</li><li>버튼 누르기</li></ol></section>";
 
     private static final String NEW_BENEFITS =
             "<section data-block=\"benefits\"><ul><li>데이터 20GB</li><li>쿠폰</li></ul></section>";
+
+    /** 항목이 하나 늘어난 응답. BASE 의 benefits 는 2개다 */
+    private static final String PLUS_BENEFIT =
+            "<section data-block=\"benefits\"><ul><li>데이터 10GB</li><li>쿠폰</li>"
+            + "<li>커피쿠폰</li></ul></section>";
 
     private CountingGateway gateway;
     private FakeRouter router;
@@ -160,7 +185,7 @@ class EditServiceTest {
         router = new FakeRouter();
         retry = new FakeRetry();
         jobs = new GenerationJobStore();
-        versions = new VersionStore.InMemory();
+        versions = spy(new VersionStore.InMemory());
         gateway = new CountingGateway();
         service = new EditService(router, retry, versions, new EventGuard.Open(), jobs,
                 LlmCallRecorder.none(), gateway);
@@ -271,6 +296,108 @@ class EditServiceTest {
 
         assertTrue(job.done());
         assertEquals(100, job.phase().percent());
+    }
+
+    @Test
+    @DisplayName("팔레트에 없는 색(노랑)을 페이지 전체로 말하면 되묻는다 — 엉뚱한 팔레트를 고르지 않는다")
+    void 팔레트에_없는_색은_되묻는다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+
+        GenerationJob job = run("바탕색은 노란색으로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertTrue(job.message().contains("'노랑' 색감은 지원하지 않습니다"), job.message());
+        assertTrue(job.message().contains("고를 수 있는 색:"), job.message());
+        assertEquals(0, retry.calls(), "블록 수정 모델을 부르면 안 된다");
+        assertEquals(1, versionNo(), "행이 생기면 안 된다");
+    }
+
+    @Test
+    @DisplayName("팔레트에 있는 색(파랑)은 되묻지 않고 그대로 진행한다")
+    void 팔레트에_있는_색은_진행한다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(NEW_HERO));
+
+        GenerationJob job = run("전체 색감을 파란색으로 바꿔줘");
+
+        assertNotEquals(GenerationJob.Phase.ASK_BACK, job.phase(), String.valueOf(job.message()));
+        assertEquals(1, retry.calls());
+    }
+
+    @Test
+    @DisplayName("피하려고 말한 색('노란색 말고 파란색으로')은 되묻지 않는다 — PR #226 리뷰")
+    void 제외하는_색은_되묻지_않는다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(NEW_HERO));
+
+        GenerationJob job = run("노란색 말고 파란색으로 바꿔줘");
+
+        assertNotEquals(GenerationJob.Phase.ASK_BACK, job.phase(), String.valueOf(job.message()));
+        assertEquals(1, retry.calls());
+    }
+
+    @Test
+    @DisplayName("페이지 전체 색과 영역 배경색이 섞여도 영역 배경으로 말한 색은 거절하지 않는다 — PR #226 리뷰")
+    void 영역_배경색은_섞여도_거절하지_않는다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null), new RawRoute("STYLE", "benefits", null));
+        retry.willReturn(ok(NEW_HERO), ok(NEW_BENEFITS));
+
+        // 노랑은 혜택 배경(v-surface-yellow)이고, 제목 쪽 색은 파랑이라 지원한다
+        GenerationJob job = run("제목은 파란색으로, 혜택 배경은 노란색으로 바꿔줘");
+
+        assertNotEquals(GenerationJob.Phase.ASK_BACK, job.phase(), String.valueOf(job.message()));
+        assertEquals(2, retry.calls(), "연산마다 한 번씩 부른다");
+    }
+
+    @Test
+    @DisplayName("영역이 여럿이면 영역마다 '이 영역 몫만 따른다' 를 모델에게 알린다 — 요청문이 통째로 가기 때문이다")
+    void 영역이_여럿이면_각_호출에_맡은_영역을_알린다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null), new RawRoute("STYLE", "benefits", null));
+        retry.willReturn(ok(NEW_HERO), ok(NEW_BENEFITS));
+
+        run("전체는 파란색으로 바꾸고 혜택 배경은 노란색으로 해줘");
+
+        assertEquals(2, retry.prompts().size());
+        for (String prompt : retry.prompts()) {
+            assertTrue(prompt.contains("[이번 호출은 한 영역만 고친다]"), "영역이 여럿인데 맡은 영역 안내가 없습니다:\n" + prompt);
+            assertTrue(prompt.contains("해당하는 부분만 따른다"), prompt);
+        }
+    }
+
+    @Test
+    @DisplayName("영역이 하나뿐이면 그 안내를 붙이지 않는다")
+    void 영역이_하나면_맡은_영역_안내가_없다() {
+        router.willReturn(new RawRoute("EDIT", "hero", "가을 대축제"));
+        retry.willReturn(ok(NEW_HERO));
+
+        run("제목을 가을 대축제로 바꿔줘");
+
+        assertEquals(1, retry.prompts().size());
+        assertFalse(retry.prompts().getFirst().contains("[이번 호출은 한 영역만 고친다]"), retry.prompts().getFirst());
+    }
+
+    @Test
+    @DisplayName("섞인 요청이어도 제목 쪽에 건 없는 색은 되묻는다")
+    void 제목_쪽_없는_색은_섞여도_되묻는다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null), new RawRoute("STYLE", "benefits", null));
+
+        GenerationJob job = run("제목은 노란색으로, 혜택 배경은 파란색으로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertTrue(job.message().contains("'노랑' 색감은 지원하지 않습니다"), job.message());
+        assertEquals(0, retry.calls());
+    }
+
+    @Test
+    @DisplayName("영역을 고르고 말한 색은 팔레트 검사를 타지 않는다 — 영역 배경은 색 이름 변형이 받는다")
+    void 영역_지정_요청은_색_검사를_타지_않는다() {
+        router.willReturn(new RawRoute("STYLE", "steps", null));
+        retry.willReturn(ok(NEW_HERO));
+
+        GenerationJob job = run("참여 방법 영역 배경을 노란색으로 바꿔줘");
+
+        // 라우터가 hero 가 아닌 영역을 짚었으므로 페이지 전체 색감 경로가 아니다
+        assertFalse(job.message() != null && job.message().contains("색감은 지원하지 않습니다"), job.message());
     }
 
     @Test
@@ -618,17 +745,107 @@ class EditServiceTest {
         assertEquals(1, savedHtml().split("data-block=\"steps\"", -1).length - 1);
     }
 
+    // ★★ 전에는 "혜택 항목 추가는 모델을 부르기 전에 거절한다" 였다.
+    //    막으려던 건 모델이 **지어낸** 혜택이지 관리자가 **적어 준** 혜택이 아니다.
+    //    내용이 비어 있으면 아래 테스트처럼 되묻는다 — 그때는 여전히 모델을 안 부른다.
     @Test
-    @DisplayName("혜택 항목 추가는 모델을 부르기 전에 거절한다")
-    void 혜택_항목_추가는_거절한다() {
-        router.willReturn(new RawRoute("ADD", "benefits", "데이터 20GB 증정"));
+    @DisplayName("혜택 항목 추가는 관리자 문구가 있으면 하나를 더한다")
+    void 혜택_항목_추가는_하나를_더한다() {
+        router.willReturn(new RawRoute("ADD", "benefits", "커피쿠폰"));
+        retry.willReturn(ok(PLUS_BENEFIT));
 
-        GenerationJob job = run("혜택에 데이터 20GB 증정을 추가해줘");
+        GenerationJob job = run("혜택에 커피쿠폰 추가해줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertEquals(2, versionNo());
+        assertTrue(blockOf(savedHtml(), Block.BENEFITS).contains("커피쿠폰"));
+        assertEquals(3, Jsoup.parseBodyFragment(blockOf(savedHtml(), Block.BENEFITS))
+                .select("li").size(), "하나만 늘어야 한다");
+    }
+
+    // ★ 세 곳(시스템 프롬프트 · 사용자 프롬프트 · 검증기)이 같은 답을 써야 한다.
+    //   사용자 프롬프트가 빠지면 모델은 "문구만 고쳐라" 를 따라 아무것도 안 한다 — 실측.
+    @Test
+    @DisplayName("항목 추가라는 걸 모델에게 말해 준다")
+    void 항목_추가는_프롬프트에_적는다() {
+        router.willReturn(new RawRoute("ADD", "benefits", "커피쿠폰"));
+        retry.willReturn(ok(PLUS_BENEFIT));
+
+        run("혜택에 커피쿠폰 추가해줘");
+
+        assertTrue(retry.prompts().get(0).contains("항목을 **하나만** 더한다"),
+                "항목을 더하는 요청이라고 말하지 않았다");
+    }
+
+    @Test
+    @DisplayName("내용 없는 혜택 항목 추가는 되묻고 모델을 안 부른다")
+    void 내용_없는_혜택_추가는_되묻는다() {
+        router.willReturn(new RawRoute("ADD", "benefits", null));
+
+        GenerationJob job = run("혜택 하나 더 추가해줘");
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertEquals(0, retry.calls(), "되묻는데 모델을 불렀다 — 돈이 나간다");
+        assertEquals(1, versionNo());
+    }
+
+    // ── 조용한 실패 ───────────────────────────────────────────────
+
+    /**
+     * ★ 실측(여름 수영장): "참여 버튼을 파란색으로 물고기 느낌나게" 가 v4 로 저장되고
+     *   "반영했어요" 가 나갔는데 화면은 한 글자도 안 바뀌었다. cta 변형 11개가 전부 모양이고
+     *   색은 hero 에만 걸리는 팔레트라, 애초에 할 수 없는 요청이었다.
+     *   관리자는 자기가 잘못 말한 줄 알고 같은 요청을 계속 다시 쓴다.
+     */
+    @Test
+    @DisplayName("★ 모델이 똑같은 내용을 돌려주면 저장하지 않는다 — 틀린 성공보다 정직한 실패")
+    void 안_바뀌면_저장하지_않는다() {
+        router.willReturn(new RawRoute("STYLE", "steps", null));
+        retry.willReturn(ok(SAME_STEPS));
+
+        GenerationJob job = run("참여 방법을 물고기 느낌으로 바꿔줘");
 
         assertEquals(GenerationJob.Phase.FAILED, job.phase());
-        assertTrue(job.message().contains("늘리거나 줄일 수 없습니다"));
-        assertEquals(0, retry.calls(), "거절인데 모델을 불렀다");
-        assertEquals(1, versionNo());
+        assertEquals(1, versionNo(), "안 바뀌었는데 버전이 생겼다");
+        assertNull(job.versionId());
+    }
+
+    /**
+     * ★ "못 했습니다" 만 말하면 관리자가 같은 요청을 또 쓴다.
+     *   그 영역에 실제로 있는 모양을 사람 말로 보여줘야 다음 요청이 맞는다.
+     */
+    @Test
+    @DisplayName("무엇을 할 수 있는지 같이 알려준다")
+    void 할_수_있는_것을_알려준다() {
+        router.willReturn(new RawRoute("STYLE", "steps", null));
+        retry.willReturn(ok(SAME_STEPS));
+
+        GenerationJob job = run("참여 방법을 물고기 느낌으로 바꿔줘");
+
+        assertTrue(job.message().contains("그대로 두었습니다"), job.message());
+        assertTrue(job.message().contains("세로 타임라인"),
+                "고를 수 있는 모양 이름이 없으면 관리자가 또 같은 요청을 쓴다: " + job.message());
+        assertTrue(job.message().contains("전체 색감"),
+                "색은 영역별로 못 바꾼다는 것을 알려줘야 한다: " + job.message());
+    }
+
+    /**
+     * ★ 두 가지를 시켰는데 하나만 됐으면 된 쪽은 저장하는 게 맞다.
+     *   전부 막으면 "제목은 바뀌었는데 안 저장됨" 이 되어 더 나쁘다.
+     */
+    @Test
+    @DisplayName("연산 두 개 중 하나만 바뀌어도 저장한다")
+    void 일부만_바뀌면_저장한다() {
+        router.willReturn(
+                new RawRoute("EDIT", "hero", "가을 대축제"),
+                new RawRoute("EDIT", "steps", null));
+        retry.willReturn(ok(NEW_HERO), ok(SAME_STEPS));
+
+        GenerationJob job = run("제목 바꾸고 참여방법도 다듬어줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertEquals(2, versionNo());
+        assertTrue(savedHtml().contains("가을 대축제"));
     }
 
     // ── 고른 영역 (미리보기에서 클릭한 블록) ───────────────────────
@@ -727,7 +944,21 @@ class EditServiceTest {
 
     private static final String WRAPPED = "<div class=\"ev-container event-page\">" + BASE + "</div>";
 
+    /**
+     * 팔레트 <b>와 내용이 같이</b> 바뀐 응답.
+     *
+     * ★ 예전에는 BASE 의 hero 와 글자가 같고 class 만 달랐다. 그런데 선택 영역 수정은
+     *   팔레트를 떼어 내므로(withoutPalette), 떼고 나면 전후가 <b>완전히 동일</b>해진다.
+     *   "바뀐 게 없으면 저장하지 않는다" 가 그걸 조용한 실패로 보고 막는 게 맞다.
+     *   이 테스트가 보려는 것은 "팔레트가 페이지 전체로 새지 않는다" 이므로
+     *   내용은 달라도 된다. 오히려 달라야 <b>"내용은 되고 색만 막혔다"</b> 까지 보인다.
+     */
     private static final String HERO_WITH_PALETTE =
+            "<section data-block=\"hero\" class=\"palette-summer\"><h1>시원한 여름 대방출</h1>"
+            + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>";
+
+    /** 팔레트 <b>만</b> 붙고 내용은 그대로. 떼고 나면 아무것도 안 바뀐 상태가 된다 */
+    private static final String HERO_PALETTE_ONLY =
             "<section data-block=\"hero\" class=\"palette-summer\"><h1>여름 데이터 대방출</h1>"
             + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>";
 
@@ -763,6 +994,35 @@ class EditServiceTest {
         assertTrue(root(savedHtml()).hasClass("palette-summer"), "팔레트가 루트로 옮겨져야 합니다: " + savedHtml());
     }
 
+    /**
+     * ★ 영역을 고른 채 색을 바꿔 달라는 요청은 <b>구조적으로 안 된다.</b>
+     *   색은 페이지 전체 값(팔레트)이라, 고른 영역만 바꿀 방법이 없어서 떼어 낸다.
+     *   그 결과 화면이 그대로인데, 관리자는 왜 안 됐는지 알 길이 없다.
+     *
+     *   예전 안내 문구는 hero 가 아닐 때만 색 얘기를 했다 —
+     *   정작 hero 를 골라 색을 요청한 경우에 그 설명이 빠졌다.
+     *
+     * ★ "안 된다" 만으로는 모자란다. <b>무엇은 되는지</b>를 같이 줘야 다음 요청이 맞는다.
+     */
+    @Test
+    @DisplayName("★ 영역을 고른 채 색을 바꿔 달라면 — 왜 안 되는지와 무엇이 되는지 알려준다")
+    void 고른_영역의_색_요청은_이유를_알려준다() {
+        setUpWith(WRAPPED);
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(HERO_PALETTE_ONLY));
+
+        GenerationJob job = runOn("파란색으로 바꿔줘", "hero");
+
+        assertEquals(GenerationJob.Phase.FAILED, job.phase(), "안 바뀌었는데 저장했다");
+        assertEquals(1, versionNo());
+        assertTrue(job.message().contains("색은 페이지 전체"),
+                "hero 를 골랐을 때도 색 얘기를 해줘야 한다: " + job.message());
+        assertTrue(job.message().contains("영역 선택을 해제"),
+                "어떻게 하면 되는지 알려줘야 한다: " + job.message());
+        assertTrue(job.message().contains("밝기나 분위기"),
+                "이 영역에서 되는 것도 알려줘야 한다: " + job.message());
+    }
+
     /** 기준 문서를 바꿔 다시 세운다 */
     private void setUpWith(String html) {
         versions = new VersionStore.InMemory();
@@ -770,5 +1030,327 @@ class EditServiceTest {
         service = new EditService(router, retry, versions, new EventGuard.Open(), jobs,
                 LlmCallRecorder.none(), gateway);
         versions.save(EVENT, html, null);
+    }
+
+    @Test
+    void LLM의_변경요약을_저장_메서드에_전달한다() {
+        Long sourceVersionId = versions.latest(EVENT).orElseThrow().versionId();
+        String summary = "제목을 가을 대축제로 변경";
+
+        router.willReturn(new RawRoute("EDIT", "hero", null));
+        retry.willReturn(ok(NEW_HERO, summary));
+
+        GenerationJob job = run("제목을 가을 대축제로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+
+        verify(versions).save(
+            eq(EVENT),
+            anyString(),
+            eq(sourceVersionId),
+            eq(summary),
+            isNull());
+    }
+
+    @Test
+    void 여러_영역의_변경요약을_합쳐서_전달한다() {
+        Long sourceVersionId = versions.latest(EVENT).orElseThrow().versionId();
+
+        router.willReturn(
+            new RawRoute("EDIT", "hero", null),
+            new RawRoute("EDIT", "steps", null));
+        retry.willReturn(
+            ok(NEW_HERO, "제목을 가을 대축제로 변경"),
+            ok(NEW_STEPS, "참여 방법에 로그인 안내 반영"));
+
+        GenerationJob job = run("제목과 참여 방법을 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+
+        verify(versions).save(
+            eq(EVENT),
+            anyString(),
+            eq(sourceVersionId),
+            eq("제목을 가을 대축제로 변경; 참여 방법에 로그인 안내 반영"),
+            isNull());
+    }
+
+    @Test
+    void 실제로_바뀌지_않은_영역의_요약은_제외한다() {
+        Long sourceVersionId = versions.latest(EVENT).orElseThrow().versionId();
+
+        router.willReturn(
+            new RawRoute("EDIT", "hero", null),
+            new RawRoute("EDIT", "steps", null));
+        retry.willReturn(
+            ok(NEW_HERO, "제목을 가을 대축제로 변경"),
+            ok(SAME_STEPS, "참여 방법 문구 변경"));
+
+        GenerationJob job = run("제목과 참여 방법을 다듬어줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+
+        verify(versions).save(
+            eq(EVENT),
+            anyString(),
+            eq(sourceVersionId),
+            eq("제목을 가을 대축제로 변경"),
+            isNull());
+    }
+
+    // ── 페이지 배치 (layout-*) ─────────────────────────────────────
+    //
+    //   배치는 이름 넷 중 하나를 고르는 일이라, 요청문이 직접 말했으면 모델을 부르지 않고 서버가 정한다.
+    //   여기서 보는 것은 EditService 의 분기다. 열쇠말 자체는 VariantPaletteTest 가 본다
+
+    private static final String LAYOUT_HERO =
+            "<section data-block=\"hero\" class=\"v-hero-center\"><h1>여름 데이터 대방출</h1>"
+            + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>";
+
+    private static final String LAYOUT_BENEFITS =
+            "<section data-block=\"benefits\"><ul><li>데이터 10GB</li><li>쿠폰</li></ul></section>";
+
+    /** 백지 페이지 — 내용 영역 넷(intro · benefits · steps · faq). 벤토를 걸 수 있는 최소다 */
+    private static String layoutPage(String rootClass) {
+        return "<div class=\"ev-container event-page theme-basic" + (rootClass.isEmpty() ? "" : " " + rootClass) + "\">"
+                + LAYOUT_HERO
+                + "<section data-block=\"intro\"><p>올여름 데이터를 마음껏</p></section>"
+                + LAYOUT_BENEFITS
+                + "<section data-block=\"steps\"><ol><li>앱 열기</li><li>버튼 누르기</li></ol></section>"
+                + "<section data-block=\"faq\"><details><summary>언제까지인가요</summary><p>이달 말까지</p></details>"
+                + "<details><summary>누가 참여하나요</summary><p>모든 고객</p></details></section>"
+                + "<section data-block=\"cta\"><button class=\"btn\">참여하기</button></section></div>";
+    }
+
+    private static boolean hasLayout(String html) {
+        return root(html).classNames().stream().anyMatch(c -> c.startsWith("layout-"));
+    }
+
+    @Test
+    @DisplayName("★ 페이지 배치를 직접 말하면 모델을 부르지 않고 루트에 건다 — hero 의 모양 · 문구는 그대로다")
+    void 페이지_배치는_모델_없이_건다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+
+        GenerationJob job = run("페이지를 벤토 배치로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(0, retry.calls(), "배치는 서버가 정한다 — 모델을 부르면 hero 모양까지 바꾼다");
+        assertEquals(2, versionNo());
+        assertTrue(root(savedHtml()).hasClass("layout-bento"), "루트에 배치가 없습니다: " + root(savedHtml()).className());
+        var hero = root(savedHtml()).selectFirst("[data-block=hero]");
+        assertEquals("v-hero-center", hero.className(), "hero 에는 원래 모양만 남아야 합니다 — 배치는 루트로 옮긴다");
+        assertEquals("여름 데이터 대방출", hero.selectFirst("h1").text());
+    }
+
+    @Test
+    @DisplayName("★ 라우터가 못 읽어도 배치 요청은 되묻지 않는다 — hero STYLE 을 서버가 더한다")
+    void 라우터가_못_읽어도_배치는_건다() {
+        setUpWith(layoutPage(""));
+        router.willNotUnderstand();
+
+        GenerationJob job = run("영역들을 2열로 넓게 배치해줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(0, retry.calls());
+        assertTrue(root(savedHtml()).hasClass("layout-wide"), root(savedHtml()).className());
+    }
+
+    @Test
+    @DisplayName("라우터가 다른 영역만 짚었으면 그 연산은 그대로 돌고 배치도 같이 걸린다")
+    void 다른_영역_수정과_배치가_한_버전에_들어간다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("EDIT", "benefits", null));
+        retry.willReturn(ok(NEW_BENEFITS));
+
+        GenerationJob job = run("혜택 문구를 다듬고 페이지를 벤토 배치로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls(), "모델은 혜택만 고친다");
+        assertTrue(retry.prompts().get(0).contains("data-block=\"benefits\""));
+        assertEquals(2, versionNo(), "버전은 하나다");
+        assertTrue(savedHtml().contains("데이터 20GB"));
+        assertTrue(root(savedHtml()).hasClass("layout-bento"), root(savedHtml()).className());
+    }
+
+    @Test
+    @DisplayName("배치를 원래대로 — 루트의 배치 class 를 지운다")
+    void 배치를_기본으로_되돌린다() {
+        setUpWith(layoutPage("layout-bento"));
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+
+        GenerationJob job = run("기본 배치로 돌려줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(0, retry.calls());
+        assertFalse(hasLayout(savedHtml()), "기본은 class 를 남기지 않는다: " + root(savedHtml()).className());
+    }
+
+    @Test
+    @DisplayName("★ 걸 수 없는 배치는 이유를 말하고 저장하지 않는다 — 영역 부족 · 이미 그 배치 · 템플릿")
+    void 걸_수_없는_배치는_이유를_말한다() {
+        // 내용 영역 2개(benefits · steps) — 벤토는 4개가 있어야 한다
+        setUpWith(WRAPPED);
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        GenerationJob few = run("페이지를 벤토 배치로 바꿔줘");
+        assertEquals(GenerationJob.Phase.FAILED, few.phase());
+        assertTrue(few.message().contains("4개 이상"), few.message());
+        assertEquals(1, versionNo());
+
+        setUpWith(layoutPage("layout-bento"));
+        GenerationJob same = run("페이지를 벤토 배치로 바꿔줘");
+        assertEquals(GenerationJob.Phase.FAILED, same.phase());
+        assertTrue(same.message().contains("이미 그 배치"), same.message());
+        assertEquals(1, versionNo());
+
+        setUpWith(layoutPage("").replace("data-block=\"intro\"", "data-block=\"intro\" class=\"ev-block\""));
+        GenerationJob template = run("페이지를 벤토 배치로 바꿔줘");
+        assertEquals(GenerationJob.Phase.FAILED, template.phase());
+        assertTrue(template.message().contains("템플릿"), template.message());
+        assertEquals(1, versionNo());
+
+        assertEquals(0, retry.calls(), "이유를 말하는 데 모델은 필요 없다");
+    }
+
+    @Test
+    @DisplayName("★ 영역을 고른 채 페이지 배치를 요청하면 라우터도 부르지 않고 안내한다")
+    void 영역을_고른_채_페이지_배치는_안내한다() {
+        setUpWith(layoutPage(""));
+
+        GenerationJob job = runOn("페이지를 벤토 배치로 바꿔줘", "benefits");
+
+        assertEquals(GenerationJob.Phase.FAILED, job.phase());
+        assertTrue(job.message().contains("영역 선택을 해제"), job.message());
+        assertEquals(0, router.calls(), "안 되는 일인 줄 알면서 모델을 부를 이유가 없다");
+        assertEquals(0, retry.calls());
+        assertEquals(1, versionNo());
+    }
+
+    @Test
+    @DisplayName("영역을 고르고 '페이지' 를 말하지 않은 벤토 요청은 그 영역의 모양 요청이다 — 페이지 배치는 그대로")
+    void 고른_영역의_벤토는_영역_변형이다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("STYLE", "benefits", null));
+        retry.willReturn(ok("<section data-block=\"benefits\" class=\"v-benefits-bento\"><ul>"
+                + "<li>데이터 10GB</li><li>쿠폰</li></ul></section>"));
+
+        GenerationJob job = runOn("벤토 그리드 배치로 바꿔줘", "benefits");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls(), "영역 모양은 모델이 고른다");
+        assertFalse(hasLayout(savedHtml()), "고른 영역 수정이 페이지 배치를 바꿨습니다: " + root(savedHtml()).className());
+    }
+
+    @Test
+    @DisplayName("관리자가 쓴 문구가 같이 온 hero 요청은 모델로 보낸다 — 문구를 써야 한다")
+    void 문구가_같이_오면_모델로_보낸다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("EDIT", "hero", "가을 대축제"));
+        retry.willReturn(ok("<section data-block=\"hero\" class=\"v-hero-center layout-bento\"><h1>가을 대축제</h1>"
+                + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>"));
+
+        GenerationJob job = run("제목을 '가을 대축제' 로 바꾸고 페이지를 벤토 배치로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls());
+        assertTrue(savedHtml().contains("가을 대축제"));
+        assertTrue(root(savedHtml()).hasClass("layout-bento"), "모델이 hero 에 붙인 배치도 루트로 옮겨야 한다");
+    }
+
+    @Test
+    @DisplayName("★ 배치와 색감을 같이 시키면 둘 다 된다 — 배치만 걸고 끝내면 색감 요청이 조용히 버려진다")
+    void 배치와_다른_요청이_섞이면_모델도_부른다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        // 모델은 색감만 했다 — 배치는 붙이지 않았다
+        retry.willReturn(ok("<section data-block=\"hero\" class=\"v-hero-center palette-summer\"><h1>여름 데이터 대방출</h1>"
+                + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>"));
+
+        GenerationJob job = run("전체 색감을 여름 느낌으로 바꾸고 페이지를 벤토 배치로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls(), "색감은 모델이 고른다");
+        assertTrue(retry.prompts().get(0).contains("전체 색감을 여름 느낌으로"), "색감 요청은 모델에게 가야 한다");
+        assertFalse(retry.prompts().get(0).contains("벤토"),
+                "배치를 말한 마디는 모델에게 보여 주지 않는다 — 보여 주면 hero 모양까지 바꾸거나 색감을 빠뜨린다: "
+                        + retry.prompts().get(0));
+        assertTrue(root(savedHtml()).hasClass("palette-summer"), "색감이 버려졌습니다: " + root(savedHtml()).className());
+        assertTrue(root(savedHtml()).hasClass("layout-bento"), "배치가 안 걸렸습니다: " + root(savedHtml()).className());
+        assertEquals(2, versionNo(), "버전은 하나다");
+    }
+
+    @Test
+    @DisplayName("섞인 요청에서 모델이 다른 배치를 붙여 와도 요청문이 고른 배치 하나만 남는다")
+    void 섞인_요청에서도_배치는_서버가_정한다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("EDIT", "hero", null));
+        retry.willReturn(ok("<section data-block=\"hero\" class=\"v-hero-center layout-wide\"><h1>여름 대방출</h1>"
+                + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>"));
+
+        GenerationJob job = run("제목을 더 짧게 하고 페이지를 벤토 배치로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertTrue(savedHtml().contains("여름 대방출"), "제목 수정이 버려졌습니다");
+        assertEquals(List.of("layout-bento"),
+                root(savedHtml()).classNames().stream().filter(c -> c.startsWith("layout-")).toList());
+    }
+
+    @Test
+    @DisplayName("★ 라우터가 hero 를 두 번 짚어도(제목 EDIT + 배치 STYLE) 거절하지 않는다 — 배치는 서버 몫이다")
+    void 라우터가_hero_를_두_번_짚어도_된다() {
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("EDIT", "hero", null), new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok("<section data-block=\"hero\" class=\"v-hero-center\"><h1>여름 대방출</h1>"
+                + "<p>기간 <span data-slot=\"period\"></span> 까지</p></section>"));
+
+        GenerationJob job = run("제목을 더 짧고 강렬하게 바꾸고 매거진 레이아웃으로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls(), "hero 연산은 하나로 합친다");
+        assertTrue(savedHtml().contains("여름 대방출"));
+        assertTrue(root(savedHtml()).hasClass("layout-magazine"), root(savedHtml()).className());
+    }
+
+    @Test
+    @DisplayName("섞인 요청도 걸 수 없는 배치면 모델을 부르기 전에 이유를 말한다")
+    void 섞인_요청도_걸_수_없으면_먼저_말한다() {
+        setUpWith(WRAPPED);     // 내용 영역 2개
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+
+        GenerationJob job = run("전체 색감을 여름 느낌으로 바꾸고 페이지를 벤토 배치로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.FAILED, job.phase());
+        assertTrue(job.message().contains("4개 이상"), job.message());
+        assertEquals(0, retry.calls());
+        assertEquals(1, versionNo());
+    }
+
+    @Test
+    @DisplayName("★ 영역을 두고 한 '배치 · 레이아웃' 은 그 영역만 고친다 — 페이지 배치로 읽으면 요청이 통째로 실패했다")
+    void 영역_배치_요청은_페이지_배치가_아니다() {
+        // "혜택을 2열로 배치해줘" 가 layout-wide 로 읽혀 페이지 전체가 바뀌었다
+        setUpWith(layoutPage(""));
+        router.willReturn(new RawRoute("STYLE", "benefits", null));
+        retry.willReturn(ok("<section data-block=\"benefits\" class=\"v-benefits-grid\"><ul>"
+                + "<li>데이터 10GB</li><li>쿠폰</li></ul></section>"));
+
+        GenerationJob grid = run("혜택을 2열로 배치해줘");
+
+        assertEquals(GenerationJob.Phase.DONE, grid.phase(), grid.message());
+        assertEquals(1, retry.calls(), "혜택 하나만 모델을 불러야 한다 — hero STYLE 이 끼어들면 안 된다");
+        assertTrue(retry.prompts().get(0).contains("data-block=\"benefits\""));
+        assertFalse(hasLayout(savedHtml()), "페이지 배치가 걸렸습니다: " + root(savedHtml()).className());
+        assertTrue(savedHtml().contains("v-benefits-grid"));
+
+        // "혜택 레이아웃을 기본으로" 가 layout-stack 으로 읽혀 "이미 그 배치입니다" 로 끝났다
+        setUpWith(layoutPage("").replace(LAYOUT_BENEFITS,
+                LAYOUT_BENEFITS.replace("data-block=\"benefits\"", "data-block=\"benefits\" class=\"v-benefits-grid\"")));
+        router.willReturn(new RawRoute("STYLE", "benefits", null));
+        retry.willReturn(ok(LAYOUT_BENEFITS));
+
+        GenerationJob back = run("혜택 레이아웃을 기본으로 돌려줘");
+
+        assertEquals(GenerationJob.Phase.DONE, back.phase(), back.message());
+        assertFalse(savedHtml().contains("v-benefits-grid"), "혜택 모양이 그대로입니다");
     }
 }

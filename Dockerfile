@@ -44,6 +44,14 @@ RUN apk add --no-cache curl tzdata \
 #   root 로 돌리지 않는다. 컨테이너가 뚫려도 권한이 제한된다.
 RUN addgroup -S app && adduser -S app -G app
 
+#   올린 이미지가 쌓이는 자리. 도커 볼륨(newvent-assets)이 여기에 붙는다.
+#   ★ **USER app 보다 먼저** 만들고 소유자를 줘야 한다.
+#     이름 붙은 볼륨은 처음 붙을 때 이 디렉터리의 소유자를 물려받는다.
+#     여기가 없으면 도커가 root 소유로 만들고, app 유저가 못 써서
+#     업로드가 500 으로 떨어진다 (AccessDeniedException → UncheckedIOException).
+#   ★ WORKDIR /app 은 root 소유라 ./ 아래에는 어차피 못 쓴다 — 그래서 절대 경로다.
+RUN mkdir -p /data/assets && chown -R app:app /data/assets
+
 #   COPY 에서 바로 소유자를 준다.
 COPY --chown=app:app --from=build /src/build/libs/*.jar app.jar
 USER app

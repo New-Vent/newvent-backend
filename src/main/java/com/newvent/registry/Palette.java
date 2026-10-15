@@ -22,7 +22,9 @@ import java.util.Optional;
  */
 public enum Palette {
 
-    BASE("palette-base", "원래 색으로 되돌린다 (템플릿 테마 또는 기본 남색)"),
+    // ★ 모델이 이 설명을 보고 고른다. "원래 색으로" 한 가지만 적었을 때 "원래대로 되돌려줘" 에는
+    //   다른 팔레트(brand · pastel)를 골랐다(실제 화면). 되돌리는 말투를 같이 적어 둔다.
+    BASE("palette-base", "원래 색 · 원래대로 · 기본 색 · 처음 상태로 되돌린다, 색 초기화 (템플릿 테마 또는 기본 남색)"),
     SPRING("palette-spring", "봄 — 벚꽃 분홍, 연두"),
     SUMMER("palette-summer", "여름 — 바다 파랑, 청량한 하늘색"),
     AUTUMN("palette-autumn", "가을 — 단풍 주황, 갈색"),
@@ -40,7 +42,9 @@ public enum Palette {
     ESPORTS("palette-esports", "게임 · e스포츠 — 검정, 네온 초록"),
     LAVENDER("palette-lavender", "라벤더 — 연보라, 차분한"),
     COFFEE("palette-coffee", "카페 · 따뜻한 — 갈색, 크림"),
-    BRAND("palette-brand", "브랜드 — NewVent 마젠타 (특별한 분위기 요청이 없을 때)");
+    // ★ 설명에서 회사명을 뺐다. 이 문장이 그대로 프롬프트에 실리는데,
+    //   PR 리뷰의 "회사명 NewVent 를 문구에 넣는다 (요청에 없음)" 이 여기서 샜을 가능성이 높다.
+    BRAND("palette-brand", "브랜드 기본 — 마젠타 (특별한 분위기 요청이 없을 때)");
 
     public static final String PREFIX = "palette-";
 

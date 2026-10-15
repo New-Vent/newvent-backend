@@ -50,6 +50,10 @@ public enum GenerationErrorCode implements ErrorCode {
     AMBIGUOUS_GENERATION(HttpStatus.BAD_REQUEST, "GEN400-3",
             "템플릿으로 만들기와 AI로 만들기 중 하나만 골라 주세요."),
 
+    /** 생성 화면에서 고른 페이지 배치(layout)가 목록에 없다 */
+    INVALID_LAYOUT(HttpStatus.BAD_REQUEST, "GEN400-4",
+            "알 수 없는 페이지 배치입니다."),
+
     /**
      * ★ 409 다. 400 이 아니다 — 요청은 멀쩡한데 지금은 안 될 뿐이다.
      *   버튼을 두 번 눌렀거나, 앞의 생성이 아직 도는 중이다.

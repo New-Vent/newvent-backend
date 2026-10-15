@@ -28,6 +28,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.newvent.admin.domain.Admin;
 import com.newvent.admin.repository.AdminRepository;
+import com.newvent.asset.service.AssetCleanup;
 import com.newvent.common.response.PageResponse;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventProgress;
@@ -55,6 +56,79 @@ import com.newvent.user.domain.MembershipGrade;
  */
 class EventServiceTest {
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "delete", "restore", "hardDelete", "publish", "unpublish", "changeStatus"})
+    void 다른_관리자는_이벤트_상태를_변경할_수_없다(String action) {
+        Event event = newEvent(1L, EventStatus.PUBLISHED, now.minusDays(1), now.plusDays(1));
+        if (action.equals("restore") || action.equals("hardDelete")) {
+            ReflectionTestUtils.setField(event, "deletedAt", now);
+            when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.of(event));
+        } else if (action.equals("unpublish") || action.equals("changeStatus")) {
+            when(eventRepository.findAdminEventById(1L)).thenReturn(Optional.of(event));
+        } else {
+            when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        }
+        OffsetDateTime deletedAt = event.getDeletedAt();
+        assertThatThrownBy(() -> {
+            switch (action) {
+                case "delete" -> eventService.delete(99L, 1L);
+                case "restore" -> eventService.restore(99L, 1L);
+                case "hardDelete" -> eventService.hardDelete(99L, 1L);
+                case "publish" -> eventService.publish(99L, 1L, 10L);
+                case "unpublish" -> eventService.unpublish(99L, 1L);
+                case "changeStatus" -> eventService.changeStatus(99L, 1L, EventStatus.ENDED);
+                default -> throw new AssertionError(action);
+            }
+        }).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+        assertThat(event.getDeletedAt()).isEqualTo(deletedAt);
+        assertThat(event.getPublishedVersion()).isNull();
+        verifyNoInteractions(eventVersionRepository, generationJobStore);
+        verify(eventRepository, never()).delete(any());
+        verify(eventRepository, never()).flush();
+    }
+
+    // ★★ event_assets 는 on delete cascade 라 행은 같이 사라지지만
+    //   **디스크의 파일은 안 사라진다.** 아무도 가리키지 않는 파일이 박스에 쌓인다.
+    @Test
+    @DisplayName("★ 영구 삭제하면 올린 이미지 파일도 같이 치운다")
+    void 영구_삭제는_이미지도_치운다() {
+        Event event = newEvent(1L, EventStatus.DRAFT, now.minusDays(2), now.minusDays(1));
+        ReflectionTestUtils.setField(event, "deletedAt", now);
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.of(event));
+        when(eventRepository.hasParticipations(1L)).thenReturn(false);
+
+        eventService.hardDelete(1L, 1L);
+
+        verify(eventRepository).delete(event);
+        verify(assetCleanup).deleteAllOf(1L);
+    }
+
+    // ★ 참여 기록이 있어 막히는 경우에는 이미지도 그대로 둬야 한다
+    @Test
+    @DisplayName("영구 삭제가 막히면 이미지도 안 지운다")
+    void 막히면_이미지도_안_지운다() {
+        Event event = newEvent(1L, EventStatus.DRAFT, now.minusDays(2), now.minusDays(1));
+        ReflectionTestUtils.setField(event, "deletedAt", now);
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.of(event));
+        when(eventRepository.hasParticipations(1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> eventService.hardDelete(1L, 1L))
+                .isInstanceOf(EventException.class);
+
+        verifyNoInteractions(assetCleanup);
+    }
+
+    @Test
+    void 관리자_ID가_없으면_삭제를_거절한다() {
+        Event event = newEvent(1L, EventStatus.DRAFT, now, now.plusDays(1));
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        assertThatThrownBy(() -> eventService.delete(null, 1L))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThat(event.deleted()).isFalse();
+    }
+
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private final EventRepository eventRepository = mock(EventRepository.class);
@@ -62,11 +136,19 @@ class EventServiceTest {
     private final EventVersionRepository eventVersionRepository = mock(EventVersionRepository.class);
     private final AdminRepository adminRepository = mock(AdminRepository.class);
     private final GenerationJobStore generationJobStore = mock(GenerationJobStore.class);
+    private final AssetCleanup assetCleanup = mock(AssetCleanup.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-09-16T01:00:00+09:00"), SEOUL);
     private final OffsetDateTime now = OffsetDateTime.now(clock);
+    /**
+     * 게시 HTML 을 만드는 쪽. <b>실제 구현을 쓴다</b> — 상세 응답의 completedHtml 이
+     * 공개 상세와 같은 함수를 지나는지(슬롯이 채워지는지)가 이 테스트의 관심사다.
+     */
+    private final PublicEventService publicEventService =
+            new PublicEventService(eventRepository, eventId -> java.util.Optional.empty());
+
     private final EventService eventService =
             new EventService(eventRepository, eventTemplateRepository, eventVersionRepository,
-                    adminRepository, generationJobStore, clock);
+                    adminRepository, generationJobStore, assetCleanup, clock, publicEventService);
 
     @Test
     @DisplayName("목록 조회는 리포지토리 결과를 마감임박과 함께 매핑한다")
@@ -80,11 +162,113 @@ class EventServiceTest {
                 .thenReturn(page);
 
         PageResponse<EventSummaryResponse> result =
-                eventService.findAdminEvents(null, null, null, null, null, 0, 10);
+                eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10);
 
         assertThat(result.totalElements()).isEqualTo(1);
         assertThat(result.content().get(0).id()).isEqualTo(3L);
         assertThat(result.content().get(0).closingSoon()).isTrue();
+    }
+
+    // ── 목록 썸네일 (hero 만 잘라내기) ───────────────────────────
+
+    private static final String PAGE_HTML = "<div class=\"ev-container event-page theme-sale\">"
+            + "<section data-block=\"hero\"><h1>제목</h1><p data-slot=\"period\">기간</p></section>"
+            + "<section data-block=\"cta\"><button>참여</button></section></div>";
+
+    private Event eventWithPublishedHtml(Long id, EventStatus status, String html) {
+        Event event = newEvent(id, status,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        EventVersion version = newVersion(id * 10, true);
+        ReflectionTestUtils.setField(version, "htmlContent", html);
+        ReflectionTestUtils.setField(event, "publishedVersion", version);
+        return event;
+    }
+
+    private Event draftEvent(Long id) {
+        return newEvent(id, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+    }
+
+    private void stubAdminPage(Event... events) {
+        when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(events), PageRequest.of(0, 10), events.length));
+    }
+
+    @Test
+    @DisplayName("게시 이벤트의 썸네일은 게시 버전의 hero 만 담고 기간 슬롯이 채워지며 최신 버전은 조회하지 않는다")
+    void 게시_이벤트_썸네일은_게시_버전의_hero다() {
+        stubAdminPage(eventWithPublishedHtml(3L, EventStatus.PUBLISHED, PAGE_HTML));
+
+        String thumb = eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10)
+                .content().get(0).thumbnailHtml();
+
+        assertThat(thumb).contains("theme-sale").contains("제목").contains("2026.10.01 ~ 10.31");
+        assertThat(thumb).doesNotContain("참여").doesNotContain("기간</p>");
+        verify(eventVersionRepository, never()).findLatestVersionHtmls(any());
+    }
+
+    @Test
+    @DisplayName("게시 버전이 없는 DRAFT 는 최신 버전의 hero 로 썸네일을 만든다")
+    void DRAFT_썸네일은_최신_버전의_hero다() {
+        stubAdminPage(draftEvent(2L));
+        when(eventVersionRepository.findLatestVersionHtmls(List.of(2L)))
+                .thenReturn(List.<Object[]>of(new Object[] {2L, PAGE_HTML}));
+
+        String thumb = eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10)
+                .content().get(0).thumbnailHtml();
+
+        assertThat(thumb).contains("theme-sale").contains("제목").contains("2026.10.01 ~ 10.31");
+        assertThat(thumb).doesNotContain("참여");
+    }
+
+    @Test
+    @DisplayName("한 페이지에서 게시 버전이 없는 이벤트만 모아 최신 버전을 한 번에 조회한다")
+    void 최신_버전_HTML은_한_번에_일괄_조회한다() {
+        Event published = eventWithPublishedHtml(1L, EventStatus.PUBLISHED, PAGE_HTML);
+        Event draftA = draftEvent(2L);
+        Event ended = eventWithPublishedHtml(3L, EventStatus.ENDED, PAGE_HTML);
+        Event draftB = draftEvent(4L);
+        stubAdminPage(published, draftA, ended, draftB);
+        when(eventVersionRepository.findLatestVersionHtmls(List.of(2L, 4L)))
+                .thenReturn(List.<Object[]>of(new Object[] {2L, PAGE_HTML}, new Object[] {4L, PAGE_HTML}));
+
+        List<EventSummaryResponse> content =
+                eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10).content();
+
+        assertThat(content).hasSize(4).allSatisfy(row -> assertThat(row.thumbnailHtml()).contains("제목"));
+        verify(eventVersionRepository).findLatestVersionHtmls(List.of(2L, 4L));
+    }
+
+    @Test
+    @DisplayName("버전이 아직 없거나 hero 블록이 없으면 썸네일은 null")
+    void 버전이_없거나_hero가_없으면_썸네일은_null이다() {
+        Event noVersion = draftEvent(2L);
+        Event noHero = eventWithPublishedHtml(
+                3L, EventStatus.PUBLISHED, "<section data-block=\"cta\"><button>참여</button></section>");
+        stubAdminPage(noVersion, noHero);
+        when(eventVersionRepository.findLatestVersionHtmls(List.of(2L))).thenReturn(List.of());
+
+        List<EventSummaryResponse> content =
+                eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10).content();
+
+        assertThat(content.get(0).thumbnailHtml()).isNull();
+        assertThat(content.get(1).thumbnailHtml()).isNull();
+    }
+
+    @Test
+    @DisplayName("휴지통 목록에도 같은 규칙으로 썸네일이 담긴다")
+    void 휴지통_목록에도_썸네일이_담긴다() {
+        Event trashed = draftEvent(9L);
+        when(eventRepository.findDeletedEvents(1L, PageRequest.of(0, 10)))
+                .thenReturn(new PageImpl<>(List.of(trashed), PageRequest.of(0, 10), 1));
+        when(eventVersionRepository.findLatestVersionHtmls(List.of(9L)))
+                .thenReturn(List.<Object[]>of(new Object[] {9L, PAGE_HTML}));
+
+        String thumb = eventService.findDeletedEvents(1L, 0, 10).content().get(0).thumbnailHtml();
+
+        assertThat(thumb).contains("제목").contains("2026.10.01 ~ 10.31");
     }
 
     @Test
@@ -93,7 +277,7 @@ class EventServiceTest {
         when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        eventService.findAdminEvents("월드컵", null, null, null, null, 0, 10);
+        eventService.findAdminEvents(1L, "월드컵", null, null, null, null, 0, 10);
 
         verify(eventRepository).findAdminEvents(
                 eq("%월드컵%"), isNull(), isNull(), isNull(), eq(now),
@@ -106,9 +290,9 @@ class EventServiceTest {
         when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        eventService.findAdminEvents(" 42 ", null, null, null, null, 0, 10);
-        eventService.findAdminEvents("42번", null, null, null, null, 0, 10);
-        eventService.findAdminEvents("1234567890123456789", null, null, null, null, 0, 10);
+        eventService.findAdminEvents(1L, " 42 ", null, null, null, null, 0, 10);
+        eventService.findAdminEvents(1L, "42번", null, null, null, null, 0, 10);
+        eventService.findAdminEvents(1L, "1234567890123456789", null, null, null, null, 0, 10);
 
         verify(eventRepository).findAdminEvents(
                 eq("%42%"), eq(42L), isNull(), isNull(), eq(now), isNull(), isNull(), any());
@@ -126,7 +310,7 @@ class EventServiceTest {
         OffsetDateTime from = OffsetDateTime.parse("2026-09-01T00:00:00+09:00");
         OffsetDateTime to = OffsetDateTime.parse("2026-09-30T23:59:59+09:00");
 
-        eventService.findAdminEvents(null, EventStatus.PUBLISHED, EventProgress.ONGOING, from, to, 1, 20);
+        eventService.findAdminEvents(1L, null, EventStatus.PUBLISHED, EventProgress.ONGOING, from, to, 1, 20);
 
         verify(eventRepository).findAdminEvents(
                 isNull(), isNull(), eq(EventStatus.PUBLISHED), eq(EventProgress.ONGOING), eq(now),
@@ -151,12 +335,13 @@ class EventServiceTest {
                 .thenReturn(List.<Object[]>of(new Object[] {1L, 5}));
 
         List<EventSummaryResponse> content =
-                eventService.findAdminEvents(null, null, null, null, null, 0, 10).content();
+                eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10).content();
 
         assertThat(content.get(0).publishedVersionNo()).isEqualTo(2);
         assertThat(content.get(0).latestVersionNo()).isEqualTo(5);
         assertThat(content.get(1).publishedVersionNo()).isNull();
         assertThat(content.get(1).latestVersionNo()).isNull();
+        assertThat(content.get(0).deletedAt()).isNull();
     }
 
     @Test
@@ -165,7 +350,7 @@ class EventServiceTest {
         when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        eventService.findAdminEvents(null, null, null, null, null, 0, 10);
+        eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10);
 
         verifyNoInteractions(eventVersionRepository);
     }
@@ -176,7 +361,7 @@ class EventServiceTest {
         OffsetDateTime from = OffsetDateTime.parse("2026-09-30T00:00:00+09:00");
         OffsetDateTime to = OffsetDateTime.parse("2026-09-01T00:00:00+09:00");
 
-        assertThatThrownBy(() -> eventService.findAdminEvents(null, null, null, from, to, 0, 10))
+        assertThatThrownBy(() -> eventService.findAdminEvents(1L, null, null, null, from, to, 0, 10))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.INVALID_SEARCH_PERIOD.getCode());
@@ -194,11 +379,31 @@ class EventServiceTest {
                 EventVersion.htmlOnly("<h1>지금 긁으면 바로 당첨</h1>"));
         when(eventRepository.findAdminEventById(3L)).thenReturn(Optional.of(event));
 
-        EventDetailResponse detail = eventService.findAdminEvent(3L);
+        EventDetailResponse detail = eventService.findAdminEvent(1L, 3L);
 
         assertThat(detail.name()).isEqualTo("지금 긁으면 바로 당첨");
         assertThat(detail.closingSoon()).isTrue();
         assertThat(detail.completedHtml()).contains("지금 긁으면 바로 당첨");
+        assertThat(detail.publishedVersionNo()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("★ completedHtml 은 슬롯이 채워진다 — 전에는 생 조각이라 기간도 참여 주소도 없었다")
+    void 상세의_HTML은_슬롯이채워진다() {
+        Event event = newEvent(3L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "publishedVersion", EventVersion.htmlOnly(
+                "<section data-block=\"hero\"><p data-slot=\"period\">기간</p></section>"
+                + "<section data-block=\"cta\">"
+                + "<button data-slot=\"cta-link\">참여하기</button></section>"));
+        when(eventRepository.findAdminEventById(3L)).thenReturn(Optional.of(event));
+
+        String html = eventService.findAdminEvent(1L, 3L).completedHtml();
+
+        assertThat(html).contains("2026.10.01 ~ 10.31");
+        assertThat(html).contains("data-href=\"/events/3\"");
+        assertThat(html).contains("참여하기");
     }
 
     @Test
@@ -206,10 +411,22 @@ class EventServiceTest {
     void 없는_이벤트는_404를_던진다() {
         when(eventRepository.findAdminEventById(999L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> eventService.findAdminEvent(999L))
+        assertThatThrownBy(() -> eventService.findAdminEvent(1L, 999L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
+    }
+
+    @Test
+    @DisplayName("게시 중인데 날짜가 비어 있어도 상세 조회가 실패하지 않는다")
+    void 날짜가_빈_게시중_이벤트도_조회된다() {
+        Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
+        when(eventRepository.findAdminEventById(7L)).thenReturn(Optional.of(event));
+
+        EventDetailResponse detail = eventService.findAdminEvent(1L, 7L);
+
+        assertThat(detail.closingSoon()).isFalse();
+        assertThat(detail.publishedVersionNo()).isNull();
     }
 
     @Test
@@ -220,26 +437,57 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"));
         when(eventRepository.findAdminEventById(1L)).thenReturn(Optional.of(event));
 
-        EventDetailResponse detail = eventService.findAdminEvent(1L);
+        EventDetailResponse detail = eventService.findAdminEvent(1L, 1L);
 
         assertThat(detail.status()).isEqualTo(EventStatus.PUBLISHED);
         assertThat(detail.closingSoon()).isFalse();
     }
 
     @Test
-    @DisplayName("휴지통 목록 조회는 리포지토리 결과를 매핑한다")
+    @DisplayName("휴지통 목록 조회는 로그인한 관리자 ID 로 조회해 매핑한다")
     void 휴지통_목록_조회에_성공한다() {
         Event event = newEvent(99L, EventStatus.DRAFT,
                 OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
         ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
         Page<Event> page = new PageImpl<>(List.of(event), PageRequest.of(0, 10), 1);
-        when(eventRepository.findDeletedEvents(eq(PageRequest.of(0, 10)))).thenReturn(page);
+        when(eventRepository.findDeletedEvents(eq(1L), eq(PageRequest.of(0, 10)))).thenReturn(page);
 
-        PageResponse<EventSummaryResponse> result = eventService.findDeletedEvents(0, 10);
+        PageResponse<EventSummaryResponse> result = eventService.findDeletedEvents(1L, 0, 10);
 
         assertThat(result.totalElements()).isEqualTo(1);
         assertThat(result.content().get(0).id()).isEqualTo(99L);
+        assertThat(result.content().get(0).ownedByMe()).isTrue();
+        assertThat(result.content().get(0).deletedAt()).isEqualTo(OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
+    }
+
+    @Test
+    @DisplayName("목록의 ownedByMe 는 로그인한 관리자가 소유자인지에 따라 정해진다")
+    void 목록에_내_이벤트인지_담는다() {
+        Event mine = draftEvent(1L);
+        Event others = draftEvent(2L);
+        Admin otherAdmin = BeanUtils.instantiateClass(Admin.class);
+        ReflectionTestUtils.setField(otherAdmin, "id", 99L);
+        ReflectionTestUtils.setField(others, "ownerAdmin", otherAdmin);
+        stubAdminPage(mine, others);
+
+        List<EventSummaryResponse> content =
+                eventService.findAdminEvents(1L, null, null, null, null, null, 0, 10).content();
+
+        assertThat(content.get(0).ownedByMe()).isTrue();
+        assertThat(content.get(1).ownedByMe()).isFalse();
+    }
+
+    @Test
+    @DisplayName("다른 관리자의 이벤트 상세는 조회되지만 ownedByMe 는 false 다")
+    void 다른_관리자의_이벤트_상세는_ownedByMe가_false다() {
+        Event event = newEvent(3L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-10-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-31T23:59:59+09:00"));
+        when(eventRepository.findAdminEventById(3L)).thenReturn(Optional.of(event));
+
+        assertThat(eventService.findAdminEvent(1L, 3L).ownedByMe()).isTrue();
+        assertThat(eventService.findAdminEvent(99L, 3L).ownedByMe()).isFalse();
     }
 
     @Test
@@ -279,7 +527,7 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-10-15T23:59:59+09:00"));
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
 
-        assertThatThrownBy(() -> eventService.delete(1L))
+        assertThatThrownBy(() -> eventService.delete(1L, 1L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.PUBLISHED_EVENT_DELETE_FORBIDDEN.getCode());
@@ -294,7 +542,7 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
         when(eventRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(event));
 
-        eventService.delete(2L);
+        eventService.delete(1L, 2L);
 
         assertThat(event.deleted()).isTrue();
     }
@@ -304,7 +552,7 @@ class EventServiceTest {
     void 없는_이벤트_삭제는_404를_던진다() {
         when(eventRepository.findByIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> eventService.delete(999L))
+        assertThatThrownBy(() -> eventService.delete(1L, 999L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
@@ -319,7 +567,7 @@ class EventServiceTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(event));
         when(generationJobStore.ofEvent(2L)).thenReturn(Optional.of(new GenerationJob(2L)));
 
-        assertThatThrownBy(() -> eventService.delete(2L))
+        assertThatThrownBy(() -> eventService.delete(1L, 2L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_GENERATING_DELETE_FORBIDDEN.getCode());
@@ -334,10 +582,69 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
         ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
         when(eventRepository.findByIdAndDeletedAtIsNotNull(99L)).thenReturn(Optional.of(event));
+        when(eventRepository.hasParticipations(99L)).thenReturn(false);
 
-        eventService.hardDelete(99L);
+        eventService.hardDelete(1L, 99L);
 
         verify(eventRepository).delete(event);
+    }
+
+    @Test
+    @DisplayName("참여 기록이 있는 이벤트는 영구 삭제할 수 없고 이벤트는 그대로 남는다")
+    void 참여_기록이_있으면_영구_삭제할_수_없다() {
+        Event event = newEvent(99L, EventStatus.ENDED,
+                OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(99L)).thenReturn(Optional.of(event));
+        when(eventRepository.hasParticipations(99L)).thenReturn(true);
+
+        assertThatThrownBy(() -> eventService.hardDelete(1L, 99L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.PARTICIPATED_EVENT_PERMANENT_DELETE_FORBIDDEN.getCode());
+        verify(eventRepository, never()).delete(any(Event.class));
+        assertThat(event.deleted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("소유자가 아니면 참여 기록을 보기 전에 접근이 거부된다 — 검사 순서는 404 → 403 → 409")
+    void 소유자가_아니면_참여_기록을_확인하지_않는다() {
+        Event event = newEvent(99L, EventStatus.ENDED,
+                OffsetDateTime.parse("2026-01-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-01-10T23:59:59+09:00"));
+        ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(99L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.hardDelete(2L, 99L))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(eventRepository, never()).hasParticipations(any());
+    }
+
+    @Test
+    @DisplayName("휴지통에 없는 이벤트는 참여 기록을 보기 전에 EVENT404-0 이다")
+    void 휴지통에_없으면_참여_기록을_확인하지_않는다() {
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventService.hardDelete(1L, 1L)).isInstanceOf(EventException.class);
+        verify(eventRepository, never()).hasParticipations(any());
+    }
+
+    @Test
+    @DisplayName("휴지통으로 보내기와 복구는 참여 기록을 확인하지 않는다 — 막는 것은 영구 삭제뿐이다")
+    void 휴지통_이동과_복구는_참여_기록과_무관하다() {
+        Event event = newEvent(2L, EventStatus.ENDED,
+                OffsetDateTime.parse("2026-07-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(event));
+        when(eventRepository.findByIdAndDeletedAtIsNotNull(2L)).thenReturn(Optional.of(event));
+
+        eventService.delete(1L, 2L);
+        assertThat(event.deleted()).isTrue();
+        eventService.restore(1L, 2L);
+        assertThat(event.deleted()).isFalse();
+
+        verify(eventRepository, never()).hasParticipations(any());
     }
 
     @Test
@@ -345,7 +652,7 @@ class EventServiceTest {
     void 삭제되지_않은_이벤트_영구삭제는_404를_던진다() {
         when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> eventService.hardDelete(1L))
+        assertThatThrownBy(() -> eventService.hardDelete(1L, 1L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
@@ -360,7 +667,7 @@ class EventServiceTest {
         ReflectionTestUtils.setField(event, "deletedAt", OffsetDateTime.parse("2026-01-11T00:00:00+09:00"));
         when(eventRepository.findByIdAndDeletedAtIsNotNull(99L)).thenReturn(Optional.of(event));
 
-        EventDetailResponse restored = eventService.restore(99L);
+        EventDetailResponse restored = eventService.restore(1L, 99L);
 
         assertThat(event.deleted()).isFalse();
         assertThat(restored.id()).isEqualTo(99L);
@@ -371,7 +678,7 @@ class EventServiceTest {
     void 삭제되지_않은_이벤트_복구는_404를_던진다() {
         when(eventRepository.findByIdAndDeletedAtIsNotNull(1L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> eventService.restore(1L))
+        assertThatThrownBy(() -> eventService.restore(1L, 1L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
@@ -387,7 +694,7 @@ class EventServiceTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
         when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
 
-        EventDetailResponse published = eventService.publish(1L, 10L);
+        EventDetailResponse published = eventService.publish(1L, 1L, 10L);
 
         assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
         assertThat(event.getPublishedVersion()).isSameAs(version);
@@ -407,7 +714,7 @@ class EventServiceTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
         when(eventVersionRepository.findByIdAndEventId(11L, 1L)).thenReturn(Optional.of(newVersion));
 
-        eventService.publish(1L, 11L);
+        eventService.publish(1L, 1L, 11L);
 
         assertThat(event.getPublishedVersion()).isSameAs(newVersion);
         assertThat(newVersion.isCheckpoint()).isTrue();
@@ -425,11 +732,11 @@ class EventServiceTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
         when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
 
-        eventService.unpublish(1L);
+        eventService.unpublish(1L, 1L);
         assertThat(event.getStatus()).isEqualTo(EventStatus.DRAFT);
         assertThat(event.getPublishedVersion()).isNull();
 
-        EventDetailResponse republished = eventService.publish(1L, 10L);
+        EventDetailResponse republished = eventService.publish(1L, 1L, 10L);
 
         assertThat(republished.status()).isEqualTo(EventStatus.PUBLISHED);
         assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
@@ -450,8 +757,8 @@ class EventServiceTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
         when(eventVersionRepository.findByIdAndEventId(11L, 1L)).thenReturn(Optional.of(newVersion));
 
-        eventService.unpublish(1L);
-        eventService.publish(1L, 11L);
+        eventService.unpublish(1L, 1L);
+        eventService.publish(1L, 1L, 11L);
 
         assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
         assertThat(event.getPublishedVersion()).isSameAs(newVersion);
@@ -473,8 +780,8 @@ class EventServiceTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
         when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
 
-        eventService.unpublish(1L);
-        eventService.publish(1L, 10L);
+        eventService.unpublish(1L, 1L);
+        eventService.publish(1L, 1L, 10L);
 
         assertThat(event.getStartNotifiedAt()).isEqualTo(startNotifiedAt);
     }
@@ -487,11 +794,123 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-08-31T23:59:59+09:00"));
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
 
-        assertThatThrownBy(() -> eventService.publish(1L, 10L))
+        assertThatThrownBy(() -> eventService.publish(1L, 1L, 10L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_ENDED_PUBLISH_FORBIDDEN.getCode());
         verifyNoInteractions(eventVersionRepository);
+    }
+
+    @Test
+    @DisplayName("종료일시가 지난 DRAFT 는 게시할 수 없고 DRAFT 로 남는다")
+    void 종료일이_지난_이벤트는_게시할_수_없다() {
+        Event event = newEvent(1L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-08-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-08-31T23:59:59+09:00"));
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.publish(1L, 1L, 10L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN.getCode());
+        assertThat(event.getStatus()).isEqualTo(EventStatus.DRAFT);
+        assertThat(event.getPublishedVersion()).isNull();
+        verifyNoInteractions(eventVersionRepository);
+    }
+
+    @Test
+    @DisplayName("종료 시각과 정확히 같은 순간에도 게시할 수 없다 — 수정 잠금(editLocked)과 같은 기준")
+    void 종료_시각과_같은_순간에는_게시할_수_없다() {
+        Event event = newEvent(1L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"), now);
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.publish(1L, 1L, 10L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN.getCode());
+    }
+
+    @Test
+    @DisplayName("종료 1초 전이면 게시할 수 있다")
+    void 종료_직전에는_게시할_수_있다() {
+        Event event = newEvent(1L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"), now.plusSeconds(1));
+        EventVersion version = newVersion(10L, false);
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
+
+        eventService.publish(1L, 1L, 10L);
+
+        assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+    }
+
+    @Test
+    @DisplayName("시작일이 아직 오지 않은 이벤트도 게시할 수 있다 — 시작일은 검사하지 않는다")
+    void 시작_전_이벤트도_게시할_수_있다() {
+        Event event = newEvent(1L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-09-20T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"));
+        EventVersion version = newVersion(10L, false);
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
+
+        eventService.publish(1L, 1L, 10L);
+
+        assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+    }
+
+    @Test
+    @DisplayName("이미 시작한 진행 중 이벤트도 게시할 수 있다 — 시작일이 과거여도 막지 않는다")
+    void 이미_시작한_이벤트도_게시할_수_있다() {
+        Event event = newEvent(1L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-09-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"));
+        EventVersion version = newVersion(10L, false);
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
+
+        eventService.publish(1L, 1L, 10L);
+
+        assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+    }
+
+    @Test
+    @DisplayName("종료 시각이 지났지만 아직 ENDED 로 바뀌기 전인 게시 중 이벤트는 다른 버전으로 재게시할 수 없다")
+    void 종료일이_지난_게시중_이벤트는_재게시할_수_없다() {
+        Event event = newEvent(1L, EventStatus.PUBLISHED,
+                OffsetDateTime.parse("2026-08-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-09-15T23:59:59+09:00"));
+        EventVersion oldVersion = newVersion(10L, true);
+        ReflectionTestUtils.setField(event, "publishedVersion", oldVersion);
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+
+        assertThatThrownBy(() -> eventService.publish(1L, 1L, 11L))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.EVENT_PERIOD_ENDED_PUBLISH_FORBIDDEN.getCode());
+        assertThat(event.getPublishedVersion()).isSameAs(oldVersion);
+        verifyNoInteractions(eventVersionRepository);
+    }
+
+    @Test
+    @DisplayName("종료일시가 지난 DRAFT 의 기간을 고치면 다시 게시할 수 있다")
+    void 기간을_고치면_다시_게시할_수_있다() {
+        Event event = newEvent(1L, EventStatus.DRAFT,
+                OffsetDateTime.parse("2026-08-01T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-08-31T23:59:59+09:00"));
+        EventVersion version = newVersion(10L, false);
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(eventVersionRepository.findByIdAndEventId(10L, 1L)).thenReturn(Optional.of(version));
+        assertThatThrownBy(() -> eventService.publish(1L, 1L, 10L)).isInstanceOf(EventException.class);
+
+        // DRAFT 는 기간이 지나도 수정할 수 있다 (editLocked 는 ENDED 이거나 게시 중인 경우만 잠근다)
+        assertThat(event.editLocked(now)).isFalse();
+        event.updateInfo(event.getTitle(), null, OffsetDateTime.parse("2026-09-16T00:00:00+09:00"),
+                OffsetDateTime.parse("2026-10-15T23:59:59+09:00"), event.getGrade());
+        eventService.publish(1L, 1L, 10L);
+
+        assertThat(event.getStatus()).isEqualTo(EventStatus.PUBLISHED);
     }
 
     @Test
@@ -503,7 +922,7 @@ class EventServiceTest {
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
         when(eventVersionRepository.findByIdAndEventId(999L, 1L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> eventService.publish(1L, 999L))
+        assertThatThrownBy(() -> eventService.publish(1L, 1L, 999L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.VERSION_NOT_FOUND.getCode());
@@ -514,7 +933,7 @@ class EventServiceTest {
     void 없는_이벤트_게시는_404를_던진다() {
         when(eventRepository.findByIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> eventService.publish(999L, 10L))
+        assertThatThrownBy(() -> eventService.publish(1L, 999L, 10L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
@@ -826,7 +1245,7 @@ class EventServiceTest {
         EventVersion version = BeanUtils.instantiateClass(EventVersion.class);
         ReflectionTestUtils.setField(event, "publishedVersion", version);
 
-        EventDetailResponse ended = eventService.changeStatus(4L, EventStatus.ENDED);
+        EventDetailResponse ended = eventService.changeStatus(1L, 4L, EventStatus.ENDED);
 
         assertThat(ended.status()).isEqualTo(EventStatus.ENDED);
         assertThat(ended.closingSoon()).isFalse();
@@ -840,7 +1259,7 @@ class EventServiceTest {
     void DRAFT_이벤트는_종료할_수_없다() {
         Event event = draftWorldCupEvent();
 
-        assertThatThrownBy(() -> eventService.changeStatus(2L, EventStatus.ENDED))
+        assertThatThrownBy(() -> eventService.changeStatus(1L, 2L, EventStatus.ENDED))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_ENDABLE.getCode());
@@ -855,7 +1274,7 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-08-31T23:59:59+09:00"));
         when(eventRepository.findAdminEventById(6L)).thenReturn(Optional.of(event));
 
-        assertThatThrownBy(() -> eventService.changeStatus(6L, EventStatus.ENDED))
+        assertThatThrownBy(() -> eventService.changeStatus(1L, 6L, EventStatus.ENDED))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_ENDABLE.getCode());
@@ -867,7 +1286,7 @@ class EventServiceTest {
         Event event = publishedEventWithTemplate();
 
         for (EventStatus target : List.of(EventStatus.PUBLISHED, EventStatus.DRAFT)) {
-            assertThatThrownBy(() -> eventService.changeStatus(4L, target))
+            assertThatThrownBy(() -> eventService.changeStatus(1L, 4L, target))
                     .isInstanceOf(EventException.class)
                     .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                     .isEqualTo(EventErrorCode.UNSUPPORTED_STATUS_CHANGE.getCode());
@@ -880,7 +1299,7 @@ class EventServiceTest {
     void 없는_이벤트_종료는_404를_던진다() {
         when(eventRepository.findAdminEventById(999L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> eventService.changeStatus(999L, EventStatus.ENDED))
+        assertThatThrownBy(() -> eventService.changeStatus(1L, 999L, EventStatus.ENDED))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());
@@ -893,7 +1312,7 @@ class EventServiceTest {
         EventVersion version = BeanUtils.instantiateClass(EventVersion.class);
         ReflectionTestUtils.setField(event, "publishedVersion", version);
 
-        EventDetailResponse unpublished = eventService.unpublish(4L);
+        EventDetailResponse unpublished = eventService.unpublish(1L, 4L);
 
         assertThat(unpublished.status()).isEqualTo(EventStatus.DRAFT);
         assertThat(unpublished.closingSoon()).isFalse();
@@ -911,7 +1330,7 @@ class EventServiceTest {
         event.markStartNotified(startNotifiedAt);
         event.markClosingSoonNotified(closingSoonNotifiedAt);
 
-        eventService.unpublish(4L);
+        eventService.unpublish(1L, 4L);
 
         assertThat(event.getStartNotifiedAt()).isEqualTo(startNotifiedAt);
         assertThat(event.getClosingSoonNotifiedAt()).isEqualTo(closingSoonNotifiedAt);
@@ -922,7 +1341,7 @@ class EventServiceTest {
     void DRAFT_이벤트는_게시를_내릴_수_없다() {
         Event event = draftWorldCupEvent();
 
-        assertThatThrownBy(() -> eventService.unpublish(2L))
+        assertThatThrownBy(() -> eventService.unpublish(1L, 2L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_UNPUBLISHABLE.getCode());
@@ -937,7 +1356,7 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-08-31T23:59:59+09:00"));
         when(eventRepository.findAdminEventById(6L)).thenReturn(Optional.of(event));
 
-        assertThatThrownBy(() -> eventService.unpublish(6L))
+        assertThatThrownBy(() -> eventService.unpublish(1L, 6L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_UNPUBLISHABLE.getCode());
@@ -955,7 +1374,7 @@ class EventServiceTest {
         ReflectionTestUtils.setField(event, "publishedVersion", version);
         when(eventRepository.findAdminEventById(1L)).thenReturn(Optional.of(event));
 
-        assertThatThrownBy(() -> eventService.unpublish(1L))
+        assertThatThrownBy(() -> eventService.unpublish(1L, 1L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_ENDED_NOT_EDITABLE.getCode());
@@ -972,7 +1391,7 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-09-16T01:00:00+09:00"));
         when(eventRepository.findAdminEventById(1L)).thenReturn(Optional.of(event));
 
-        assertThatThrownBy(() -> eventService.unpublish(1L))
+        assertThatThrownBy(() -> eventService.unpublish(1L, 1L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_ENDED_NOT_EDITABLE.getCode());
@@ -987,7 +1406,7 @@ class EventServiceTest {
                 OffsetDateTime.parse("2026-09-16T01:00:01+09:00"));
         when(eventRepository.findAdminEventById(1L)).thenReturn(Optional.of(event));
 
-        EventDetailResponse unpublished = eventService.unpublish(1L);
+        EventDetailResponse unpublished = eventService.unpublish(1L, 1L);
 
         assertThat(unpublished.status()).isEqualTo(EventStatus.DRAFT);
         assertThat(event.getStatus()).isEqualTo(EventStatus.DRAFT);
@@ -998,7 +1417,7 @@ class EventServiceTest {
     void 없는_이벤트의_게시_내리기는_404를_던진다() {
         when(eventRepository.findAdminEventById(999L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> eventService.unpublish(999L))
+        assertThatThrownBy(() -> eventService.unpublish(1L, 999L))
                 .isInstanceOf(EventException.class)
                 .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
                 .isEqualTo(EventErrorCode.EVENT_NOT_FOUND.getCode());

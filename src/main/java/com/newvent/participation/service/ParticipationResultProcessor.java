@@ -1,7 +1,7 @@
 package com.newvent.participation.service;
 
-import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
@@ -24,7 +24,7 @@ public class ParticipationResultProcessor {
         this.random = random;
     }
 
-    public Map<String, Object> process(EventGameConfig eventGameConfig) {
+    public Map<String, Object> process(EventGameConfig eventGameConfig, Map<String, Object> submittedData) {
         Map<String, Object> config = eventGameConfig.getConfig();
 
         if (config == null) {
@@ -33,7 +33,7 @@ public class ParticipationResultProcessor {
 
         return switch (eventGameConfig.getGame().getCode()) {
             case "BASIC" -> processBasic(config);
-            case "LUCKY_POUCH" -> draw(config);
+            case "LUCKY_POUCH" -> drawPouch(config, submittedData);
             case "SPORTS_PREDICTION" -> Map.of("status", "PENDING");
             case "PRE_REGISTRATION" -> Map.of();
             default -> throw new ParticipationException(ParticipationErrorCode.UNSUPPORTED_PARTICIPATION_TYPE);
@@ -56,53 +56,87 @@ public class ParticipationResultProcessor {
     }
 
     private Map<String, Object> guaranteed(Map<String, Object> config) {
-        Object value = config.get("prizeName");
-
-        if (!(value instanceof String prizeName) || prizeName.isBlank()) {
-            throw invalidConfig();
-        }
+        String prizeName = ParticipationConfigReader.readPrizeName(config.get("prizeName"), this::invalidConfig);
 
         return Map.of(
-                "status", "WON",
-                "prizeName", prizeName.trim());
+            "status", "WON",
+            "prizeName", prizeName
+        );
     }
 
-    private Map<String, Object> draw(Map<String, Object> config) {
+    private Map<String, Object> draw(Map<?, ?> config) {
         int winProbability = readProbability(config.get("winProbability"));
 
-        Object value = config.get("prizeName");
-        if (!(value instanceof String prizeName) || prizeName.isBlank()) {
-            throw invalidConfig();
-        }
+        String prizeName = ParticipationConfigReader.readPrizeName(
+            config.get("prizeName"),
+            this::invalidConfig
+        );
 
         // 0~99 중 하나를 뽑는다. 확률이 30이면 0~29가 당첨이다.
         boolean won = random.nextInt(100) < winProbability;
 
         if (won) {
             return Map.of(
-                    "status", "WON",
-                    "prizeName", prizeName.trim());
+                "status", "WON",
+                "prizeName", prizeName
+            );
         }
 
         return Map.of("status", "LOST");
     }
 
-    private int readProbability(Object value) {
-        if (!(value instanceof Number number)) {
+    private Map<String, Object> drawPouch(
+        Map<String, Object> config,
+        Map<String, Object> submittedData
+    ) {
+        Object value = config.get("pouches");
+
+        if (!(value instanceof List<?> pouches) || pouches.isEmpty()) {
             throw invalidConfig();
         }
 
-        try {
-            int probability = new BigDecimal(number.toString()).intValueExact();
+        // Validator가 검증해 저장한 번호를 사용한다.
+        if (submittedData == null
+            || !(submittedData.get("pouchIndex") instanceof Integer selectedIndex)) {
+            throw new ParticipationException(ParticipationErrorCode.INVALID_SUBMITTED_DATA);
+        }
 
-            if (probability < 0 || probability > 100) {
+        Map<?, ?> selectedPouch = null;
+
+        for (Object item : pouches) {
+            if (!(item instanceof Map<?, ?> pouch)) {
                 throw invalidConfig();
             }
 
-            return probability;
-        } catch (NumberFormatException | ArithmeticException exception) {
+            int pouchIndex = readPouchIndex(pouch.get("pouchIndex"));
+
+            if (pouchIndex == selectedIndex) {
+                if (selectedPouch != null) {
+                    throw invalidConfig();
+                }
+
+                selectedPouch = pouch;
+            }
+        }
+
+        if (selectedPouch == null) {
             throw invalidConfig();
         }
+
+        return draw(selectedPouch);
+    }
+
+    private int readPouchIndex(Object value) {
+        return ParticipationConfigReader.readInteger(
+            value,
+            1,
+            Integer.MAX_VALUE,
+            this::invalidConfig
+        );
+    }
+
+    private int readProbability(Object value) {
+        return ParticipationConfigReader.readInteger(value, 0, 100, this::invalidConfig);
     }
 
     private ParticipationException invalidConfig() {

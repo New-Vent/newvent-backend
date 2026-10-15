@@ -37,4 +37,19 @@ public interface EventVersionRepository extends JpaRepository<EventVersion, Long
     @Query("SELECT v.event.id, MAX(v.versionNo) FROM EventVersion v "
             + "WHERE v.event.id IN :eventIds GROUP BY v.event.id")
     List<Object[]> findLatestVersionNos(@Param("eventIds") Collection<Long> eventIds);
+
+    /**
+     * 채팅 요청 메시지가 만든 버전의 번호. 행은 [messageId(Long), versionNo(Integer)].
+     * 버전을 만들지 않은 메시지(실패 · 되묻기 · AI 응답)는 결과에 없다.
+     */
+    @Query("SELECT v.requestMessage.id, v.versionNo FROM EventVersion v "
+            + "WHERE v.requestMessage.id IN :messageIds")
+    List<Object[]> findVersionNosByRequestMessageIds(@Param("messageIds") Collection<Long> messageIds);
+
+    // 관리자 목록 썸네일용 - 이벤트별 최신 버전의 HTML
+    // 게시 버전이 없는 이벤트만 넘긴다
+    @Query("SELECT v.event.id, v.htmlContent FROM EventVersion v "
+            + "WHERE v.event.id IN :eventIds AND v.versionNo = "
+            + "(SELECT MAX(v2.versionNo) FROM EventVersion v2 WHERE v2.event.id = v.event.id)")
+    List<Object[]> findLatestVersionHtmls(@Param("eventIds") Collection<Long> eventIds);
 }

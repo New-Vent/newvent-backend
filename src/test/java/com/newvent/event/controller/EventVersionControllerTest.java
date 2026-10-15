@@ -34,6 +34,8 @@ import com.newvent.event.service.VersionRestoreService;
 @ExtendWith(MockitoExtension.class)
 class EventVersionControllerTest {
 
+    private static final Long ADMIN_ID = 1L;
+
     private static final Authentication ADMIN =
             new UsernamePasswordAuthenticationToken(AuthUser.admin(1L), null);
 
@@ -63,9 +65,9 @@ class EventVersionControllerTest {
                 .title("2026 월드컵 응원 이벤트")
                 .versions(List.of())
                 .build();
-        when(eventVersionService.getVersions(eventId)).thenReturn(response);
+        when(eventVersionService.getVersions(eventId, ADMIN_ID)).thenReturn(response);
 
-        mockMvc.perform(get("/api/admin/events/{eventId}/versions", eventId))
+        mockMvc.perform(get("/api/admin/events/{eventId}/versions", eventId).principal(ADMIN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.eventId").value(12))
@@ -73,44 +75,47 @@ class EventVersionControllerTest {
                 .andExpect(jsonPath("$.data.versions").isArray())
                 .andExpect(jsonPath("$.data.versions").isEmpty());
 
-        verify(eventVersionService).getVersions(eventId);
+        verify(eventVersionService).getVersions(eventId, ADMIN_ID);
     }
 
     @Test
     void markCheckpoint_returnsSuccess() throws Exception {
         mockMvc.perform(put(
                         "/api/admin/events/{eventId}/versions/{versionId}/checkpoint",
-                        12L, 102L))
+                        12L, 102L)
+                        .principal(ADMIN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(eventVersionService).markCheckpoint(12L, 102L);
+        verify(eventVersionService).markCheckpoint(12L, 102L, ADMIN_ID);
     }
 
     @Test
     void unmarkCheckpoint_returnsSuccess() throws Exception {
         mockMvc.perform(delete(
                         "/api/admin/events/{eventId}/versions/{versionId}/checkpoint",
-                        12L, 102L))
+                        12L, 102L)
+                        .principal(ADMIN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(eventVersionService).unmarkCheckpoint(12L, 102L);
+        verify(eventVersionService).unmarkCheckpoint(12L, 102L, ADMIN_ID);
     }
 
     @Test
     void unmarkCheckpoint_returnsConflictForPublishedVersion() throws Exception {
         doThrow(new EventException(
                 EventErrorCode.PUBLISHED_VERSION_CHECKPOINT_UNMARK_FORBIDDEN))
-                .when(eventVersionService).unmarkCheckpoint(12L, 102L);
+                .when(eventVersionService).unmarkCheckpoint(12L, 102L, ADMIN_ID);
 
         mockMvc.perform(delete(
                         "/api/admin/events/{eventId}/versions/{versionId}/checkpoint",
-                        12L, 102L))
+                        12L, 102L)
+                        .principal(ADMIN))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("EVENT409-0"));
 
-        verify(eventVersionService).unmarkCheckpoint(12L, 102L);
+        verify(eventVersionService).unmarkCheckpoint(12L, 102L, ADMIN_ID);
     }
 
     @Test
@@ -122,11 +127,12 @@ class EventVersionControllerTest {
                 .htmlContent("<html><body>저장된 화면</body></html>")
                 .build();
 
-        when(eventVersionService.getVersion(12L, 102L)).thenReturn(response);
+        when(eventVersionService.getVersion(12L, 102L, ADMIN_ID)).thenReturn(response);
 
         mockMvc.perform(get(
                         "/api/admin/events/{eventId}/versions/{versionId}",
-                        12L, 102L))
+                        12L, 102L)
+                        .principal(ADMIN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.versionId").value(102))
@@ -136,7 +142,7 @@ class EventVersionControllerTest {
                 .andExpect(jsonPath("$.data.htmlContent")
                         .value("<html><body>저장된 화면</body></html>"));
 
-        verify(eventVersionService).getVersion(12L, 102L);
+        verify(eventVersionService).getVersion(12L, 102L, ADMIN_ID);
     }
 
     @Test
@@ -264,13 +270,79 @@ class EventVersionControllerTest {
                                 .build()))
                 .build();
 
-        when(eventVersionService.getVersions(12L)).thenReturn(response);
+        when(eventVersionService.getVersions(12L, ADMIN_ID)).thenReturn(response);
 
-        mockMvc.perform(get("/api/admin/events/{eventId}/versions", 12L))
+        mockMvc.perform(get("/api/admin/events/{eventId}/versions", 12L).principal(ADMIN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.versions.length()").value(2))
                 .andExpect(jsonPath("$.data.versions[0].checkpoint").value(false))
                 .andExpect(jsonPath("$.data.versions[1].checkpoint").value(true));
+    }
+
+    @Test
+    void getVersions_returnsNotFoundWhenEventIsNotOwned() throws Exception {
+        when(eventVersionService.getVersions(12L, ADMIN_ID))
+            .thenThrow(new EventException(
+                EventErrorCode.EVENT_NOT_ACCESSIBLE));
+
+        mockMvc.perform(get("/api/admin/events/{eventId}/versions", 12L)
+                .principal(ADMIN))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code")
+                .value(EventErrorCode.EVENT_NOT_ACCESSIBLE.getCode()));
+
+        verify(eventVersionService).getVersions(12L, ADMIN_ID);
+    }
+
+    @Test
+    void getVersion_returnsNotFoundWhenEventIsNotOwned() throws Exception {
+        when(eventVersionService.getVersion(12L, 102L, ADMIN_ID))
+            .thenThrow(new EventException(
+                EventErrorCode.EVENT_NOT_ACCESSIBLE));
+
+        mockMvc.perform(get(
+                "/api/admin/events/{eventId}/versions/{versionId}",
+                12L, 102L)
+                .principal(ADMIN))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code")
+                .value(EventErrorCode.EVENT_NOT_ACCESSIBLE.getCode()));
+
+        verify(eventVersionService).getVersion(12L, 102L, ADMIN_ID);
+    }
+
+    @Test
+    void markCheckpoint_returnsNotFoundWhenEventIsNotOwned() throws Exception {
+        doThrow(new EventException(EventErrorCode.EVENT_NOT_ACCESSIBLE))
+            .when(eventVersionService)
+            .markCheckpoint(12L, 102L, ADMIN_ID);
+
+        mockMvc.perform(put(
+                "/api/admin/events/{eventId}/versions/{versionId}/checkpoint",
+                12L, 102L)
+                .principal(ADMIN))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code")
+                .value(EventErrorCode.EVENT_NOT_ACCESSIBLE.getCode()));
+
+        verify(eventVersionService).markCheckpoint(12L, 102L, ADMIN_ID);
+    }
+
+    @Test
+    void unmarkCheckpoint_returnsNotFoundWhenEventIsNotOwned() throws Exception {
+        doThrow(new EventException(EventErrorCode.EVENT_NOT_ACCESSIBLE))
+            .when(eventVersionService)
+            .unmarkCheckpoint(12L, 102L, ADMIN_ID);
+
+        mockMvc.perform(delete(
+                "/api/admin/events/{eventId}/versions/{versionId}/checkpoint",
+                12L, 102L)
+                .principal(ADMIN))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code")
+                .value(EventErrorCode.EVENT_NOT_ACCESSIBLE.getCode()));
+
+        verify(eventVersionService).unmarkCheckpoint(12L, 102L, ADMIN_ID);
     }
 
     // ── 되돌리기 ─────────────────────────────────────────────────

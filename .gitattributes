@@ -1,3 +1,32 @@
-/gradlew text eol=lf
+# 저장소에 저장되는 줄바꿈을 LF 하나로 고정한다.
+#
+# ★ 왜 필요한가
+#   윈도우에서 커밋하면 CRLF 가 들어간다. 그러면 두 가지가 생긴다.
+#     1. spotless 가 위반으로 본다 — CI 가 `./gradlew build` 에서 멈춘다
+#     2. 그 파일을 누가 고치면 **모든 줄이 바뀐 것으로** diff 가 나온다.
+#        실제 변경 몇 줄이 수백 줄 잡음에 묻혀 리뷰가 불가능해진다
+#
+#   예전에는 `*.java` 만 막았는데, md · yaml · gradle 이 빠져 있어서
+#   docs/infra.md(404줄) · build.gradle(131줄) 같은 파일에서 같은 일이 반복됐다.
+#   그래서 범위를 전체로 넓힌다.
+#
+# ★ text=auto 가 바이너리를 건드리지 않는다
+#   git 이 내용을 보고 바이너리면 변환을 건너뛴다. jar 은 아래에서 한 번 더 못 박는다.
+#
+# ★ 작업 폴더의 줄바꿈도 LF 다 (eol=lf)
+#   저장소만 LF 로 두면(text=auto) 윈도우 사용자의 작업 폴더는 CRLF 가 되고,
+#   spotless 가 **로컬에서** 다시 위반을 신고한다. 양쪽을 LF 로 맞춘다.
+#   윈도우 에디터는 전부 LF 를 읽고 쓴다 — 메모장도 2018년부터 된다.
+#
+# ★ 이 설정은 `core.autocrlf` 보다 우선한다
+#   그래도 로컬에 `core.autocrlf=true` 가 있으면 **이 파일이 생기기 전에
+#   체크아웃한 파일**은 CRLF 로 남아 있다. 한 번 씻어내야 한다:
+#     git config core.autocrlf false
+#     git rm -r --cached . && git reset --hard HEAD     # 커밋 안 한 변경은 날아간다
+* text=auto eol=lf
+
+# 윈도우 배치 파일은 CRLF 가 아니면 동작하지 않는다
 *.bat text eol=crlf
+
+# 바이너리는 손대지 않는다 (gradle-wrapper.jar)
 *.jar binary

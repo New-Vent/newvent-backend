@@ -28,6 +28,8 @@ public enum FailureCode {
     // ── 형식 — 출력이 HTML 조각 형식을 못 지켰다 ─────────────────────
     NO_HTML("no_html", Category.FORMAT, Severity.HARD, Action.RETRY),
 
+    EDIT_RESPONSE_PARSE("edit_response_parse", Category.FORMAT, Severity.HARD, Action.RETRY),
+
     /** done_reason == length. Jsoup 이 끊긴 태그를 닫아 버려서 검증만으로는 못 잡는다 */
     TRUNCATED("truncated", Category.FORMAT, Severity.HARD, Action.RETRY),
 
@@ -49,6 +51,9 @@ public enum FailureCode {
     ID_LOST("id_lost", Category.PRESERVATION, Severity.HARD, Action.RETRY),
     ID_INVENTED("id_invented", Category.PRESERVATION, Severity.HARD, Action.RETRY),
     CLASS_CHANGED("class_changed", Category.PRESERVATION, Severity.HARD, Action.RETRY),
+    BEHAVIOR_LOST("behavior_lost", Category.PRESERVATION, Severity.HARD, Action.RETRY),
+    BEHAVIOR_INVENTED("behavior_invented", Category.PRESERVATION, Severity.HARD, Action.RETRY),
+    BUTTON_INVENTED("button_invented", Category.PRESERVATION, Severity.HARD, Action.RETRY),
 
     // ── 날조 — 주어지지 않은 것을 만들었다 ──────────────────────────
     PLACEHOLDER("placeholder", Category.FABRICATION, Severity.HARD, Action.RETRY),

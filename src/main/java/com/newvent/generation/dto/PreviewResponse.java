@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.newvent.event.service.DirectEditor;
 import com.newvent.generation.service.GenerationService;
+import com.newvent.registry.Looks;
 
 /**
  *
@@ -15,13 +16,27 @@ import com.newvent.generation.service.GenerationService;
  * ★ editableTexts 는 직접 편집의 기준 순서다
  *   프론트는 period 슬롯과 notices 블록을 빼고 이 목록의 index/before 를 그대로 보낸다.
  *   미리보기의 period 텍스트는 서버가 채우지만 버전 HTML 에는 없으므로 목록에서 제외한다.
+ * ★ looks 는 직접 편집에서 고를 수 있는 배치 · 영역 모양이다
+ *   못 고르는 것과 그 이유까지 서버가 정한다 — 프론트가 조건(영역 수 · 항목 수)을 따로 적지 않는다.
  */
 public record PreviewResponse(String html, Long versionId, Integer versionNo,
-                              List<DirectEditor.EditableText> editableTexts) {
+                              List<DirectEditor.EditableText> editableTexts,
+                              Looks.Catalog looks) {
 
     public static PreviewResponse of(GenerationService.Rendered rendered) {
+        return of(rendered, rendered.html());
+    }
+
+    /**
+     * @param document 내보낼 HTML — 완전한 문서(PublicEventService.pageOf)
+     *
+     * ★ editableTexts 는 문서가 아니라 조각에서 뽑는다. 직접 편집은 저장된 조각에 거는 것이라
+     *   index 가 조각 기준이어야 한다 (문서에는 &lt;title&gt; · 보여 줄 때 채운 글자가 더 있다)
+     */
+    public static PreviewResponse of(GenerationService.Rendered rendered, String document) {
         return new PreviewResponse(
-                rendered.html(), rendered.versionId(), rendered.versionNo(),
-                DirectEditor.editableTexts(rendered.html()));
+                document, rendered.versionId(), rendered.versionNo(),
+                DirectEditor.editableTexts(rendered.html()),
+                Looks.catalog(rendered.html()));
     }
 }

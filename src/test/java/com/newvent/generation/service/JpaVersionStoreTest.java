@@ -236,7 +236,7 @@ class JpaVersionStoreTest {
         // version_no 를 직접 1 로 박아 넣는다 — max+1 을 우회한 경합 상황
         EventVersion clash = EventVersion.create(
                 tem.getEntityManager().getReference(Event.class, eventId),
-                1, "<section>충돌</section>", null);
+                1, "<section>충돌</section>", null, null);
 
         assertThrows(DataIntegrityViolationException.class, () -> {
             versions.save(clash);
@@ -260,5 +260,120 @@ class JpaVersionStoreTest {
         // ★ 거부만 보면 부족하다. 행이 안 생겼는지도 본다
         assertTrue(versions.findTopByEventIdOrderByVersionNoDesc(b).isEmpty(),
                 "거부된 저장이 행을 남기면 안 된다");
+    }
+
+    // ── 채팅 요청 메시지 연결 ───────────────────────────────────────
+
+    @Autowired
+    private com.newvent.generation.repository.ChatMessageRepository chatMessages;
+
+    private com.newvent.generation.domain.ChatMessage seedRequest(Long eventId) {
+        return chatMessages.saveAndFlush(com.newvent.generation.domain.ChatMessage.create(
+                tem.getEntityManager().getReference(Event.class, eventId),
+                com.newvent.generation.domain.ChatRole.ADMIN, "제목을 바꿔줘", null,
+                com.newvent.generation.domain.ChatMessageStatus.PENDING));
+    }
+
+    @Test
+    @DisplayName("★ 요청 메시지 id 를 주면 새 버전의 request_message_id 가 그 메시지를 가리킨다")
+    void 요청_메시지가_버전에_걸린다() {
+        Long eventId = seedEvent("여름 이벤트");
+        var request = seedRequest(eventId);
+
+        VersionStore.Saved saved = store.save(eventId, "<section>1</section>", null, null, request.getId());
+
+        tem.flush();
+        tem.clear();
+        EventVersion version = versions.findById(saved.versionId()).orElseThrow();
+        assertNotNull(version.getRequestMessage(), "채팅 요청으로 만든 버전은 요청 메시지를 가리켜야 합니다.");
+        assertEquals(request.getId(), version.getRequestMessage().getId());
+        assertEquals("제목을 바꿔줘", version.getRequestMessage().getContent());
+    }
+
+    @Test
+    @DisplayName("요청 메시지 없이 저장하면(되돌리기 · 직접 편집) request_message_id 는 null 이다")
+    void 요청_메시지가_없으면_연결이_없다() {
+        Long eventId = seedEvent("여름 이벤트");
+
+        VersionStore.Saved saved = store.save(eventId, "<section>1</section>", null);
+
+        tem.flush();
+        tem.clear();
+        assertNull(versions.findById(saved.versionId()).orElseThrow().getRequestMessage());
+    }
+
+    @Test
+    @DisplayName("★ 다른 이벤트의 메시지는 걸 수 없다 - 연결 없이 저장되고 저장 자체는 실패하지 않는다")
+    void 남의_이벤트_메시지는_걸리지_않는다() {
+        Long a = seedEvent("이벤트 A");
+        Long b = seedEvent("이벤트 B");
+        var requestOfA = seedRequest(a);
+
+        VersionStore.Saved saved = store.save(b, "<section>b1</section>", null, null, requestOfA.getId());
+
+        tem.flush();
+        tem.clear();
+        assertNull(versions.findById(saved.versionId()).orElseThrow().getRequestMessage(),
+                "남의 이벤트 메시지가 이 버전의 요청으로 걸렸습니다.");
+    }
+
+    @Test
+    @DisplayName("없는 메시지 id 여도 저장은 성공한다 - 채팅 내역이 없다고 버전 저장이 실패하면 안 된다")
+    void 없는_메시지_id_여도_저장은_성공한다() {
+        Long eventId = seedEvent("여름 이벤트");
+
+        VersionStore.Saved saved = store.save(eventId, "<section>1</section>", null, null, 999_999_999L);
+
+        assertEquals(1, saved.versionNo());
+    }
+
+    @Test
+    @DisplayName("한 메시지로 버전을 둘 만들 수는 없다 - uk_event_versions_request_message_id")
+    void 한_메시지로_버전_둘은_안_된다() {
+        Long eventId = seedEvent("여름 이벤트");
+        var request = seedRequest(eventId);
+        store.save(eventId, "<section>1</section>", null, null, request.getId());
+
+        assertThrows(DataIntegrityViolationException.class, () -> {
+            store.save(eventId, "<section>2</section>", null, null, request.getId());
+            tem.flush();
+        });
+    }
+
+    @Test
+    void HTML과_변경요약을_DB에_함께_저장한다() {
+        Long eventId = seedEvent("변경 요약 저장 테스트");
+
+        VersionStore.Saved original = store.save(eventId, "<section>원본</section>", null);
+
+        String html = "<section>수정된 내용</section>";
+        String summary = "안내 문구 변경";
+
+        VersionStore.Saved saved = store.save(eventId, html, original.versionId(), summary);
+
+        tem.flush();
+        tem.clear();
+
+        EventVersion version = versions.findById(saved.versionId()).orElseThrow();
+
+        assertEquals(html, version.getHtmlContent());
+        assertEquals(summary, version.getChangeSummary());
+        assertEquals(original.versionId(), version.getSourceVersion().getId());
+        assertEquals(2, version.getVersionNo());
+    }
+
+    @Test
+    void 요약_없이_저장하는_기존_호출도_유지된다() {
+        Long eventId = seedEvent("요약 없는 저장 테스트");
+
+        VersionStore.Saved saved = store.save(eventId, "<section>생성된 내용</section>", null);
+
+        tem.flush();
+        tem.clear();
+
+        EventVersion version = versions.findById(saved.versionId()).orElseThrow();
+
+        assertEquals("<section>생성된 내용</section>", version.getHtmlContent());
+        assertNull(version.getChangeSummary());
     }
 }

@@ -6,11 +6,17 @@ import com.newvent.common.exception.code.ErrorCode;
 
 public enum ParticipationErrorCode implements ErrorCode {
     INVALID_SUBMITTED_DATA(HttpStatus.BAD_REQUEST, "PARTICIPATION400-0", "참여 입력값이 없거나 올바르지 않습니다."),
+    INVALID_SPORTS_RESULT(HttpStatus.BAD_REQUEST, "PARTICIPATION400-1", "경기 결과는 예측 선택지 중 하나여야 합니다."),
     INSUFFICIENT_GRADE(HttpStatus.FORBIDDEN, "PARTICIPATION403-0", "이벤트 참여에 필요한 멤버십 등급이 아닙니다."),
     PARTICIPATION_NOT_FOUND(HttpStatus.NOT_FOUND, "PARTICIPATION404-0", "참여 기록을 찾을 수 없습니다."),
     ALREADY_PARTICIPATED(HttpStatus.CONFLICT, "PARTICIPATION409-0", "이미 참여한 이벤트입니다."),
     PARTICIPATION_NOT_CONFIGURED(HttpStatus.CONFLICT, "PARTICIPATION409-1", "이벤트의 참여 설정이 없거나 올바르지 않습니다."),
-    UNSUPPORTED_PARTICIPATION_TYPE(HttpStatus.CONFLICT, "PARTICIPATION409-2", "지원하지 않거나 비활성화된 참여 방식입니다.");
+    UNSUPPORTED_PARTICIPATION_TYPE(HttpStatus.CONFLICT, "PARTICIPATION409-2", "지원하지 않거나 비활성화된 참여 방식입니다."),
+
+    // 참여 기록이 있는데 설정을 바꾸면 이미 저장된 result_data 의 의미가 달라진다.
+    // 예: BASIC 으로 참여한 기록이 남아 있는데 LUCKY_POUCH 로 바꾸면 그 기록의 pouchIndex 가 없다.
+    PARTICIPATION_CONFIG_LOCKED(HttpStatus.CONFLICT, "PARTICIPATION409-3", "참여 기록이 있는 이벤트는 참여 설정을 바꿀 수 없습니다."),
+    SPORTS_RESULT_ALREADY_FINALIZED(HttpStatus.CONFLICT, "PARTICIPATION409-4", "발표가 완료된 경기 결과는 변경할 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

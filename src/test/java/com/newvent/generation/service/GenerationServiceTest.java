@@ -342,21 +342,139 @@ class GenerationServiceTest {
     // ── 경로 ② 백지 ──────────────────────────────────────────────
 
     @Test
-    @DisplayName("★ 백지 결과에 기간 슬롯이 심어진다 — 안 하면 기간이 안 나온다")
-    void 백지에_기간슬롯을_심는다() {
+    @DisplayName("★ 백지 결과에 기간 · 참여링크 슬롯이 심어진다 — 안 하면 서버가 채울 자리가 없다")
+    void 백지에_슬롯을_심는다() {
         retry.willReturn(ok(BlockValidator.sanitizeGenerated(GENERATED)));
 
         GenerationJob job = await(started(service.start(blank(1L, "여름 데이터 이벤트"))));
         assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
 
         String saved = savedHtml(1L);
-        assertEquals(java.util.Set.of("period"), Slots.keysOf(saved),
-                "기간 슬롯이 없습니다. 백지로 만든 페이지에는 기간이 영영 안 나옵니다.");
+        // ★★ cta-link 가 늘었다. 전에는 period 만 심었고, 그래서 AI 생성 페이지에는
+        //   참여 링크를 넣을 자리도, 관리자 화면의 "참여 버튼 디자인" 칸도 없었다
+        //   (server-editor.js 의 hasCta 가 이 슬롯으로 그 칸 전체를 가린다).
+        //   집합 비교라 슬롯이 늘면 여기서 걸린다 — 그게 이 단정의 일이다.
+        assertEquals(java.util.Set.of("period", "cta-link"), Slots.keysOf(saved),
+                "기간 · 참여링크 슬롯이 없습니다. 서버가 값을 채울 자리가 영영 안 생깁니다.");
 
         var hero = Jsoup.parseBodyFragment(saved).body().selectFirst(Block.HERO.selector());
         assertNotNull(hero);
         assertFalse(hero.select(Slot.PERIOD.selector()).isEmpty(),
                 "기간 슬롯이 hero 밖에 붙었습니다. 템플릿 5종과 같은 자리여야 합니다.");
+    }
+
+    // ── 페이지 배치 (layout-*) ─────────────────────────────────────
+
+    /** 내용 영역 넷(intro · benefits · steps · faq) — 벤토를 걸 수 있는 최소다. heroClass 는 모델이 고른 것 */
+    private static String generatedWide(String heroClass) {
+        return "<section data-block=\"hero\"" + (heroClass.isEmpty() ? "" : " class=\"" + heroClass + "\"")
+                + "><h1>봄맞이 데이터 대방출</h1><p>걱정 없이</p></section>"
+                + "<section data-block=\"intro\"><p>올봄 데이터를 마음껏</p></section>"
+                + "<section data-block=\"benefits\"><ul><li>데이터 10GB</li><li>쿠폰</li></ul></section>"
+                + "<section data-block=\"steps\"><ol><li>앱 열기</li><li>버튼 누르기</li></ol></section>"
+                + "<section data-block=\"faq\"><details><summary>언제까지인가요</summary><p>이달 말까지</p></details>"
+                + "<details><summary>누가 참여하나요</summary><p>모든 고객</p></details></section>"
+                + "<section data-block=\"cta\"><a href=\"#\" class=\"btn\">참여하기</a></section>";
+    }
+
+    private org.jsoup.nodes.Element generatedRoot(String requestText, String html) {
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(html)));
+        GenerationJob job = await(started(service.start(blank(1L, requestText))));
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        var root = Jsoup.parseBodyFragment(savedHtml(1L)).body().selectFirst(".ev-container");
+        assertNotNull(root, "페이지 루트가 없습니다: " + savedHtml(1L));
+        return root;
+    }
+
+    private static List<String> layoutsOf(org.jsoup.nodes.Element root) {
+        return root.classNames().stream().filter(c -> c.startsWith("layout-")).toList();
+    }
+
+    @Test
+    @DisplayName("★ 요청문이 페이지 배치를 직접 말했으면 모델이 안 골라도 서버가 건다")
+    void 요청문이_말한_배치는_서버가_건다() {
+        var root = generatedRoot("벤토 그리드 배치의 봄 이벤트 페이지", generatedWide(""));
+
+        assertEquals(List.of("layout-bento"), layoutsOf(root), root.className());
+        assertTrue(root.selectFirst("[data-block=hero]").classNames().stream().noneMatch(c -> c.startsWith("layout-")),
+                "배치는 루트로 옮긴다 — hero 에 남으면 안 된다");
+    }
+
+    @Test
+    @DisplayName("요청문이 말한 배치가 모델이 고른 것보다 앞선다")
+    void 요청문이_모델보다_앞선다() {
+        var root = generatedRoot("좌우 분할 화면으로 봄 이벤트를 만들어줘", generatedWide("layout-bento"));
+
+        assertEquals(List.of("layout-split"), layoutsOf(root), root.className());
+    }
+
+    @Test
+    @DisplayName("★ 생성 화면에서 고른 배치가 요청문 · 모델보다 앞선다")
+    void 화면에서_고른_배치가_가장_앞선다() {
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(generatedWide("layout-bento"))));
+        GenerationJob job = await(started(service.start(
+                blank(1L, "좌우 분할 화면으로 봄 이벤트를 만들어줘").withLayout(com.newvent.registry.Layout.THREE))));
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+
+        var root = Jsoup.parseBodyFragment(savedHtml(1L)).body().selectFirst(".ev-container");
+        assertEquals(List.of("layout-three"), layoutsOf(root), root.className());
+    }
+
+    @Test
+    @DisplayName("화면에서 고른 배치라도 영역이 모자라면 기본 배치로 만든다 — 생성은 실패하지 않는다")
+    void 화면에서_고른_배치가_모자라면_기본_배치() {
+        // GENERATED 의 내용 영역은 benefits 하나다 — 벤토를 못 건다
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(GENERATED)));
+        GenerationJob job = await(started(service.start(
+                blank(2L, "여름 이벤트 페이지").withLayout(com.newvent.registry.Layout.BENTO))));
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        var small = Jsoup.parseBodyFragment(savedHtml(2L)).body().selectFirst(".ev-container");
+        assertEquals(List.of(), layoutsOf(small), small.className());
+    }
+
+    @Test
+    @DisplayName("요청문이 배치를 말하지 않았으면 모델이 고른 것을 쓴다")
+    void 말하지_않았으면_모델이_고른다() {
+        var root = generatedRoot("봄맞이 데이터 이벤트", generatedWide("layout-wide"));
+
+        assertEquals(List.of("layout-wide"), layoutsOf(root), root.className());
+    }
+
+    @Test
+    @DisplayName("★ 내용 영역이 모자라면 말한 배치라도 걸지 않는다 — 격자가 빈다")
+    void 영역이_모자라면_배치를_걸지_않는다() {
+        // GENERATED 의 내용 영역은 benefits 하나다. 벤토는 넷이 있어야 한다
+        var root = generatedRoot("벤토 그리드 배치의 여름 이벤트 페이지", GENERATED);
+
+        assertEquals(List.of(), layoutsOf(root), root.className());
+    }
+
+    @Test
+    @DisplayName("★ 영역을 두고 한 '배치' 는 페이지 배치가 아니다 — 생성에서도 걸리지 않는다")
+    void 영역_배치_요청은_페이지_배치를_걸지_않는다() {
+        var root = generatedRoot("봄 이벤트 페이지를 만들고 혜택을 2열로 배치해줘", generatedWide(""));
+
+        assertEquals(List.of(), layoutsOf(root), root.className());
+    }
+
+    @Test
+    @DisplayName("★ cta-link 는 기존 버튼에 속성만 붙인다 — 문구와 태그는 그대로")
+    void cta링크는_속성만_붙인다() {
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(GENERATED)));
+        await(started(service.start(blank(1L, "여름 데이터 이벤트"))));
+
+        var cta = Jsoup.parseBodyFragment(savedHtml(1L)).body()
+                .selectFirst(Block.CTA.selector());
+        assertNotNull(cta, "cta 영역이 없습니다.");
+
+        // ★ 새 태그를 만들면 문구가 빈 버튼이 하나 더 생긴다. 그건 화면에서 바로 보인다
+        assertEquals(1, cta.select("a, button").size(),
+                "버튼이 하나 더 생겼습니다. 속성만 붙여야 하는데 태그를 만들었습니다.");
+
+        var btn = cta.selectFirst(Slot.CTA_LINK.selector());
+        assertNotNull(btn, "참여 버튼에 cta-link 슬롯이 안 붙었습니다.");
+        assertFalse(btn.text().isBlank(),
+                "버튼 문구가 비었습니다. Slot.Kind.LINK 는 속성만 건드려야 합니다.");
     }
 
     @Test

@@ -49,6 +49,20 @@ class SavedTemplateHtmlTest {
     }
 
     @Test
+    void templateRegistrationCarriesParticipateLabel() {
+        // 관리자가 자기 이벤트를 템플릿으로 등록한다. 이름표가 없는 조각을 받아도
+        // 저장되는 템플릿에는 심긴 채로 들어가야 한다 — 이걸로 만든 이벤트가 자동으로 열린다
+        String noLabel = "<section data-block=\"hero\"><h1>제목</h1></section>"
+                + "<section data-block=\"cta\"><button class=\"cta-btn\">참여하기</button></section>";
+
+        String cleaned = SavedTemplateHtml.clean(noLabel);
+
+        assertEquals(1, Jsoup.parseBodyFragment(cleaned)
+                .select("[data-behavior=participate]").size(),
+                "등록된 템플릿에 참여 이름표가 없으면 이걸로 만든 이벤트도 참여가 안 열립니다");
+    }
+
+    @Test
     void approvedRootPaletteSurvivesReSanitizing() {
         String original = new TemplateService(resources).initialHtml("sports_cheer")
                 .replace("theme-sports", "theme-sports palette-summer");
