@@ -197,6 +197,13 @@ class VariantPaletteTest {
         assertTrue(root(PageShell.hoistPalette(doc), ".ev-container").hasClass("palette-night"));
     }
 
+    @Test
+    @DisplayName("프롬프트 — 생성에는 배치를 고르는 기준이 있다")
+    void 프롬프트의_기준() {
+        String gen = PromptBuilder.generate("가을 이벤트");
+        assertTrue(gen.contains("고르는 기준"), "배치를 고르는 기준이 생성 프롬프트에 없습니다");
+    }
+
     // ── 페이지 배치 ──
 
     private static String page(String rootClass, String heroClass, int contentBlocks) {

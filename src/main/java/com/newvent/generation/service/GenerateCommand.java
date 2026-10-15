@@ -15,7 +15,16 @@ public record GenerateCommand(
         String period,
         String ctaUrl,
         String requestText,
-        java.util.UUID privacyConfirmationJobId, boolean privacyConfirmed) {
+        java.util.UUID privacyConfirmationJobId, boolean privacyConfirmed,
+        // 관리자가 생성 화면에서 고른 페이지 배치. 안 골랐으면 null — 모델이 고르거나 요청문에서 읽는다
+        com.newvent.registry.Layout layout) {
+    /** 배치를 고르지 않은 호출 */
+    public GenerateCommand(Long eventId, String templateCode, boolean templateFromEvent,
+                           String title, String period, String ctaUrl, String requestText,
+                           java.util.UUID privacyConfirmationJobId, boolean privacyConfirmed) {
+        this(eventId, templateCode, templateFromEvent, title, period, ctaUrl, requestText,
+                privacyConfirmationJobId, privacyConfirmed, null);
+    }
     public GenerateCommand(Long eventId, String templateCode, String title, String period,
                            String ctaUrl, String requestText, java.util.UUID privacyConfirmationJobId) {
         this(eventId, templateCode, false, title, period, ctaUrl, requestText, privacyConfirmationJobId, false);
@@ -106,6 +115,12 @@ public record GenerateCommand(
      */
     private static String ctaUrl(Event event) {
         return ParticipationLink.of(event.getId());
+    }
+
+    /** 같은 요청에 배치만 싣는다 */
+    public GenerateCommand withLayout(com.newvent.registry.Layout picked) {
+        return new GenerateCommand(eventId, templateCode, templateFromEvent, title, period, ctaUrl, requestText,
+                privacyConfirmationJobId, privacyConfirmed, picked);
     }
 
     /** 템플릿을 골랐나. 이 한 줄이 두 경로를 가른다 */

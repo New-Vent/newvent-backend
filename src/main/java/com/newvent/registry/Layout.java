@@ -186,6 +186,12 @@ public enum Layout {
     public String cssClass() { return cssClass; }
     public String desc()     { return desc; }
 
+    /** 화면에 보일 짧은 이름 — 설명의 앞머리 ("벤토 — …" 의 "벤토") */
+    public String label() {
+        int at = desc.indexOf(" — ");
+        return at < 0 ? desc : desc.substring(0, at);
+    }
+
     /**
      * 이 배치가 말이 되려면 있어야 하는 내용 영역 수 — hero · notices · cta 를 뺀 영역.
      * 모자라면 {@link PageShell} 이 기본 배치로 되돌린다.
