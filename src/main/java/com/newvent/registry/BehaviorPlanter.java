@@ -114,6 +114,41 @@ public final class BehaviorPlanter {
         return true;
     }
 
+    /**
+     * 조각에 참여 이름표가 있도록 보장한다 — <b>보여 줄 때 부른다 (publishedHtmlOf).</b>
+     *
+     * ★★ 왜 필요한가 — 옛 페이지 호환
+     *   참여 이름표(data-behavior="participate")는 LLM 동작 배치기가 생성 때 심는다.
+     *   그 기능이 들어오기 전에 머지된 이벤트는 이름표가 없어서,
+     *     ① bindGame 이 자리를 못 잡아 게임 UI 가 안 그려지고
+     *     ② 프론트가 「참여 이름표가 있는지」로 참여 UI 를 띄울지 판단하므로 패널도 안 뜬다
+     *   운영에 머지된 페이지가 전부 그렇다는 것을 실측에서 확인했다. 재생성 없이 열어 준다.
+     *
+     * ★ 저장본은 건드리지 않는다 — Slots.fill 과 같은 자세다
+     *   조각을 돌려주기 직전에 보장하므로 event_versions 는 그대로다. 설정만 붙으면 바로 동작한다.
+     *
+     * ★ 이름표가 이미 있으면 바이트가 바뀌지 않는다 — 새 페이지는 비용이 거의 없다
+     *   어차피 다른 길에서도 파싱이 들어가므로 (예: PageShell.standalone) 유의미한 추가 비용은 없다.
+     *
+     * ★ 심을 자리가 없으면 조용히 돌려준다 — cta 블록이 없는 조각(옛 더미 등)에는 손대지 않는다
+     */
+    public static String ensureParticipate(String html) {
+        if (html == null || html.isBlank()) return html;
+
+        Document doc = Jsoup.parseBodyFragment(html);
+        doc.outputSettings().prettyPrint(false);
+
+        if (!withBehavior(doc.body(), Behavior.PARTICIPATE).isEmpty()) {
+            return html;                                     // 이미 있다
+        }
+
+        Element cta = doc.body().selectFirst(Block.CTA.selector());
+        if (cta == null || !participate(cta)) {
+            return html;                                     // 심을 자리가 없다
+        }
+        return doc.body().html();
+    }
+
     // ── 백지 생성 ──────────────────────────────────────────────────
 
     /** 백지 생성의 기본 배치 — 배치기를 못 쓸 때. 참여 · 카운트다운 · 혜택(없으면 참여 방법)으로 이동 */

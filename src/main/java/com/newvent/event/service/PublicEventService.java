@@ -19,6 +19,7 @@ import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.exception.EventNotFoundException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.generation.service.PeriodText;
+import com.newvent.registry.BehaviorPlanter;
 import com.newvent.registry.PageShell;
 import com.newvent.registry.Slots;
 
@@ -77,8 +78,13 @@ public class PublicEventService {
         if (published == null) {
             return null;
         }
+        // ★ 참여 이름표(data-behavior="participate")가 없으면 심어 준다.
+        //   LLM 동작 배치기가 들어오기 전에 머지된 옛 페이지에는 이름표가 없고,
+        //   그러면 bindGame 이 자리를 못 잡아 게임 UI 가 안 그려지고 프론트도
+        //   「참여 이름표가 있는지」로 패널을 띄울지 정한다. 재생성 없이 열어 준다.
+        String html = BehaviorPlanter.ensureParticipate(published.getHtmlContent());
         return Slots.fill(
-                published.getHtmlContent(),
+                html,
                 PeriodText.of(event.getStartDate(), event.getEndDate()),
                 ParticipationLink.of(event.getId()));
     }

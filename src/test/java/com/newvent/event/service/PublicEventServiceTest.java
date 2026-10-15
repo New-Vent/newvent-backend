@@ -305,6 +305,37 @@ class PublicEventServiceTest {
         assertNull(publicEventService.publishedPageOf(newEvent(2L, EventStatus.PUBLISHED, null, null)));
     }
 
+    // ── 옛 페이지 호환 — 조각 응답에 참여 이름표가 심긴다 ─────────
+
+    @Test
+    @DisplayName("★ 조각 응답 — 참여 이름표가 없는 옛 페이지에 이름표를 심어 돌려준다")
+    void 게시HTML_옛페이지에_이름표를_심는다() {
+        Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
+        setPublishedHtml(event,
+                "<section data-block=\"hero\"><h1>제목</h1></section>"
+                + "<section data-block=\"cta\"><button class=\"cta-btn\">참여하기</button></section>");
+
+        String html = publicEventService.publishedHtmlOf(event);
+
+        assertTrue(html.contains("data-behavior=\"participate\""),
+                "옛 페이지에도 참여 이름표가 심겨야 한다. 실제: " + html);
+    }
+
+    @Test
+    @DisplayName("이미 이름표가 있으면 그대로 — 새 페이지는 비용이 없다")
+    void 게시HTML_이름표가있으면_그대로다() {
+        Event event = newEvent(7L, EventStatus.PUBLISHED, null, null);
+        setPublishedHtml(event,
+                "<section data-block=\"cta\">"
+                + "<button data-behavior=\"participate\">참여하기</button></section>");
+
+        String html = publicEventService.publishedHtmlOf(event);
+
+        // 하나만 있어야 한다. 두 번 심기면 눌렀을 때 어느 버튼이 참여인지 모른다
+        assertEquals(1, html.split("data-behavior=\"participate\"", -1).length - 1,
+                "참여 이름표가 두 번 심기면 안 된다. 실제: " + html);
+    }
+
     // ── 게시 페이지의 참여 ──────────────────────────────────────
 
     /** 참여 버튼이 심긴 조각. 생성 경로가 cta 의 첫 버튼에 participate 를 단다 */
