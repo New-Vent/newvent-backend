@@ -1,13 +1,12 @@
 package com.newvent.generation.service;
 
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
+import com.newvent.registry.ApprovedScripts;
 import com.newvent.registry.BehaviorPlanter;
 import com.newvent.registry.BlockValidator;
 import com.newvent.registry.PageShell;
@@ -18,16 +17,11 @@ import com.newvent.registry.Slots;
 public final class SavedTemplateHtml {
     private SavedTemplateHtml() {}
 
-    private static class Approved {
-        private static final Set<String> SCRIPTS = new ResourceTemplateLoader().all().stream()
-                .flatMap(t -> parse(t.html()).select("script").stream())
-                .map(Element::outerHtml).collect(Collectors.toUnmodifiableSet());
-    }
-
     public static String clean(String html) {
         Document source = parse(html);
+        // ★ 승인 목록은 registry.ApprovedScripts 가 한 곳에 들고 있다 — PageShell 과 같은 것을 본다
         List<String> scripts = source.select("script").stream()
-                .map(Element::outerHtml).filter(Approved.SCRIPTS::contains).distinct().toList();
+                .map(Element::outerHtml).filter(ApprovedScripts.SCRIPTS::contains).distinct().toList();
         Element root = PageShell.rootOf(source);
         List<String> palettes = root == null ? List.of() : root.classNames().stream()
                 .filter(c -> Palette.find(c).isPresent()).limit(1).toList();

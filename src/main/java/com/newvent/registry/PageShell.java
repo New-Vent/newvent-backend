@@ -124,7 +124,16 @@ public final class PageShell {
         Document doc = Jsoup.parseBodyFragment(fragment == null ? "" : fragment);
         doc.outputSettings().prettyPrint(false);
         if (!doc.select("[" + Behavior.ATTR + "]").isEmpty()) {
-            doc.select("script, noscript").remove();
+            // ★★ 승인된 템플릿 스크립트는 남긴다 — 모델이 지어낸 것만 지운다
+            //   전에는 behavior 가 하나라도 있으면 모든 script 를 지웠다. 그런데 보수층
+            //   ({@link BehaviorPlanter#ensureParticipate})이 참여 이름표를 심기 시작하면서
+            //   그 조건이 처음으로 참이 됐고, flash_sale 의 타이머 · holiday_gift 의 복주머니
+             //   같은 **runtime 이 대체하지 않는** 자체 연출이 통째로 사라졌다.
+            //   {@link ApprovedScripts} 가 템플릿 리소스에서 뽑은 승인본 집합이다 — 바이트가 똑같은 것만 살린다.
+            doc.select("script").stream()
+                    .filter(s -> !ApprovedScripts.contains(s))
+                    .forEach(Element::remove);
+            doc.select("noscript").remove();
             BehaviorPlanter.bind(doc, endsAt);
             BehaviorPlanter.bindGame(doc, gameCode, gameConfig);
         }
