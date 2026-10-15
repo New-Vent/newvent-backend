@@ -88,7 +88,10 @@ public enum Behavior {
             "data-demo-msg", "data-target", "data-state",
             "data-done-text", "data-done-msg",
             "data-until", "data-seconds",
-            "data-vote");
+            // ★ data-vote 는 예측 선택지, data-pouch 는 복주머니 번호다. 서버가 게임 자리에 그려 넣고
+            //   runtime 의 collect() 가 읽어 참여 본문을 만든다 (GameWidget).
+            //   여기 없으면 정화가 지워서 고른 값이 서버에 안 온다
+            "data-vote", "data-pouch");
 
     private final String key;
 
