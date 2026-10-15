@@ -343,10 +343,22 @@ class ParticipationValidatorTest {
 
     private EventGameConfig predictionConfig() {
         return config(
-                "SPORTS_PREDICTION",
-                Map.of(
-                        "predictionOptions",
-                        List.of("HOME_WIN", "DRAW", "AWAY_WIN")));
+            "SPORTS_PREDICTION",
+            Map.of(
+                "predictionOptions",
+                List.of("HOME_WIN", "DRAW", "AWAY_WIN"),
+                "announcementAt",
+                "2026-10-15T14:00:00+09:00",
+                "rewards",
+                List.of(Map.of(
+                    "rewardId", "prediction",
+                    "target", "CORRECT_PREDICTIONS",
+                    "selection", "DRAW",
+                    "winnerCount", 30,
+                    "prizeName", "치킨 쿠폰"
+                ))
+            )
+        );
     }
 
     private EventGameConfig config(

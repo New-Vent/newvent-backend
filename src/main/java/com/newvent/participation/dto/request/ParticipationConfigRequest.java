@@ -24,7 +24,9 @@ public record ParticipationConfigRequest(
         @Schema(
                 description = "방식별 설정. BASIC 은 resultMode(DELAYED·IMMEDIATE·GUARANTEED)와 "
                         + "그에 필요한 winProbability(0~100)·prizeName. "
-                        + "SPORTS_PREDICTION 은 predictionOptions 배열. "
+                        + "SPORTS_PREDICTION 은 predictionOptions 배열, announcementAt(종료 이후 발표 시각), "
+                        + "rewards 배열이 필요하다. 각 혜택은 rewardId, target(ALL_PARTICIPANTS·CORRECT_PREDICTIONS), "
+                        + "selection(ALL·DRAW), prizeName을 포함하며, DRAW는 winnerCount도 필요하다. "
                         + "PRE_REGISTRATION 은 설정이 없다(빈 객체). "
                         + "LUCKY_POUCH 는 pouches 배열 — 번호는 1부터 길이까지 빠짐없이, "
                         + "칸마다 winProbability 와 prizeName 이 모두 필요하다. "

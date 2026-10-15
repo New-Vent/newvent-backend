@@ -238,9 +238,20 @@ class ParticipationServiceTest  {
         EventGameConfig config = mock(EventGameConfig.class);
         when(config.getGame()).thenReturn(game);
         when(config.getConfig()).thenReturn(
-                Map.of(
-                        "predictionOptions",
-                        List.of("HOME_WIN", "DRAW", "AWAY_WIN")));
+            Map.of(
+                "predictionOptions", List.of("HOME_WIN", "DRAW", "AWAY_WIN"),
+                "announcementAt", "2026-10-15T14:00:00+09:00",
+                "rewards", List.of(
+                    Map.of(
+                        "rewardId", "prediction",
+                        "target", "CORRECT_PREDICTIONS",
+                        "selection", "DRAW",
+                        "winnerCount", 30,
+                        "prizeName", "커피 쿠폰"
+                    )
+                )
+            )
+        );
 
         // setUpBasicConfig()의 기본형 설정을 이 테스트에서는 예측형으로 덮어쓴다.
         when(eventGameConfigRepository.findAllByEventId(1L))
