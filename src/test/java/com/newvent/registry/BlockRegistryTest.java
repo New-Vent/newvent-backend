@@ -131,7 +131,7 @@ class BlockRegistryTest {
                 "페이지 전체 요청을 hero 하나로 보내는 규칙이 라우터 프롬프트에서 빠졌습니다.");
         assertTrue(router.contains("되돌리기·취소는 삭제(DELETE)가 아니다."),
                 "되돌리기 요청이 DELETE 로 새는 걸 막는 문장이 빠졌습니다.");
-        assertTrue(router.contains("색·분위기·되돌리기 말이 없는 요청에는 STYLE 을 쓰지 않는다."),
+        assertTrue(router.contains("겉모양(색 · 분위기 · 크기 · 굵기 · 배치 · 이미지)을 바꾸려는 말이 없는 단순 만들기·작성 요청에는 STYLE 을 쓰지 않는다."),
                 "대상 없는 작성 요청이 STYLE 로 새는 걸 막는 문장이 빠졌습니다.");
         assertTrue(router.contains("\"원래 색으로 되돌려줘\""),
                 "되돌리기 예시가 라우터 프롬프트에서 빠졌습니다.");

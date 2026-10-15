@@ -616,8 +616,14 @@ public class EditService {
         //   "바탕색은 노란색으로" 에 노란 팔레트가 없어서, 봄(분홍) 같은 엉뚱한 걸 골라 놓고 "반영했어요" 가 나갔다.
         //   페이지 전체 색감 경로(hero STYLE)에서만 본다 — 영역 하나의 배경은 색 이름 변형(v-surface-yellow …)이 받는다.
         //   영역을 골라 고치는 요청(hasBlocks)에는 팔레트를 안내하지 않으므로 이 길을 안 탄다.
+        // ★ 한 요청에 페이지 전체 색과 영역 배경색이 같이 있을 수 있다("제목은 파랑, 혜택 배경은 노랑").
+        //   라우터가 hero 말고 STYLE 로 짚은 영역을 넘겨, 그 영역을 가리키는 말이 있는 절의 색은 세지 않는다(PR #226 리뷰).
         if (!cmd.hasBlocks() && plan.stream().anyMatch(r -> r.block() == Block.HERO && r.op() == Op.STYLE)) {
-            Optional<ColorWords.Unsupported> unsupported = ColorWords.firstUnsupported(RequestFilter.clean(cmd.requestText()));
+            List<Block> areaBlocks = plan.stream()
+                    .filter(r -> r.op() == Op.STYLE && r.block() != Block.HERO)
+                    .map(Decision.Run::block).toList();
+            Optional<ColorWords.Unsupported> unsupported =
+                    ColorWords.firstUnsupported(RequestFilter.clean(cmd.requestText()), areaBlocks);
             if (unsupported.isPresent()) {
                 log.info("수정 — 팔레트에 없는 색이라 되묻는다 (event={}, 색={})",
                         cmd.eventId(), unsupported.get().group().name());

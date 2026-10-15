@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Optional;
+import java.util.Set;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -69,6 +70,70 @@ class ColorWordsTest {
     @DisplayName("색 말이 없거나 다른 낱말의 일부면 걸러내지 않는다")
     void 색_말이_없으면_통과한다(String text) {
         assertEquals(Optional.empty(), ColorWords.firstUnsupported(text), text);
+    }
+
+    @ParameterizedTest(name = "[{index}] {0}")
+    @ValueSource(strings = {
+            "노란색 말고 파란색으로 바꿔줘", "노란색 빼고 파랑으로 해줘", "노란색 대신 파란색으로 바꿔줘", "노란색은 싫으니까 파랑으로",
+            "노란색이 아니라 분홍색으로 바꿔줘", "노란색 쓰지 말고 파란색으로", "노랑 계열 말고 초록으로", "노란색 제외하고 파란색으로",
+            "하얀색 아닌 파란색으로", "하얀색 말고 검정으로", "청록색 대신 파란색으로", "노랗게 말고 파랗게 해줘",
+    })
+    @DisplayName("피하려고 말한 색은 지원하지 않는 색이어도 거절하지 않는다 — '노란색 말고 파란색으로'")
+    void 제외하는_색은_세지_않는다(String text) {
+        assertEquals(Optional.empty(), ColorWords.firstUnsupported(text), text);
+    }
+
+    @Test
+    @DisplayName("제외 표현이 있어도 다른 없는 색을 원하면 그 색을 짚는다")
+    void 제외하는_말이_있어도_원하는_없는_색은_짚는다() {
+        assertEquals("노랑", unsupportedName("파랑 말고 노랑으로 바꿔줘"));
+        assertEquals("하양", unsupportedName("노란색 말고 하얀색으로 바꿔줘"));
+        assertEquals("노랑", unsupportedName("노란색 말고 노란색으로"), "앞의 것만 제외다. 뒤의 노랑은 원하는 색");
+    }
+
+    @Test
+    @DisplayName("영역 배경으로 말한 색은 페이지 전체 색으로 세지 않는다 — 같은 절에 그 영역을 가리키는 말이 있을 때")
+    void 영역_배경_색은_세지_않는다() {
+        Set<Block> benefits = Set.of(Block.BENEFITS);
+
+        // 제목(hero)은 파랑, 혜택 배경은 노랑 — 노랑은 혜택 영역 배경이다
+        assertEquals(Optional.empty(),
+                ColorWords.firstUnsupported("제목은 파란색으로, 혜택 배경은 노란색으로 바꿔줘", benefits));
+        assertEquals(Optional.empty(),
+                ColorWords.firstUnsupported("제목은 파란색으로 하고 혜택 카드 배경은 노란색으로 해줘", benefits));
+        assertEquals(Optional.empty(),
+                ColorWords.firstUnsupported("전체 색감을 파랑으로 하고 혜택 배경은 노랑으로", benefits));
+    }
+
+    @Test
+    @DisplayName("영역을 가리키는 말이 없는 절의 없는 색은 페이지 전체 색이다")
+    void 영역_말이_없는_절의_색은_페이지_전체_색이다() {
+        Set<Block> benefits = Set.of(Block.BENEFITS);
+
+        // 노랑이 제목 쪽 절에 있다 — 혜택 배경이 아니다
+        assertEquals("노랑", ColorWords.firstUnsupported("제목은 노란색으로, 혜택 배경은 파란색으로", benefits)
+                .map(u -> u.group().name()).orElse(null));
+        // 영역 연산이 없으면 모든 색이 페이지 전체 색이다
+        assertEquals("노랑", ColorWords.firstUnsupported("혜택 배경을 노란색으로", Set.of())
+                .map(u -> u.group().name()).orElse(null));
+        assertEquals("노랑", unsupportedName("바탕색은 노란색으로 바꿔줘"));
+    }
+
+    @Test
+    @DisplayName("라우터가 짚은 영역의 말만 인정한다 — 다른 영역 말은 영역 배경의 근거가 아니다")
+    void 짚지_않은_영역의_말은_근거가_아니다() {
+        // 라우터는 혜택만 짚었는데 요청문의 '쿠폰' 절에 노랑이 있다
+        assertEquals("노랑", ColorWords.firstUnsupported("제목은 파랑으로, 쿠폰은 노란색으로", Set.of(Block.BENEFITS))
+                .map(u -> u.group().name()).orElse(null));
+    }
+
+    @Test
+    @DisplayName("영역을 가리키는 말 목록에 빠진 편집 가능 영역이 없다 — Block 이 늘면 여기서 걸린다")
+    void 영역_말_목록이_모든_편집_영역을_덮는다() {
+        for (Block b : Block.values()) {
+            if (b == Block.HERO || !b.canEdit()) continue;
+            assertTrue(ColorWords.AREA_WORDS.containsKey(b), b.key() + " 의 영역 말이 ColorWords.AREA_WORDS 에 없습니다.");
+        }
     }
 
     @Test

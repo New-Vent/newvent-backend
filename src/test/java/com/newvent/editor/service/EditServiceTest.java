@@ -325,6 +325,43 @@ class EditServiceTest {
     }
 
     @Test
+    @DisplayName("피하려고 말한 색('노란색 말고 파란색으로')은 되묻지 않는다 — PR #226 리뷰")
+    void 제외하는_색은_되묻지_않는다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(NEW_HERO));
+
+        GenerationJob job = run("노란색 말고 파란색으로 바꿔줘");
+
+        assertNotEquals(GenerationJob.Phase.ASK_BACK, job.phase(), String.valueOf(job.message()));
+        assertEquals(1, retry.calls());
+    }
+
+    @Test
+    @DisplayName("페이지 전체 색과 영역 배경색이 섞여도 영역 배경으로 말한 색은 거절하지 않는다 — PR #226 리뷰")
+    void 영역_배경색은_섞여도_거절하지_않는다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null), new RawRoute("STYLE", "benefits", null));
+        retry.willReturn(ok(NEW_HERO), ok(NEW_BENEFITS));
+
+        // 노랑은 혜택 배경(v-surface-yellow)이고, 제목 쪽 색은 파랑이라 지원한다
+        GenerationJob job = run("제목은 파란색으로, 혜택 배경은 노란색으로 바꿔줘");
+
+        assertNotEquals(GenerationJob.Phase.ASK_BACK, job.phase(), String.valueOf(job.message()));
+        assertEquals(2, retry.calls(), "연산마다 한 번씩 부른다");
+    }
+
+    @Test
+    @DisplayName("섞인 요청이어도 제목 쪽에 건 없는 색은 되묻는다")
+    void 제목_쪽_없는_색은_섞여도_되묻는다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null), new RawRoute("STYLE", "benefits", null));
+
+        GenerationJob job = run("제목은 노란색으로, 혜택 배경은 파란색으로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertTrue(job.message().contains("'노랑' 색감은 지원하지 않습니다"), job.message());
+        assertEquals(0, retry.calls());
+    }
+
+    @Test
     @DisplayName("영역을 고르고 말한 색은 팔레트 검사를 타지 않는다 — 영역 배경은 색 이름 변형이 받는다")
     void 영역_지정_요청은_색_검사를_타지_않는다() {
         router.willReturn(new RawRoute("STYLE", "steps", null));

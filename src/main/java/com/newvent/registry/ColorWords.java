@@ -1,9 +1,12 @@
 package com.newvent.registry;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -22,6 +25,10 @@ import java.util.regex.Pattern;
  * ★ 이 검사는 페이지 전체 색감 경로(hero STYLE)에서만 쓴다
  *   영역 하나의 배경은 {@link Variant} 의 색 이름 변형(v-surface-yellow …)이 따로 받는다.
  *   그쪽은 막지 않는다 — 그래서 안내 문구가 그 길을 같이 알려 준다.
+ *   한 요청에 둘이 섞이면("제목은 파랑, 혜택 배경은 노랑") 절 단위로 가른다 — 영역을 가리키는 말이 같은 절에 있는 색은
+ *   영역 배경으로 보고 세지 않는다. 라우터가 그 영역을 짚었을 때만 그렇게 본다.
+ *
+ * ★ 피하려고 말한 색은 세지 않는다 — "노란색 말고 파란색으로" 는 파랑 요청이다.
  *
  * ★ 한계 — 사전에 없는 색 단어(카키 · 자홍 …)는 걸러지지 않고 모델 경로로 간다.
  */
@@ -94,28 +101,107 @@ public final class ColorWords {
             })
             .toList();
 
+    /**
+     * 색 이름 바로 뒤에 붙어 "그 색은 원하지 않는다" 는 뜻을 만드는 말.
+     * "노란색 말고 파란색으로" · "노란색 빼고" · "노란색 대신" · "노란색은 싫어" · "노란색이 아니라 분홍색으로"
+     *
+     * ★ 이런 색은 거절하면 안 된다. 관리자는 그 색을 **피하려고** 말한 것이다(PR 리뷰).
+     */
+    private static final Pattern NEGATED_AFTER = Pattern.compile(
+            "^\\s*(?:색상|색감|색|빛깔|빛|계열|톤|컬러)?\\s*(?:으로|로|은|는|이|가|도|만)?\\s*"
+            + "(?:말고|말구|빼고|제외|아닌|아니라|아니고|아니면|대신|싫"
+            + "|쓰지\\s*(?:말|마)|하지\\s*(?:말|마)|넣지\\s*(?:말|마)|안\\s*(?:쓰|써|넣|들어))");
+
+    /** 요청문을 절로 나누는 자리: 쉼표 · 마침표 · "그리고" · "및" · "~하고" · "~랑" */
+    private static final Pattern CLAUSE_BREAK = Pattern.compile(
+            "[,，.;!?\\n]|\\s(?:그리고|및)\\s|(?<=하)고\\s|(?<=[가-힣])랑\\s");
+
+    /**
+     * 영역을 가리키는 말. 같은 절에 이 말이 있으면 그 절의 색은 **영역 하나의 배경**이다.
+     *
+     * ★ 영역 배경은 {@link Variant} 의 색 이름 변형(v-surface-yellow …)이 받으므로 팔레트 검사 대상이 아니다.
+     *   hero 는 없다 — 제목 영역은 배경색 변형이 없고, 제목에 건 색은 페이지 전체 색감 경로로 간다.
+     * ★ Block 이 늘면 여기도 늘려야 한다 — ColorWordsTest 가 빠진 영역을 잡는다.
+     */
+    static final Map<Block, Pattern> AREA_WORDS = Map.ofEntries(
+            Map.entry(Block.HIGHLIGHT, Pattern.compile("하이라이트|강조 ?(?:띠|배너|영역)|띠 ?배너")),
+            Map.entry(Block.INTRO, Pattern.compile("소개|인트로")),
+            Map.entry(Block.STATS, Pattern.compile("통계|숫자 ?영역|스탯")),
+            Map.entry(Block.BENEFITS, Pattern.compile("혜택|베네핏|카드")),
+            Map.entry(Block.PRIZE, Pattern.compile("경품|상품")),
+            Map.entry(Block.COUPON, Pattern.compile("쿠폰")),
+            Map.entry(Block.COMPARE, Pattern.compile("비교")),
+            Map.entry(Block.AUDIENCE, Pattern.compile("대상")),
+            Map.entry(Block.STEPS, Pattern.compile("참여 ?방법|단계|스텝")),
+            Map.entry(Block.SCHEDULE, Pattern.compile("일정|스케줄|타임라인")),
+            Map.entry(Block.FAQ, Pattern.compile("FAQ|자주 ?묻|질문|Q&A", Pattern.CASE_INSENSITIVE)),
+            Map.entry(Block.CTA, Pattern.compile("버튼|신청 ?하기|참여 ?하기|CTA", Pattern.CASE_INSENSITIVE)));
+
     /** 지원하지 않는 색을 말한 경우 */
     public record Unsupported(Group group) { }
 
+    /** 영역 연산이 없는 요청 — 모든 색을 페이지 전체 색으로 본다 */
+    public static Optional<Unsupported> firstUnsupported(String requestText) {
+        return firstUnsupported(requestText, Set.of());
+    }
+
     /**
-     * 요청문에서 팔레트로 낼 수 없는 색 이름을 찾는다. 요청문에서 가장 앞에 나온 것 하나.
+     * 요청문에서 **페이지 전체 색감으로 말한**, 팔레트로 낼 수 없는 색 이름을 찾는다. 요청문에서 가장 앞에 나온 것 하나.
      *
+     * 다음 색은 세지 않는다.
+     *   · "노란색 말고 파란색으로" 처럼 그 색을 피하려는 말({@link #NEGATED_AFTER})
+     *   · 영역 연산이 있고, 같은 절에 그 영역을 가리키는 말이 있는 색 — "혜택 배경은 노랑으로" (영역 하나의 배경)
+     *
+     * @param areaBlocks 라우터가 STYLE 로 짚은 hero 가 아닌 영역들. 비어 있으면 모든 색이 페이지 전체 색이다
      * @return 지원하지 않는 색이 없으면 빈 값 — 색 말이 없는 요청과 지원하는 색만 있는 요청
      */
-    public static Optional<Unsupported> firstUnsupported(String requestText) {
+    public static Optional<Unsupported> firstUnsupported(String requestText, Collection<Block> areaBlocks) {
         if (requestText == null || requestText.isBlank()) return Optional.empty();
+        List<int[]> clauses = clausesOf(requestText);
         Group best = null;
         int bestAt = Integer.MAX_VALUE;
         for (int i = 0; i < GROUPS.size(); i++) {
             Group grp = GROUPS.get(i);
             if (grp.supported()) continue;
             Matcher m = PATTERNS.get(i).matcher(requestText);
-            if (m.find() && m.start() < bestAt) {
+            while (m.find()) {
+                if (m.start() >= bestAt) break;
+                if (NEGATED_AFTER.matcher(requestText.substring(m.end())).find()) continue;
+                if (isAreaScoped(requestText, clauses, m.start(), areaBlocks)) continue;
                 bestAt = m.start();
                 best = grp;
+                break;
             }
         }
         return Optional.ofNullable(best).map(Unsupported::new);
+    }
+
+    /** 절의 [시작, 끝) 목록 */
+    private static List<int[]> clausesOf(String text) {
+        List<int[]> out = new ArrayList<>();
+        Matcher m = CLAUSE_BREAK.matcher(text);
+        int from = 0;
+        while (m.find()) {
+            out.add(new int[]{from, m.start()});
+            from = m.end();
+        }
+        out.add(new int[]{from, text.length()});
+        return out;
+    }
+
+    /** 이 위치의 색이 들어 있는 절에, 라우터가 짚은 영역을 가리키는 말이 있는가 */
+    private static boolean isAreaScoped(String text, List<int[]> clauses, int at, Collection<Block> areaBlocks) {
+        if (areaBlocks == null || areaBlocks.isEmpty()) return false;
+        for (int[] c : clauses) {
+            if (at < c[0] || at >= c[1]) continue;
+            String clause = text.substring(c[0], c[1]);
+            for (Block b : areaBlocks) {
+                Pattern words = AREA_WORDS.get(b);
+                if (words != null && words.matcher(clause).find()) return true;
+            }
+            return false;
+        }
+        return false;
     }
 
     /** 지금 팔레트로 낼 수 있는 색 이름들 */
