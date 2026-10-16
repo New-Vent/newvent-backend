@@ -103,6 +103,16 @@ class GenerationServiceTest {
         return new RetryService.Result(true, html, List.of(t));
     }
 
+    /** 성공했지만 마지막 시도에 경고가 남은 결과 — 요청에 없던 기간 표현 */
+    private static RetryService.Result okWithPeriodWarning(String html, String... periods) {
+        List<BlockValidator.Failure> warnings = java.util.Arrays.stream(periods)
+                .map(p -> BlockValidator.Failure.of(com.newvent.registry.FailureCode.VALUE_ADDED_PERIOD, p,
+                        "\"" + p + "\" 는 요청문에 없는 기간입니다."))
+                .toList();
+        RetryService.Trace t = new RetryService.Trace(1, html, warnings, 10, 20, 100L, false);
+        return new RetryService.Result(true, html, List.of(t));
+    }
+
     private static RetryService.Result fail() {
         return new RetryService.Result(false, null, List.of());
     }
@@ -200,6 +210,55 @@ class GenerationServiceTest {
     }
 
     // ── 경로 ① 템플릿 ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("제목도 요청문도 내용이 없으면 모델을 부르지 않고 되묻는다 — 빈칸을 모델이 수치로 채운다 (#230)")
+    void 내용_없는_요청은_되묻는다() {
+        GenerationJob job = started(service.start(
+                new GenerateCommand(1L, null, false, "이벤트", "2026.07.01 ~ 07.31", null, "ㅋㅋㅋ 아무거나 재밌게")));
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertEquals(RequestVagueness.QUESTION, job.message());
+        assertFalse(job.privacyConfirmationRequired(), "개인정보 되묻기가 아니다");
+        assertEquals(0, retry.calls(), "모델을 부르면 안 된다");
+        assertTrue(versions.latest(1L).isEmpty(), "버전이 생기면 안 된다");
+    }
+
+    @Test
+    @DisplayName("요청에 없던 기간 표현이 남아도 실패시키지 않고 저장한 뒤 관리자에게 알린다 (#230)")
+    void 요청에_없던_기간은_저장하고_알린다() {
+        retry.willReturn(okWithPeriodWarning(BlockValidator.sanitizeGenerated(GENERATED), "7일", "9일"));
+
+        GenerationJob job = await(started(service.start(blank(1L, "월드컵 스코어를 맞추면 치킨 쿠폰을 줘"))));
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), "기간 때문에 실패하면 안 된다");
+        assertTrue(versions.latest(1L).isPresent(), "저장은 해야 한다");
+        assertNotNull(job.message(), "관리자에게 알릴 문장이 있어야 한다");
+        assertTrue(job.message().contains("7일") && job.message().contains("9일"), job.message());
+        assertTrue(job.message().contains("확인"), job.message());
+    }
+
+    @Test
+    @DisplayName("경고가 없으면 DONE 의 message 는 비어 있다")
+    void 경고가_없으면_알림이_없다() {
+        retry.willReturn(okWithTrace(BlockValidator.sanitizeGenerated(GENERATED)));
+
+        GenerationJob job = await(started(service.start(blank(1L, "월드컵 스코어를 맞추면 치킨 쿠폰을 줘"))));
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertNull(job.message());
+    }
+
+    @Test
+    @DisplayName("요청이 '이벤트 만들어줘' 뿐이어도 제목이 있으면 만든다")
+    void 제목이_있으면_내용_없는_요청도_만든다() {
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(GENERATED)));
+
+        GenerationJob job = await(started(service.start(blank(1L, "이벤트 만들어줘"))));   // 제목: 여름 이벤트
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertEquals(1, retry.calls());
+    }
 
     @Test
     void 개인정보_확인후에만_생성하고_원문을_전달한다() {

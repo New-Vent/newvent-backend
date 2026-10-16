@@ -143,6 +143,14 @@ public final class GenerationJob {
         versionId.set(id);
     }
 
+    /**
+     * 성공했지만 관리자가 알아야 할 것을 message 에 담는다. 단계는 옮기지 않는다.
+     * 프론트는 DONE 이어도 message 가 있으면 보여 줄 수 있다 (#230: 요청에 없던 기간 표현).
+     */
+    public void notice(String text) {
+        message.set(text);
+    }
+
     // 관리자에게 되묻고 끝낸다. 실패로 기록 X
     // 질문을 message 에 담는다 - 필드를 새로 두지 않았다
     public void askBack(String question) {

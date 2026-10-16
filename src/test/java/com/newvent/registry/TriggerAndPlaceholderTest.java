@@ -156,7 +156,9 @@ class TriggerAndPlaceholderTest {
                 policy.validate(coupon).toString());
         assertTrue(policy.validate(coupon.replace("2024년", "2026년")).isEmpty(), "이벤트 기간의 연도는 허용해야 합니다");
         assertTrue(policy.validate(coupon.replace("2024년 ", "")).isEmpty(), "연도 없는 날짜는 허용해야 합니다");
-        assertTrue(policy.validate(CORE.replace("<h1>t</h1>", "<h1>t</h1><p>2000원 할인 · 2024 GB</p>")).isEmpty(),
+        // 이 입력의 2000원 · 2024 GB 는 요청에 없는 수치라 value_added 로는 걸린다(#230). 여기서 보는 건 **연도로** 오해하지 않는가다
+        assertTrue(policy.validate(CORE.replace("<h1>t</h1>", "<h1>t</h1><p>2000원 할인 · 2024 GB</p>")).stream()
+                        .noneMatch(f -> f.code().startsWith("value_added_year")),
                 "날짜가 아닌 숫자는 연도로 보지 않아야 합니다");
     }
 
