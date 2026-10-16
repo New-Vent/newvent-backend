@@ -49,7 +49,7 @@ public enum Block {
     HERO("hero", true, true, Source.MIXED,
             "이벤트 제목과 한 줄 소개. 기간은 서버가 넣는다",
             "제목은 <h1>, 소개는 <p> 로 감싼다. 제목 위에 짧은 꼬리말을 둘 수 있다 — "
-            + "<span class=\"badge\"> 안에 10글자 이하로 쓴다 (예: 선착순, 신규 가입자 전용)",
+            + "<span class=\"badge\"> 안에 10글자 이하로 쓴다 (요청문에 있는 조건만 쓴다)",
             "h1", null, 0, null),
 
     HIGHLIGHT("highlight", false, false, Source.LLM,
@@ -78,7 +78,7 @@ public enum Block {
 
     BENEFITS("benefits", true, true, Source.MIXED,
             "혜택 — 항목은 폼 값, 문장만 다듬는다",
-            "<h2> 소제목과 <ul>. <ul> 안에 <li> 로 1개 이상 나열한다. <li> 와 <ul> 에는 class 를 붙이지 않는다. "
+            "<h2> 소제목과 <ul>. <ul> 안에 <li> 로 요청문에 있는 혜택만큼 나열한다(최소 1개). <li> 와 <ul> 에는 class 를 붙이지 않는다. "
             + "<li> 안은 이모지 하나를 담은 <div class=\"benefit-icon\">, "
             + "혜택 이름 <div class=\"benefit-name\">, 설명 한 문장 <div class=\"benefit-desc\">, "
             + "받는 값 <div class=\"benefit-value\"> 순서로 쓴다. "

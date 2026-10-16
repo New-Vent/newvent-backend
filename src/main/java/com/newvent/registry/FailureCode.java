@@ -61,6 +61,14 @@ public enum FailureCode {
     /** REQ-LLM-41 — 원본에도 요청문에도 없던 수치가 생겼다 */
     VALUE_ADDED("value_added", Category.FABRICATION, Severity.HARD, Action.RETRY),
 
+    /**
+     * #230 — 생성 결과에 요청에 없는 **기간 · 날짜**("7일 이내", "9월 26일")가 있다. 금액 · 용량 · 할인율 · 수량과 달리
+     * 실패로 만들지 않는다 — 모델이 사전예약 · 이벤트 문구마다 습관처럼 넣어서 재시도로 못 고치고(4회 연속),
+     * 정상 요청이 실패로 끝났다. 저장은 하고 관리자에게 확인하라고 알린다.
+     */
+    VALUE_ADDED_PERIOD("warning_value_added_period", Category.FABRICATION, Severity.WARNING, Action.NOTIFY),
+    VALUE_ADDED_PROMISE("warning_value_added_promise", Category.FABRICATION, Severity.WARNING, Action.NOTIFY),
+
     /** REQ-LLM-41 — 있던 수치가 빠졌다. "짧게 요약해줘" 의 정상 결과일 수 있어 실패로 보지 않는다 */
     VALUE_REMOVED("warning_value_removed", Category.FABRICATION, Severity.WARNING, Action.NOTIFY),
 
