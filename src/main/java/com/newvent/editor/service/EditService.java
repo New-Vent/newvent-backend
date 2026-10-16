@@ -377,7 +377,8 @@ public class EditService {
     private boolean applyAssetEdit(GenerationJob job, EditCommand cmd, String doc,
                                    VersionStore.Snapshot base) {
         List<Asset.Ref> uploaded = assets.assetsOf(cmd.eventId());
-        AssetEdit.Result read = AssetEdit.read(cmd.requestText(), uploaded.size());
+        // ★ 페이지를 같이 준다. "배경 없애줘" 를 받을지 비켜설지는 **지금 사진이 있는지**로 갈린다
+        AssetEdit.Result read = AssetEdit.read(cmd.requestText(), uploaded, doc);
 
         // ★★ 막힌 조합은 **모델에게 안 넘긴다.** 또렷하게 말한 요청이라 모델이 받으면
         //   어떻게든 끼워 넣는다 — 혜택 카드 하나에 사진이 통째로 들어가 레이아웃이 깨졌다.
@@ -402,11 +403,12 @@ public class EditService {
         after = PageShell.settle(after);
         job.to(GenerationJob.Phase.SAVING);
 
-        // ★ 자리를 안 말하고 뺀 경우에는 role · block 이 없다 (AssetEdit.Plan 참고)
-        String summary = step.role() == null
-                ? step.index() + "번 이미지 제거"
-                : (step.remove() ? "이미지 제거 — " : "이미지 배치 — ")
-                        + step.block().key() + " " + step.role().cssClass();
+        // ★★ 자리를 안 말하고 뺀 경우에는 role · block 이 **둘 다 null** 이다 (AssetEdit.Plan 참고).
+        //   그래서 role 을 먼저 보고, null 이 아닐 때만 자리 이름을 만든다 —
+        //   여기서 null 검사를 뒤로 미뤘다가 "1번 이미지 빼줘" 에 NPE 가 났다(실측).
+        // ★ 사람이 읽는 이름으로 쓴다. key() · cssClass() 를 그대로 쓰면
+        //   버전 이력에 "hero ev-asset-bg" 가 찍힌다 — 관리자가 CSS class 를 읽게 된다.
+        String summary = AssetEdit.summary(step);
         VersionStore.Saved saved =
                 versions.save(cmd.eventId(), after, base.versionId(), summary, job.chatRequestId());
         log.info("이미지 수정 저장 (event={}, versionId={}, v{}, source=v{}) — 모델 호출 0회",

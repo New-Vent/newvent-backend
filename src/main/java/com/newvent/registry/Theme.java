@@ -49,7 +49,13 @@ public enum Theme {
     BLOOM(null, "theme-bloom", Tone.LIGHT,
             "발랄 · 축제 · 어린이 · 먹거리 — 밝은 배경에 구름, 통통한 외곽선 제목"),
     AURORA(null, "theme-aurora", Tone.DARK,
-            "밤 · 프리미엄 · 게임 · 신비 — 어두운 배경에 별가루, 떠 있는 한 장의 카드");
+            "밤 · 프리미엄 · 게임 · 신비 — 어두운 배경에 별가루, 떠 있는 한 장의 카드"),
+    // ★★ 상자를 안 쓰는 벌. 다른 셋과 **같은 HTML** 로 돌아간다 —
+    //   영문 소제목(sub-label)도 배경 변형(v-surface-*)도 생성 쪽은 그대로 두고
+    //   CSS 가 숨기거나 걷는다(20-themes/05-editorial.css).
+    //   그래서 테마를 되돌리면 원래 모양이 그대로 돌아온다.
+    EDITORIAL(null, "theme-editorial", Tone.LIGHT,
+            "여백 · 잡지 · 브랜드 지면 — 상자 없이 큰 제목과 여백으로 정리. 깔끔하게 · 정돈되게");
 
     /**
      * 표면 밝기.

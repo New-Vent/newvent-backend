@@ -80,7 +80,11 @@ public enum Asset {
      * @param scrim MIXED 일 때의 덮개 농도. LIGHT · DARK 는 0 이다 — 사진을 안 덮는다
      * @param tone  글자를 어떻게 할 것인가
      */
-    public record Ref(String url, String caption, double scrim, Tone tone) {}
+    /**
+     * @param seq 이벤트별 고정 번호. 관리자가 "2번 이미지" 라고 말하는 그 번호다 —
+     *            목록에서 몇 번째냐가 **아니다**. 지우면 구멍이 남는다 (1, 3, 4).
+     */
+    public record Ref(int seq, String url, String caption, double scrim, Tone tone) {}
 
     /** 배치 이름의 공통 접두사. 정화에서 이걸로 알아본다 */
     public static final String PREFIX = "ev-asset-";
@@ -95,11 +99,15 @@ public enum Asset {
     private static final Set<String> MODIFIERS = Set.of(PREFIX + "art-left");
 
     /**
-     * 배경 · 띠를 쓸 수 있는 블록. **자기 배경이 색인 블록만이다.**
-     * 흰 카드 위에 사진을 깔면 카드가 통째로 사라진다 — Variant.DECOR_BLOCKS 와 같은 이유다.
+     * 배경 · 띠를 **못** 쓰는 블록. 나머지는 전부 된다.
+     *
+     * ★★ 막는 쪽을 적는다. 허용 목록으로 뒀더니 "쿠폰 배경으로" 가 목록에 없어서
+     *   거절도 안 되고 기본 자리(hero)로 들어갔다(실측). 영역이 늘 때마다 빠뜨린다.
+     * ★ 사진을 깐 영역은 내용에 반투명 흰 판을 깔아 글자를 지킨다
+     *   (95-assets/01-assets.css) — 페이지 전체 배경이 쓰는 수법과 같다.
+     * ★ 유의사항만 뺀다. 자기 크림색 판이 "읽고 넘어가라" 는 신호다 — 사진이 덮으면 안 된다.
      */
-    private static final Set<Block> SURFACE_BLOCKS =
-            EnumSet.of(Block.HERO, Block.HIGHLIGHT, Block.CTA);
+    private static final Set<Block> NO_SURFACE = EnumSet.of(Block.NOTICES);
 
     /** 아이콘을 쓸 수 있는 블록 — 54x54 자리가 있는 곳 */
     private static final Set<Block> ICON_BLOCKS = EnumSet.of(Block.BENEFITS, Block.STEPS);
@@ -115,10 +123,29 @@ public enum Asset {
     public String cssClass() { return cssClass; }
     public String desc()     { return desc; }
 
+    /**
+     * 관리자에게 보여 줄 짧은 이름.
+     *
+     * ★ desc() 는 모델에게 주는 설명이라 서술문이다 —
+     *   그대로 쓰면 "영역 배경으로 꽉 채운다을(를) 쓸 수 없어요" 가 된다(실측).
+     */
+    public String label() {
+        return switch (this) {
+            // ★ "영역" 을 안 붙인다. 앞에 영역 이름이 오는 자리가 많다 —
+            //   붙이면 "혜택 영역 영역 배경" 이 된다(실측)
+            case BG   -> "배경";
+            case ART  -> "제목 옆 그림";
+            case ICON -> "항목 아이콘";
+            case LOGO -> "로고";
+            case BAND -> "가로 띠";
+            case PAGE -> "페이지 전체 배경";
+        };
+    }
+
     /** 그 블록에 쓸 수 있는 배치인가 */
     public boolean allowedOn(Block b) {
         return switch (this) {
-            case BG, BAND -> SURFACE_BLOCKS.contains(b);
+            case BG, BAND -> !NO_SURFACE.contains(b);
             // ★ hero 에만 쓰게 한다. 어차피 루트로 옮겨지므로 어디에 쓰든 결과는 같은데,
             //   여러 영역에 흩어지면 **어느 것이 이기는지** 모델도 우리도 모른다
             case PAGE -> b == Block.HERO;
@@ -163,9 +190,10 @@ public enum Asset {
         out.add("올린 이미지: (관리자가 올려 둔 것이다. 주소를 글자 그대로 쓴다)");
         // ★ 번호를 붙인다. 관리자가 "2번 이미지를 배경으로" 라고 말할 수 있어야 하고,
         //   화면의 그림 목록도 같은 번호를 보여 준다 — 그 둘을 잇는 유일한 끈이다
-        for (int i = 0; i < assets.size(); i++) {
-            Ref r = assets.get(i);
-            out.add("    " + (i + 1) + ") " + r.url()
+        // ★★ r.seq() 다. i + 1 이 아니다 — 1번을 지우면 둘이 갈라지고,
+        //   화면이 "3번" 이라고 보여 주는 사진을 프롬프트는 "2번" 으로 부르게 된다
+        for (Ref r : assets) {
+            out.add("    " + r.seq() + ") " + r.url()
                     + (r.caption() == null || r.caption().isBlank() ? "" : "  — " + r.caption()));
         }
         out.add("- 이미지를 넣어 달라면 이 영역 안에 이렇게 쓴다:");
