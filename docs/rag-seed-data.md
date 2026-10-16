@@ -115,7 +115,12 @@
 3. `compare·audience·faq`는 트리거 단어가 본문에 있어야 청킹된다:
    비교표(`비교표`·`vs`) / 대상(`참여 대상` 등) / 질문(`자주 묻는 질문`·`FAQ`)
 4. `cta()` 헬퍼 사용 — `<a class="btn">` 형태 (event.css 스타일 적용 대상)
-5. 등급이 필요하면 `new SeedDefinition(제목, html, 등급)` 3인자 사용
+5. 카테고리별 겉모습은 `secV(블록, 변형, 내용)` + `60-variants` 클래스로 구분한다.
+   `data-block` 값은 그대로 두는 것이 조건이다 (바꾸면 청크 누락).
+   현재 배정: 스포츠(center·badge·grid·numbered) / 시즌(left·glow·checklist·timeline·qa) /
+   멤버십(minimal·cards·lead·pricing·checklist) / 특가(poster·danger·coupon·cards·leftbar) /
+   출시(split·boxed·spotlight·arrows·flush)
+6. 등급이 필요하면 `new SeedDefinition(제목, html, 등급)` 3인자 사용
 
 ## 검증
 
