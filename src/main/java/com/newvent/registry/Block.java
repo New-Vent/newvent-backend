@@ -78,13 +78,13 @@ public enum Block {
 
     BENEFITS("benefits", true, true, Source.MIXED,
             "혜택 — 항목은 폼 값, 문장만 다듬는다",
-            "<h2> 소제목과 <ul>. <ul> 안에 <li> 로 2개 이상 나열한다. <li> 와 <ul> 에는 class 를 붙이지 않는다. "
+            "<h2> 소제목과 <ul>. <ul> 안에 <li> 로 1개 이상 나열한다. <li> 와 <ul> 에는 class 를 붙이지 않는다. "
             + "<li> 안은 이모지 하나를 담은 <div class=\"benefit-icon\">, "
             + "혜택 이름 <div class=\"benefit-name\">, 설명 한 문장 <div class=\"benefit-desc\">, "
             + "받는 값 <div class=\"benefit-value\"> 순서로 쓴다. "
             + "짧은 꼬리말이 필요하면 <li> 맨 앞에 <span class=\"benefit-tag\">",
             // 백지: ul li · 템플릿: .benefit-card (계약 EVENT_STRUCTURE_CONTRACT §3)
-            "ul li, .benefit-card", "ul, .benefits-list", 2, null),
+            "ul li, .benefit-card", "ul, .benefits-list", 1, null),
 
     // ★ 경품은 실제로 지급해야 하는 약속이다 — benefits 와 같이 항목은 폼 값(MIXED + minItems).
     //   그래서 itemsAreFormValues() 가 참이 되어 "경품 하나 더" 같은 ADD 는 관문이 거절한다.

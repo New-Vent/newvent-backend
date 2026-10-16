@@ -30,6 +30,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * @param blockOrder      블록을 세울 순서. 블록 key 목록 (예: ["hero","steps","benefits"])
  * @param layout          페이지 배치 (예: "layout-bento"). 기본으로 되돌리려면 "layout-stack"
  * @param variants        영역 → 모양 (예: {"benefits":"v-benefits-grid"}). 빈 문자열이면 모양 class 를 뗀다
+ * @param removeBlocks    직접수정에서 삭제할 블록 key
+ * @param removeItems     블록별 삭제 항목. index와 현재 문구를 같이 보내 오래된 화면의 잘못된 삭제를 막는다
  */
 public record DirectEditRequest(
         @Schema(description = "지금 에디터에 띄운 버전. 새 버전은 이 버전을 이어서 만든다.")
@@ -43,13 +45,19 @@ public record DirectEditRequest(
         @Schema(description = "페이지 배치 class. 미리보기 응답의 looks.layouts 에 있는 이름")
         String layout,
         @Schema(description = "영역(data-block) → 모양 class. 미리보기 응답의 looks.blocks[영역].variants 에 있는 이름")
-        Map<String, String> variants) {
+        Map<String, String> variants,
+        List<String> removeBlocks,
+        Map<String, List<ItemRemoval>> removeItems) {
+
+    public record ItemRemoval(int index, String before) {}
 
     public DirectEditRequest {
         if ((edits == null || edits.isEmpty()) && buttonStyle == null
                 && (textStyle == null || textStyle.isEmpty())
                 && (blockOrder == null || blockOrder.isEmpty())
-                && layout == null && (variants == null || variants.isEmpty())) {
+                && layout == null && (variants == null || variants.isEmpty())
+                && (removeBlocks == null || removeBlocks.isEmpty())
+                && (removeItems == null || removeItems.isEmpty())) {
             throw new DirectEditException(DirectEditErrorCode.EMPTY_EDIT_REQUEST);
         }
         // ★ 이름은 여기서 거른다 (순서와 같다). 붙일 수 있는지는 페이지를 봐야 알아서 서비스가 본다
@@ -72,6 +80,13 @@ public record DirectEditRequest(
                 }
             }
         }
+        if (removeBlocks != null) for (String key : removeBlocks) {
+            if (Block.find(key).isEmpty()) throw new DirectEditException(DirectEditErrorCode.INVALID_BLOCK_ORDER);
+        }
+        if (removeItems != null) removeItems.forEach((key, items) -> {
+            if (Block.find(key).isEmpty() || items == null || items.stream().anyMatch(i -> i == null || i.index() < 0 || i.before() == null))
+                throw new DirectEditException(DirectEditErrorCode.INVALID_BLOCK_ORDER);
+        });
     }
 
     /** blockOrder 를 쓰지 않는 기존 호출을 위한 것. */
@@ -82,7 +97,7 @@ public record DirectEditRequest(
     /** 배치 · 모양을 쓰지 않는 기존 호출을 위한 것. */
     public DirectEditRequest(Long sourceVersionId, List<TextEdit> edits, ButtonStyle buttonStyle,
                              List<String> blockOrder) {
-        this(sourceVersionId, edits, buttonStyle, null, blockOrder, null, null);
+        this(sourceVersionId, edits, buttonStyle, null, blockOrder, null, null, null, null);
     }
 
     /**
@@ -94,7 +109,7 @@ public record DirectEditRequest(
      */
     public DirectEditRequest(Long sourceVersionId, List<TextEdit> edits, ButtonStyle buttonStyle,
                              List<String> blockOrder, String layout, Map<String, String> variants) {
-        this(sourceVersionId, edits, buttonStyle, null, blockOrder, layout, variants);
+        this(sourceVersionId, edits, buttonStyle, null, blockOrder, layout, variants, null, null);
     }
 
     /** 배치 · 모양 중 고친 것이 있는가 */
@@ -105,7 +120,9 @@ public record DirectEditRequest(
     /** 배치 · 모양 말고 고친 것이 있는가 — 문구 · 버튼 스타일 · 블록 순서 */
     public boolean hasOtherEdits() {
         return (edits != null && !edits.isEmpty()) || buttonStyle != null
-                || (blockOrder != null && !blockOrder.isEmpty());
+                || (blockOrder != null && !blockOrder.isEmpty())
+                || (removeBlocks != null && !removeBlocks.isEmpty())
+                || (removeItems != null && !removeItems.isEmpty());
     }
 
     /** 고른 배치. 안 고쳤으면 null */

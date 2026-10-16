@@ -1,10 +1,13 @@
 package com.newvent.event.service;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -15,10 +18,12 @@ import org.jsoup.select.NodeTraversor;
 import org.jsoup.select.NodeVisitor;
 
 import com.newvent.event.dto.request.ButtonStyle;
+import com.newvent.event.dto.request.DirectEditRequest.ItemRemoval;
 import com.newvent.event.dto.request.TextEdit;
 import com.newvent.event.dto.request.TextStyle;
 import com.newvent.event.exception.DirectEditErrorCode;
 import com.newvent.event.exception.DirectEditException;
+import com.newvent.registry.Block;
 import com.newvent.registry.Slot;
 
 /**
@@ -32,6 +37,7 @@ import com.newvent.registry.Slot;
 public final class DirectEditor {
 
     private DirectEditor() {}
+    private static final Set<Block> ADMIN_KEEP = EnumSet.of(Block.HERO, Block.NOTICES, Block.CTA);
     private static final String TEXT_ID_PREFIX = "nv-direct-text-";
     private static boolean marked(TextNode node) {
         return node.parent() instanceof Element el && el.normalName().equals("span")
@@ -79,6 +85,49 @@ public final class DirectEditor {
             html = applyTextStyle(html, textStyle);
         }
         return html;
+    }
+
+    /** 관리자 직접수정에서 블록 또는 레지스트리 항목을 삭제한다. */
+    public static String applyDeletions(String html, List<String> removeBlocks,
+                                        Map<String, List<ItemRemoval>> removeItems) {
+        if ((removeBlocks == null || removeBlocks.isEmpty())
+                && (removeItems == null || removeItems.isEmpty())) return html;
+        Document doc = Jsoup.parseBodyFragment(html);
+        doc.outputSettings().prettyPrint(false);
+        Set<String> removing = new LinkedHashSet<>(removeBlocks == null ? List.of() : removeBlocks);
+        for (String key : removing) {
+            Block block = Block.of(key);
+            if (ADMIN_KEEP.contains(block))
+                throw new DirectEditException(DirectEditErrorCode.BLOCK_DELETE_FORBIDDEN,
+                        block.key() + " 영역은 직접수정에서 지울 수 없습니다.");
+        }
+        if (removeItems != null) for (var entry : removeItems.entrySet()) {
+            Block block = Block.of(entry.getKey());
+            if (removing.contains(block.key()))
+                throw new DirectEditException(DirectEditErrorCode.ITEM_DELETE_MISMATCH, "같은 요청에서 블록과 그 항목을 함께 지울 수 없습니다.");
+            Element section = doc.selectFirst(block.selector());
+            if (section == null || block.must() == null)
+                throw new DirectEditException(DirectEditErrorCode.ITEM_DELETE_MISMATCH);
+            List<Element> items = new ArrayList<>(section.select(block.must()).stream().distinct().toList());
+            List<ItemRemoval> removals = entry.getValue().stream().sorted((a, b) -> Integer.compare(b.index(), a.index())).toList();
+            for (ItemRemoval removal : removals) {
+                if (removal.index() >= items.size()) throw new DirectEditException(DirectEditErrorCode.ITEM_DELETE_MISMATCH);
+                // sourceVersionId 가 가리키는 HTML은 불변이므로, 이 버전의 항목 순번이 안정적인 기준이다.
+                // 브라우저 textContent 와 Jsoup 텍스트 추출은 구조 공백 처리 차이로 달라질 수 있어
+                // 문구 비교를 인덱스 검증의 추가 조건으로 삼지 않는다.
+                items.get(removal.index()).remove();
+                items.set(removal.index(), null);
+            }
+            int remaining = section.select(block.must()).size();
+            if (remaining < block.minItems())
+                throw new DirectEditException(DirectEditErrorCode.TOO_FEW_ITEMS,
+                        block.key() + "은 항목이 " + block.minItems() + "개 이상 있어야 합니다. 지금은 " + remaining + "개가 남습니다.");
+        }
+        for (String key : removing) {
+            Element target = doc.selectFirst(Block.of(key).selector());
+            if (target != null) target.remove();
+        }
+        return doc.body().html();
     }
 
     /**
