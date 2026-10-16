@@ -1,0 +1,45 @@
+package com.newvent.generation.service;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+/** 내용이 없는 생성 요청 판정 (#230) */
+class RequestVaguenessTest {
+
+    @ParameterizedTest(name = "[{index}] 요청 \"{0}\"")
+    @ValueSource(strings = {"이벤트", "이벤트 만들어줘", "이벤트 하나 만들어줘", "ㅋㅋㅋ 아무거나 재밌게", "그냥 알아서 해줘",
+            "페이지 좀 만들어주세요", "  ", "...", "ㅎㅎ"})
+    @DisplayName("제목도 '이벤트' 뿐이면 내용 없는 요청은 되묻는다")
+    void 제목도_비면_되묻는다(String request) {
+        assertTrue(RequestVagueness.isTooVague("이벤트", request), request);
+        assertTrue(RequestVagueness.isTooVague(null, request), request);
+    }
+
+    @Test
+    @DisplayName("제목이 있으면 요청이 '만들어줘' 뿐이어도 만든다 — 이벤트에는 보통 이름이 있다")
+    void 제목이_있으면_만든다() {
+        assertFalse(RequestVagueness.isTooVague("신규 가입 쿠폰 이벤트", "이벤트 만들어줘"));
+        assertFalse(RequestVagueness.isTooVague("여름 데이터", "ㅋㅋㅋ 아무거나"));
+        assertFalse(RequestVagueness.isTooVague("한가위 선물", null));
+    }
+
+    @ParameterizedTest(name = "[{index}] 요청 \"{0}\"")
+    @ValueSource(strings = {"신규 가입 쿠폰", "여름 데이터", "월드컵 스코어 맞추기", "출석체크", "퀴즈",
+            "Create a summer data coupon event page", "신규가입 쿠폰이벤트 맨들어줘 데이타 3기가",
+            "혜택은 3가지, 참여 방법은 4단계로 하고 유의사항을 강조해서 만들어줘"})
+    @DisplayName("짧아도 이벤트 내용이 있는 요청은 되묻지 않는다")
+    void 내용이_있으면_되묻지_않는다(String request) {
+        assertFalse(RequestVagueness.isTooVague("이벤트", request), request);
+    }
+
+    @Test
+    @DisplayName("되묻기 문장에 예시가 있다 — 안 되는 것만 말하면 막힌다")
+    void 되묻기_문장에_예시가_있다() {
+        assertTrue(RequestVagueness.QUESTION.contains("예:"), RequestVagueness.QUESTION);
+    }
+}

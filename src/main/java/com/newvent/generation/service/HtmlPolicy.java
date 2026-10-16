@@ -62,7 +62,14 @@ public interface HtmlPolicy {
 
             @Override
             public List<Failure> validate(String html) {
-                return BlockValidator.validateGenerated(html, known ? source : null);
+                List<Failure> f = new ArrayList<>(BlockValidator.validateGenerated(html, known ? source : null));
+                // ★ 요청에 없는 수치(금액 · 수량 · 기간 · 할인율)가 있으면 재시도한다 — #230.
+                //   요청문을 모를 때(테스트용 generation())는 견줄 데가 없어 건너뛴다.
+                if (known) {
+                    f.addAll(ValueCheck.inventedInGenerated(html, source));
+                    f.addAll(ValueCheck.promisesInGenerated(html, source));   // 숫자 없는 약속은 경고만
+                }
+                return f;
             }
         };
     }
