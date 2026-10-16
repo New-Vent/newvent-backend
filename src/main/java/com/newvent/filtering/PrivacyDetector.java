@@ -6,16 +6,8 @@ import java.util.regex.Pattern;
 
 import com.newvent.generation.service.RequestFilter;
 
-/**
- * 개인정보 후보 탐지. 주소는 국내 도로명/지번의 명시적인 형태만 지원한다.
- *
- * <p>주소는 {@code 시 · 구 · 도} 같은 지역 낱말이 앞에 있어야 판정한다. 지역 낱말 없이 "테헤란로 152" 만 쓴 것은
- * 놓친다 — "무료로 3GB", "가입하면 5000원" 같은 흔한 이벤트 문장과 글자로는 구분되지 않기 때문이다.
- *
- * <p>한계: 지역 낱말 <b>바로 뒤</b>에 부사 + 숫자가 붙으면("강남구 가로로 3픽셀", "서울시 순서대로 3명") 주소로 읽는다.
- * "순서대로" 와 "세종대로" 는 글자만으로 구분할 수 없다. 걸리면 사용자가 확인 한 번 더 누르면 되므로
- * 놓치는 쪽보다 낫다고 보고 그대로 둔다.
- */
+
+// 개인정보 후보 탐지. 주소는 국내 도로명/지번의 명시적인 형태만 지원한다
 public final class PrivacyDetector {
     private static final Pattern RESIDENT = Pattern.compile("(?<!\\d)\\d{6}[ \\-]?[1-8]\\d{6}(?!\\d)");
     private static final Pattern PHONE = Pattern.compile(

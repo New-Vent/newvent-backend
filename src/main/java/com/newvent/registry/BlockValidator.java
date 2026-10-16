@@ -37,7 +37,7 @@ public class BlockValidator {
      *
      * ★ 코드 문자열을 손으로 조립하지 않는다. Failure.of(FailureCode, …) 로만 만든다.
      */
-    public record Failure(FailureCode kind, String detail, String message) {
+    public record Failure(FailureCode kind, String detail, String message, String subject) {
 
         public Failure {
             Objects.requireNonNull(kind, "kind");
@@ -45,11 +45,15 @@ public class BlockValidator {
         }
 
         public static Failure of(FailureCode kind, String message) {
-            return new Failure(kind, null, message);
+            return new Failure(kind, null, message, null);
         }
 
         public static Failure of(FailureCode kind, String detail, String message) {
-            return new Failure(kind, detail, message);
+            return new Failure(kind, detail, message, null);
+        }
+
+        public static Failure of(FailureCode kind, String detail, String message, String subject) {
+            return new Failure(kind, detail, message, subject);
         }
 
         /**
