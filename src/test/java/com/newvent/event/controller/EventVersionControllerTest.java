@@ -216,6 +216,41 @@ class EventVersionControllerTest {
     }
 
     @Test
+    void directEdit_acceptsTextFormatAndDeleteWithoutOptionalReset() throws Exception {
+        when(directEditService.directEdit(eq(12L), any(), eq(1L)))
+                .thenReturn(new DirectEditResponse(103L, 3));
+        mockMvc.perform(post("/api/admin/events/12/versions/direct-edit")
+                        .principal(ADMIN)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"sourceVersionId":102,"edits":[
+                                  {"index":0,"before":"제목","after":"제목","format":{"color":"#d60076","size":24,"bold":true}},
+                                  {"index":1,"before":"소개","after":"소개","delete":true}
+                                ]}
+                                """))
+                .andExpect(status().isOk());
+        verify(directEditService).directEdit(eq(12L), argThat(request ->
+                request.edits().get(0).format().size() == 24
+                        && !request.edits().get(0).format().reset()
+                        && !request.edits().get(0).delete()
+                        && request.edits().get(1).delete()), eq(1L));
+    }
+
+    @Test
+    void directEdit_rejectsUnsafeTextFormatBeforeServiceCall() throws Exception {
+        mockMvc.perform(post("/api/admin/events/12/versions/direct-edit")
+                        .principal(ADMIN)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"sourceVersionId":102,"edits":[
+                                  {"index":0,"before":"제목","after":"제목","format":{"color":"url(bad)","size":999}}
+                                ]}
+                                """))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(directEditService);
+    }
+
+    @Test
     void directEdit_whenPrincipalIsNotAdmin_returnsForbidden403() throws Exception {
         String requestJson = """
                 {"sourceVersionId": 102, "edits": [{"index": 0, "before": "이전", "after": "새 문구"}]}

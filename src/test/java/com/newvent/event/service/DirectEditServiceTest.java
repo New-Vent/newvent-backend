@@ -90,6 +90,22 @@ class DirectEditServiceTest {
     }
 
     @Test
+    void textFormatAndDeletionSaveOneVersionFromOriginalBase() {
+        String html = "<section data-block='benefits'><p>첫째</p><p>둘째</p></section>";
+        Event event = ownedEvent();
+        when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
+        when(versionStore.htmlOf(1L, 12L)).thenReturn(Optional.of(html));
+        when(versionStore.save(eq(1L), any(String.class), eq(12L))).thenReturn(new VersionStore.Saved(13L, 5));
+        var request = new DirectEditRequest(12L, List.of(
+                new TextEdit(0, "첫째", "첫째", null, true),
+                new TextEdit(1, "둘째", "새 문구", new com.newvent.event.dto.request.TextFormat("#d60076", 24, true, false), false)), null);
+        var response = directEditService.directEdit(1L, request, 1L);
+        assertThat(response.versionId()).isEqualTo(13L);
+        verify(versionStore, times(1)).save(eq(1L), argThat(result ->
+                !result.contains("첫째") && result.contains("새 문구") && result.contains("font-size: 24px")), eq(12L));
+    }
+
+    @Test
     @DisplayName("이벤트가 존재하지 않거나 삭제되었으면 EVENT_NOT_FOUND 예외를 던진다")
     void directEdit_이벤트미존재() {
         Long eventId = 999L;

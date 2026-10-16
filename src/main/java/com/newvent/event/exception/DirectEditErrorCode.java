@@ -13,7 +13,10 @@ public enum DirectEditErrorCode implements ErrorCode {
     INVALID_BLOCK_ORDER(HttpStatus.BAD_REQUEST, "DIRECT_EDIT400-4", "알 수 없는 블록 이름이 순서 목록에 있습니다."),
     INVALID_LOOK(HttpStatus.BAD_REQUEST, "DIRECT_EDIT400-5", "알 수 없는 배치 · 모양 이름입니다."),
     LOOK_NOT_AVAILABLE(HttpStatus.CONFLICT, "DIRECT_EDIT409-1", "지금 페이지에는 쓸 수 없는 배치 · 모양입니다."),
-    INVALID_TEXT_STYLE(HttpStatus.BAD_REQUEST, "DIRECT_EDIT400-6", "지원하지 않는 제목 글자 색 · 크기 값입니다.");
+    INVALID_TEXT_STYLE(HttpStatus.BAD_REQUEST, "DIRECT_EDIT400-6", "지원하지 않는 제목 글자 색 · 크기 값입니다."),
+    INVALID_TEXT_FORMAT(HttpStatus.BAD_REQUEST, "DIRECT_EDIT400-7", "문구 색은 HEX 6자리, 크기는 10~96px이어야 합니다."),
+    TEXT_DELETE_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "DIRECT_EDIT400-8", "필수 영역이나 기능이 포함된 요소는 삭제할 수 없습니다."),
+    DUPLICATE_TEXT_INDEX(HttpStatus.BAD_REQUEST, "DIRECT_EDIT400-9", "같은 문구의 변경은 하나로 합쳐 보내주세요.");
 
     private final HttpStatus httpStatus;
     private final String code;

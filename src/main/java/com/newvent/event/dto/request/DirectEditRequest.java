@@ -105,6 +105,7 @@ public record DirectEditRequest(
     /** 배치 · 모양 말고 고친 것이 있는가 — 문구 · 버튼 스타일 · 블록 순서 */
     public boolean hasOtherEdits() {
         return (edits != null && !edits.isEmpty()) || buttonStyle != null
+                || (textStyle != null && !textStyle.isEmpty())
                 || (blockOrder != null && !blockOrder.isEmpty());
     }
 

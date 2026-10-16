@@ -1,6 +1,7 @@
 package com.newvent.event.service;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,9 +17,11 @@ import org.jsoup.select.NodeVisitor;
 
 import com.newvent.event.dto.request.ButtonStyle;
 import com.newvent.event.dto.request.TextEdit;
+import com.newvent.event.dto.request.TextFormat;
 import com.newvent.event.dto.request.TextStyle;
 import com.newvent.event.exception.DirectEditErrorCode;
 import com.newvent.event.exception.DirectEditException;
+import com.newvent.registry.Block;
 import com.newvent.registry.Slot;
 
 /**
@@ -42,14 +45,32 @@ public final class DirectEditor {
     }
 
     /** 미리보기 HTML과 저장본에 공통으로 적용하는 편집 가능 문구 순서. */
-    public record EditableText(int index, String before) {}
+    public record EditableText(int index, String before, Map<String, String> format, Integer deleteDepth) {
+        public EditableText(int index, String before) {
+            this(index, before, Map.of(), null);
+        }
+    }
 
     public static List<EditableText> editableTexts(String html) {
         Objects.requireNonNull(html, "html은 필수입니다.");
         List<TextNode> nodes = collectTextNodes(Jsoup.parseBodyFragment(html));
         List<EditableText> result = new ArrayList<>(nodes.size());
         for (int i = 0; i < nodes.size(); i++) {
-            result.add(new EditableText(i, editableValue(nodes.get(i))));
+            TextNode node = nodes.get(i);
+            Map<String, String> format = new LinkedHashMap<>();
+            if (marked(node)) {
+                Map<String, String> styles = parseInlineStyle(((Element) node.parent()).attr("style"));
+                for (String key : List.of("color", "font-size", "font-weight")) {
+                    if (styles.containsKey(key)) format.put(key, styles.get(key));
+                }
+            }
+            Element target = deletionTarget(node);
+            Integer deleteDepth = null;
+            if (target != null) {
+                deleteDepth = 0;
+                for (Node parent = node.parent(); parent != target; parent = parent.parent()) deleteDepth++;
+            }
+            result.add(new EditableText(i, editableValue(node), Map.copyOf(format), deleteDepth));
         }
         return List.copyOf(result);
     }
@@ -168,9 +189,17 @@ public final class DirectEditor {
         doc.outputSettings().prettyPrint(false);
 
         List<TextNode> textNodes = collectTextNodes(doc);
+        var indexes = new HashSet<Integer>();
+        List<Element> deletions = new ArrayList<>();
+        Map<Element, Integer> shapeCounts = new LinkedHashMap<>();
+        for (Element section : doc.select("[data-block]")) {
+            Block.find(section.attr("data-block")).filter(block -> block.must() != null)
+                    .ifPresent(block -> shapeCounts.put(section, section.select(block.must()).size()));
+        }
 
         for (TextEdit edit : edits) {
             int idx = edit.index();
+            if (!indexes.add(idx)) throw new DirectEditException(DirectEditErrorCode.DUPLICATE_TEXT_INDEX);
             if (idx < 0 || idx >= textNodes.size()) {
                 throw new DirectEditException(DirectEditErrorCode.INVALID_TEXT_INDEX);
             }
@@ -184,6 +213,19 @@ public final class DirectEditor {
                 throw new DirectEditException(DirectEditErrorCode.BEFORE_TEXT_MISMATCH);
             }
 
+            if (edit.delete()) {
+                Element target = deletionTarget(targetNode);
+                if (target == null) throw new DirectEditException(DirectEditErrorCode.TEXT_DELETE_NOT_ALLOWED);
+                deletions.add(target);
+            }
+        }
+
+        // 원본 인덱스로 모든 항목을 검증한 뒤 변경한다. 삭제는 마지막에 적용한다.
+        for (TextEdit edit : edits) {
+            if (edit.delete()) continue;
+            int idx = edit.index();
+            TextNode targetNode = textNodes.get(idx);
+
             if (!marked(targetNode)) {
                 String id = TEXT_ID_PREFIX + idx;
                 while (doc.getElementById(id) != null) id += "-next";
@@ -193,9 +235,72 @@ public final class DirectEditor {
                 holder.appendChild(targetNode);
             }
             targetNode.text(edit.after().replace("\r\n", "\n").replace('\r', '\n'));
+            applyFormat((Element) targetNode.parent(), edit.format());
         }
+        deletions.forEach(Element::remove);
+        // 개별로는 가능해도 여러 항목을 함께 지워 최소 개수를 깨뜨리는 요청은 저장하지 않는다.
+        if (!deletions.isEmpty()) shapeCounts.forEach((section, beforeCount) -> {
+            Block block = Block.of(section.attr("data-block"));
+            int minimum = Math.min(beforeCount, Math.max(1, block.minItems()));
+            if (section.select(block.must()).size() < minimum) {
+                throw new DirectEditException(DirectEditErrorCode.TEXT_DELETE_NOT_ALLOWED);
+            }
+        });
 
         return doc.body().html();
+    }
+
+    private static void applyFormat(Element holder, TextFormat format) {
+        if (format == null) return;
+        Map<String, String> styles = parseInlineStyle(holder.attr("style"));
+        if (format.reset()) {
+            for (String key : List.of("color", "-webkit-text-fill-color", "font-size", "font-weight")) styles.remove(key);
+        }
+        if (format.color() != null) {
+            styles.put("color", format.color());
+            styles.put("-webkit-text-fill-color", format.color());
+        }
+        if (format.size() != null) styles.put("font-size", format.size() + "px");
+        if (format.bold() != null) styles.put("font-weight", format.bold() ? "700" : "400");
+        holder.attr("style", serializeInlineStyle(styles));
+    }
+
+    /** 다른 문구나 기능을 포함하지 않는 가장 바깥의 문구 컨테이너까지만 삭제한다. */
+    private static Element deletionTarget(TextNode node) {
+        Element parent = (Element) node.parent();
+        if (parent.closest("[data-block=notices], [data-block=cta], [data-block=hero] h1, [data-slot], [data-behavior], a, button, label") != null) return null;
+        for (Element ancestor = parent; ancestor != null && !ancestor.hasAttr("data-block"); ancestor = ancestor.parent()) {
+            if (!ancestor.id().isEmpty() && !ancestor.id().startsWith(TEXT_ID_PREFIX)) return null;
+        }
+        Element result = null;
+        for (Element candidate = parent; candidate != null; candidate = candidate.parent()) {
+            if (candidate.hasAttr("data-block") || !candidate.is("span,p,div,li,h1,h2,h3,h4,h5,h6,strong,em,b,i,small")) break;
+            boolean unsafe = false;
+            for (Element el : candidate.getAllElements()) {
+                if (el.hasAttr("data-block") || el.hasAttr("data-slot") || el.hasAttr("data-behavior")
+                        || (!el.id().isEmpty() && !el.id().startsWith(TEXT_ID_PREFIX))
+                        || el.is("a,button,input,select,textarea,img,svg,canvas,video,iframe,script,style")) {
+                    unsafe = true;
+                    break;
+                }
+                for (var attr : el.attributes()) {
+                    if (attr.getKey().startsWith("on") || attr.getKey().startsWith("data-action")) unsafe = true;
+                }
+                for (TextNode text : el.textNodes()) {
+                    if (text != node && (!text.isBlank() || marked(text))) unsafe = true;
+                }
+            }
+            if (unsafe) break;
+            Element section = candidate.closest("[data-block]");
+            Block block = section == null ? null : Block.find(section.attr("data-block")).orElse(null);
+            if (block != null && block.must() != null) {
+                int count = section.select(block.must()).size();
+                int removed = candidate.select(block.must()).size();
+                if (count - removed < Math.min(count, Math.max(1, block.minItems()))) break;
+            }
+            result = candidate;
+        }
+        return result;
     }
 
     /**
