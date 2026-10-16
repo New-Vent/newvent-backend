@@ -26,6 +26,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * @param sourceVersionId 기준이 되는 버전의 ID (event_versions.id)
  * @param edits           수정할 문구 목록
  * @param buttonStyle     수정할 CTA 버튼 스타일 (색상, 크기, 모양)
+ * @param textStyle       제목 글자 크기 · 색. 비운 항목은 테마를 그대로 따른다
  * @param blockOrder      블록을 세울 순서. 블록 key 목록 (예: ["hero","steps","benefits"])
  * @param layout          페이지 배치 (예: "layout-bento"). 기본으로 되돌리려면 "layout-stack"
  * @param variants        영역 → 모양 (예: {"benefits":"v-benefits-grid"}). 빈 문자열이면 모양 class 를 뗀다
@@ -37,6 +38,7 @@ public record DirectEditRequest(
         @Schema(description = "고칠 문구 목록. buttonStyle 과 둘 중 하나는 있어야 한다.")
         List<@Valid TextEdit> edits,
         @Valid ButtonStyle buttonStyle,
+        @Valid TextStyle textStyle,
         List<String> blockOrder,
         @Schema(description = "페이지 배치 class. 미리보기 응답의 looks.layouts 에 있는 이름")
         String layout,
@@ -45,6 +47,7 @@ public record DirectEditRequest(
 
     public DirectEditRequest {
         if ((edits == null || edits.isEmpty()) && buttonStyle == null
+                && (textStyle == null || textStyle.isEmpty())
                 && (blockOrder == null || blockOrder.isEmpty())
                 && layout == null && (variants == null || variants.isEmpty())) {
             throw new DirectEditException(DirectEditErrorCode.EMPTY_EDIT_REQUEST);
@@ -79,7 +82,19 @@ public record DirectEditRequest(
     /** 배치 · 모양을 쓰지 않는 기존 호출을 위한 것. */
     public DirectEditRequest(Long sourceVersionId, List<TextEdit> edits, ButtonStyle buttonStyle,
                              List<String> blockOrder) {
-        this(sourceVersionId, edits, buttonStyle, blockOrder, null, null);
+        this(sourceVersionId, edits, buttonStyle, null, blockOrder, null, null);
+    }
+
+    /**
+     * textStyle 을 쓰지 않는 기존 호출을 위한 것.
+     *
+     * ★★ 구성요소를 record 가운데에 끼웠으므로 **6인자 호출이 전부 깨진다.**
+     *   한 번 겪었다 — DirectEditServiceTest 7곳이 컴파일에서 터졌다.
+     *   옛 자리 그대로 받는 생성자를 남겨 두면 부르는 쪽을 안 고쳐도 된다.
+     */
+    public DirectEditRequest(Long sourceVersionId, List<TextEdit> edits, ButtonStyle buttonStyle,
+                             List<String> blockOrder, String layout, Map<String, String> variants) {
+        this(sourceVersionId, edits, buttonStyle, null, blockOrder, layout, variants);
     }
 
     /** 배치 · 모양 중 고친 것이 있는가 */

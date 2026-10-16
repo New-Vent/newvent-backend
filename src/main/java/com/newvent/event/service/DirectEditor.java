@@ -16,6 +16,7 @@ import org.jsoup.select.NodeVisitor;
 
 import com.newvent.event.dto.request.ButtonStyle;
 import com.newvent.event.dto.request.TextEdit;
+import com.newvent.event.dto.request.TextStyle;
 import com.newvent.event.exception.DirectEditErrorCode;
 import com.newvent.event.exception.DirectEditException;
 import com.newvent.registry.Slot;
@@ -62,6 +63,11 @@ public final class DirectEditor {
      * @return 변경이 적용된 새 HTML
      */
     public static String apply(String baseHtml, List<TextEdit> edits, ButtonStyle buttonStyle) {
+        return apply(baseHtml, edits, buttonStyle, null);
+    }
+
+    public static String apply(String baseHtml, List<TextEdit> edits,
+                               ButtonStyle buttonStyle, TextStyle textStyle) {
         String html = baseHtml;
         if (edits != null && !edits.isEmpty()) {
             html = applyTextEdits(html, edits);
@@ -69,7 +75,74 @@ public final class DirectEditor {
         if (buttonStyle != null) {
             html = applyButtonStyle(html, buttonStyle);
         }
+        if (textStyle != null && !textStyle.isEmpty()) {
+            html = applyTextStyle(html, textStyle);
+        }
         return html;
+    }
+
+    /**
+     * 제목 글자 크기 · 색을 인라인 style 로 박는다.
+     *
+     * ★★ 왜 인라인인가 — CSS 를 이기는 길이 이것뿐이다. 테마가 0,4,1 로 제목을 집고 있어서
+     *   class 로는 못 이긴다(95-assets · 20-themes 에서 겪은 그대로).
+     *   인라인은 특이도 싸움 밖이라 무조건 이긴다.
+     *
+     * ★ 비운 항목은 **손대지 않는다.** 비움이 "테마를 따른다" 는 뜻이다 —
+     *   전부 박아 버리면 팔레트를 바꿔도 제목만 옛 색으로 남는다.
+     *
+     * ★ 큰 제목과 소제목을 갈라 받는다. 한 값으로 묶으면 둘의 크기 차이(위계)가 사라진다 —
+     *   "제목이 밋밋하다" 가 거기서 나온다.
+     *
+     * ★ 제목이 없는 페이지에서도 터지지 않는다. 버튼(CTA_NOT_FOUND)과 다르다 —
+     *   버튼은 반드시 있어야 하지만 소제목은 없을 수 있다.
+     */
+    public static String applyTextStyle(String baseHtml, TextStyle style) {
+        Objects.requireNonNull(baseHtml, "baseHtml은 필수입니다.");
+        if (style == null || style.isEmpty()) {
+            return baseHtml;
+        }
+
+        Document doc = Jsoup.parseBodyFragment(baseHtml);
+        doc.outputSettings().prettyPrint(false);
+
+        for (Element el : doc.select("[data-block=\"hero\"] h1")) {
+            paint(el, style.titleColor(), style.titleSize(), TITLE_SIZES);
+        }
+        // ★ hero 안의 h2 는 뺀다. 거기 h2 가 있으면 그건 큰 제목의 보조라 소제목이 아니다
+        for (Element el : doc.select("[data-block] h2, [data-block] .block-header .title")) {
+            if (el.closest("[data-block=\"hero\"]") != null) continue;
+            paint(el, style.headingColor(), style.headingSize(), HEADING_SIZES);
+        }
+        return doc.body().html();
+    }
+
+    /** 큰 제목 크기표 — rem 이 아니라 px 다. 인라인은 테마의 clamp() 를 통째로 덮는다 */
+    private static final Map<String, String> TITLE_SIZES = Map.of(
+            "small", "28px", "medium", "36px", "large", "46px", "xlarge", "58px");
+
+    private static final Map<String, String> HEADING_SIZES = Map.of(
+            "small", "18px", "medium", "22px", "large", "27px", "xlarge", "32px");
+
+    private static void paint(Element el, String color, String size, Map<String, String> table) {
+        Map<String, String> styleMap = parseInlineStyle(el.attr("style"));
+        if (color != null) {
+            styleMap.put("color", color);
+            // ★★ -webkit-text-fill-color 도 같이 박는다. 테마 · 변형이 글자를 투명하게 두고
+            //   배경을 깎아 넣는 수법을 쓰는 데가 있어서(v-hero-gradient-text),
+            //   color 만 바꾸면 **아무 일도 안 일어난다**. 95-assets 에서 같은 함정을 겪었다.
+            styleMap.put("-webkit-text-fill-color", color);
+        }
+        if (size != null) {
+            String px = table.get(size);
+            if (px != null) styleMap.put("font-size", px);
+        }
+        String serialized = serializeInlineStyle(styleMap);
+        if (serialized.isEmpty()) {
+            el.removeAttr("style");
+        } else {
+            el.attr("style", serialized);
+        }
     }
 
     /**
