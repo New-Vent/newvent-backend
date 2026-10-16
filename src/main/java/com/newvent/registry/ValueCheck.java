@@ -154,7 +154,119 @@ public final class ValueCheck {
                 .stripTrailingZeros().toPlainString();
     }
 
-    /** Failure.code 에 쓸 수 없는 문자를 제거합니다 */
+    // ── 생성: 요청에 없는 수치 ────────────────────────────────────────
+
+    /**
+     * 생성 결과의 수치를 요청과 견주는 토큰. {@link #TOKEN} 보다 단위가 많다 — 요청문은 "3기가", "퀴즈 3문제", "2매" 처럼
+     * 쓰고 모델은 "3GB", "3개" 로 바꿔 쓰기 때문이다. 표기만 다른 같은 수치를 지어낸 것으로 보면 정상 페이지가 재시도로 몰린다.
+     */
+    private static final Pattern GEN_TOKEN = Pattern.compile(
+            "\\d[\\d,]*(?:\\.\\d+)?\\s*(?:천만|천|만|억)?\\s*원(?![A-Za-z])"
+            + "|\\d[\\d,]*(?:\\.\\d+)?\\s*(?:시간|일|분|초|주|회|개월?|달|배|명|장|점|종|매|건|가지|문제|포인트"
+            + "|기가바이트|메가바이트|기가|메가|GB|MB|KB|TB|GHz|Mbps|Gbps)(?![A-Za-z])"
+            + "|\\d[\\d,]*(?:\\.\\d+)?\\s*(?:%|퍼센트|P(?![A-Za-z]))",
+            Pattern.UNICODE_CHARACTER_CLASS);
+
+    private static final Pattern GEN_PARTS = Pattern.compile("^(\\d+(?:\\.\\d+)?)(천만|천|만|억)?(.*)$");
+
+    // 생성 결과에 제목 · 요청문 · 기간에 없는 수치가 있는지 본다
+    public static List<Failure> inventedInGenerated(String html, String source) {
+        if (html == null || html.isBlank()) return List.of();
+        Set<String> allowed = new LinkedHashSet<>();
+        Matcher sm = GEN_TOKEN.matcher(source == null ? "" : source);
+        while (sm.find()) allowed.add(genKey(sm.group()));
+
+        var body = Jsoup.parseBodyFragment(html).body();
+        body.select("script, style").remove();
+        List<Failure> out = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        Matcher m = GEN_TOKEN.matcher(body.text());
+        while (m.find()) {
+            String token = m.group().strip();
+            if (allowed.contains(genKey(token)) || !seen.add(genKey(token))) continue;
+            // 기간 · 날짜는 실패가 아니라 경고다 — 모델이 4회 연속 다시 써서 단순한 요청이 실패로 끝났다(#230 종단 측정).
+            if (isPeriod(genKey(token))) {
+                out.add(Failure.of(FailureCode.VALUE_ADDED_PERIOD, sanitizeCode(token),
+                        "\"" + token + "\" 는 요청문에 없는 기간입니다.", token));
+                continue;
+            }
+            out.add(Failure.of(FailureCode.VALUE_ADDED, sanitizeCode(token),
+                    "\"" + token + "\" 는 요청문에 없는 수치입니다. 요청받지 않은 약속이 생기면 사고가 됩니다. "
+                    + "요청문에 적힌 수치만 쓰고, 값을 모르면 그 문구를 아예 빼세요."));
+        }
+        return out;
+    }
+
+    // 앞의 말이 페이지에 있는데 묶음 어느 말도 요청에 없으면 지어낸 약속으로 본다
+    // 묶음 안은 같은 뜻으로 쳐서 "예매권을 줘" 요청의 "증정" 은 허용
+    private static final String[][] PROMISE_GROUPS = {
+            {"추첨,당첨,응모,뽑", "당첨"},
+            {"경품,사은품,상품권,선물,증정,지급,제공,드려,드립,드려요,줘,줄게,준다,주는", "경품,사은품,상품권"},
+            {"할인,특가,세일,저렴", "할인"},
+            {"적립,포인트,캐시백,마일리지", "적립,캐시백,두 배"},
+            {"쿠폰", "쿠폰"},
+            {"무료,공짜,0원", "무료"},
+            {"선착순,한정", "선착순"},
+            {"전용,VIP,회원,고객,가입자,신규", "전용,VIP,초청,고객에게만"},
+    };
+
+    // 생성 결과에 요청에 없던 숫자 없는 약속(추첨·경품·할인·적립·쿠폰·무료·선착순·전용 자격)이 있는지 본다
+    public static List<Failure> promisesInGenerated(String html, String source) {
+        if (html == null || html.isBlank()) return List.of();
+        String src = source == null ? "" : source;
+        String text = Jsoup.parseBodyFragment(html).body().text();
+        List<Failure> out = new ArrayList<>();
+        for (String[] g : PROMISE_GROUPS) {
+            boolean requested = false;
+            for (String w : g[0].split(",")) if (src.contains(w)) { requested = true; break; }
+            if (requested) continue;
+            for (String w : g[1].split(",")) {
+                if (text.contains(w)) {
+                    out.add(Failure.of(FailureCode.VALUE_ADDED_PROMISE, sanitizeCode(w),
+                            "\"" + w + "\" 는 요청문에 없는 약속입니다.", w));
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    // 기간·날짜 단위의 키인가 - 시간·일·분·초·주·개월
+    private static boolean isPeriod(String key) {
+        return key.startsWith("시간:") || key.startsWith("일:") || key.startsWith("분:")
+                || key.startsWith("초:") || key.startsWith("주:") || key.startsWith("개월:");
+    }
+
+    // 수치를 (종류, 값) 키로 바꾼다 - 표기 차이(기가/GB, 문제/개, 만원/원)를 없앤다
+    static String genKey(String token) {
+        String t = token.replaceAll("\\s+", "").replace(",", "");
+        Matcher m = GEN_PARTS.matcher(t);
+        if (!m.matches()) return t;
+        BigDecimal n = new BigDecimal(m.group(1));
+        String mulUnit = m.group(2);
+        String rest = m.group(3);
+        if (rest.equals("원")) {
+            long mul = mulUnit == null ? 1L : switch (mulUnit) {
+                case "천" -> 1_000L;
+                case "만" -> 10_000L;
+                case "천만" -> 10_000_000L;
+                default -> 100_000_000L;
+            };
+            return "원:" + n.multiply(BigDecimal.valueOf(mul)).stripTrailingZeros().toPlainString();
+        }
+        // "천 · 만 · 억" 은 금액에만 붙는다. 다른 단위 앞이면 읽은 그대로 둔다
+        String num = n.stripTrailingZeros().toPlainString() + (mulUnit == null ? "" : mulUnit);
+        return switch (rest) {
+            case "GB", "기가", "기가바이트" -> "GB:" + num;
+            case "MB", "메가", "메가바이트" -> "MB:" + num;
+            case "%", "퍼센트" -> "%:" + num;
+            case "개월", "달" -> "개월:" + num;
+            case "명", "개", "장", "점", "종", "회", "배", "매", "건", "가지", "문제", "P", "포인트" -> "수량:" + num;
+            default -> rest + ":" + num;
+        };
+    }
+
+    // Failure.code 에 쓸 수 없는 문자를 제거
     private static String sanitizeCode(String token) {
         return token.replaceAll("[^a-zA-Z0-9가-힣_\\-]", "_");
     }
