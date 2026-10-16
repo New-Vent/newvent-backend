@@ -107,7 +107,7 @@ class GenerationServiceTest {
     private static RetryService.Result okWithPeriodWarning(String html, String... periods) {
         List<BlockValidator.Failure> warnings = java.util.Arrays.stream(periods)
                 .map(p -> BlockValidator.Failure.of(com.newvent.registry.FailureCode.VALUE_ADDED_PERIOD, p,
-                        "\"" + p + "\" 는 요청문에 없는 기간입니다."))
+                        "\"" + p + "\" 는 요청문에 없는 기간입니다.", p))
                 .toList();
         RetryService.Trace t = new RetryService.Trace(1, html, warnings, 10, 20, 100L, false);
         return new RetryService.Result(true, html, List.of(t));

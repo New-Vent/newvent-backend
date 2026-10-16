@@ -125,6 +125,15 @@ class ValueCheckGeneratedTest {
     }
 
     @Test
+    @DisplayName("경고에는 관리자에게 보일 원문이 담긴다 — detail 은 로그 코드라 공백이 _ 로 바뀐다")
+    void 경고에_원문이_담긴다() {
+        Failure f = ValueCheck.inventedInGenerated("<p>3 시간 동안</p>", "이벤트\n쿠폰을 줘").get(0);
+
+        assertEquals("3 시간", f.subject());
+        assertEquals("3_시간", f.detail());
+    }
+
+    @Test
     @DisplayName("요청에 있던 기간은 경고도 아니다 — '7일 이내 사용' 이라고 쓰면 그대로 쓴다")
     void 요청에_있는_기간은_허용한다() {
         String source = "월드컵 스코어 맞추기\n스코어를 맞추면 치킨 쿠폰을 주는 이벤트, 7일 이내 사용";

@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 
 import com.newvent.generation.service.RequestFilter;
 
-/** 개인정보 후보 탐지. 주소는 국내 도로명/지번의 명시적인 형태만 지원한다. */
+// 개인정보 후보 탐지. 주소는 국내 도로명/지번의 명시적인 형태만 지원한다
 public final class PrivacyDetector {
     private static final Pattern RESIDENT = Pattern.compile("(?<!\\d)\\d{6}[ \\-]?[1-8]\\d{6}(?!\\d)");
     private static final Pattern PHONE = Pattern.compile(

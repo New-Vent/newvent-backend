@@ -169,21 +169,7 @@ public final class ValueCheck {
 
     private static final Pattern GEN_PARTS = Pattern.compile("^(\\d+(?:\\.\\d+)?)(천만|천|만|억)?(.*)$");
 
-    /**
-     * 생성 결과에 **제목 · 요청문 · 기간에 없는 수치**가 있는지 본다.
-     *
-     * ★ 왜 — 생성 시험에서 22개 페이지 중 19개가 요청에 없는 수치("영화 예매권 2매", "추가 데이터 10GB",
-     *   "월 요금 44,000원 → 33,000원", "참여만 해도 100% 당첨")를 담았다(#230). 프롬프트의 "지어내지 마라" 만으로는
-     *   못 막았고, 검증기는 연도만 봤다({@link BlockValidator#validateGenerated}). 수정 경로는 이미
-     *   {@link #diff} 로 막고 있다 — 생성에도 같은 사고 기준을 쓴다.
-     * ★ 수치는 (종류, 값)으로 견준다. 3기가 = 3GB, 3문제 = 3개, 3만원 = 30,000원.
-     *   종류가 다르면 같은 숫자여도 다르다 — 요청의 "10명" 이 "10GB" 를 허용하지 않는다.
-     * ★ 단위가 붙은 수치만 본다. 연도 · 순서 번호 · 단계 번호는 오탐이 커서 보지 않는다(위 {@link #TOKEN} 과 같은 선택).
-     *
-     * @param html   모델이 쓴 영역들(유의사항 등 서버 영역은 아직 없다)
-     * @param source 제목 · 요청문 · 기간을 이은 글
-     * @return 요청에 없는 수치마다 {@code VALUE_ADDED}(재시도). 없으면 빈 목록
-     */
+    // 생성 결과에 제목 · 요청문 · 기간에 없는 수치가 있는지 본다
     public static List<Failure> inventedInGenerated(String html, String source) {
         if (html == null || html.isBlank()) return List.of();
         Set<String> allowed = new LinkedHashSet<>();
@@ -201,7 +187,7 @@ public final class ValueCheck {
             // 기간 · 날짜는 실패가 아니라 경고다 — 모델이 4회 연속 다시 써서 단순한 요청이 실패로 끝났다(#230 종단 측정).
             if (isPeriod(genKey(token))) {
                 out.add(Failure.of(FailureCode.VALUE_ADDED_PERIOD, sanitizeCode(token),
-                        "\"" + token + "\" 는 요청문에 없는 기간입니다."));
+                        "\"" + token + "\" 는 요청문에 없는 기간입니다.", token));
                 continue;
             }
             out.add(Failure.of(FailureCode.VALUE_ADDED, sanitizeCode(token),
@@ -211,10 +197,8 @@ public final class ValueCheck {
         return out;
     }
 
-    /**
-     * 숫자 없는 약속의 말 묶음 (#230). 앞의 말이 페이지에 있는데 묶음 어느 말도 요청에 없으면 지어낸 약속으로 본다.
-     * 묶음 안은 같은 뜻으로 쳐서 "예매권을 줘" 요청의 "증정" 은 허용한다 — 정상 페이지에 경고가 붙으면 알림이 무뎌진다.
-     */
+    // 앞의 말이 페이지에 있는데 묶음 어느 말도 요청에 없으면 지어낸 약속으로 본다
+    // 묶음 안은 같은 뜻으로 쳐서 "예매권을 줘" 요청의 "증정" 은 허용
     private static final String[][] PROMISE_GROUPS = {
             {"추첨,당첨,응모,뽑", "당첨"},
             {"경품,사은품,상품권,선물,증정,지급,제공,드려,드립,드려요,줘,줄게,준다,주는", "경품,사은품,상품권"},
@@ -226,13 +210,7 @@ public final class ValueCheck {
             {"전용,VIP,회원,고객,가입자,신규", "전용,VIP,초청,고객에게만"},
     };
 
-    /**
-     * 생성 결과에 요청에 없던 **숫자 없는 약속**(추첨 · 경품 · 할인 · 적립 · 쿠폰 · 무료 · 선착순 · 전용 자격)이 있는지 본다.
-     *
-     * ★ 왜 — 수치를 막아도 모델은 혜택이 없는 요청에 "포인트 두 배 적립", "프리미엄 고객 전용 할인", "응모 → 당첨자 발표" 를 채웠다.
-     *   숫자가 없어 {@link #inventedInGenerated} 가 못 잡는다.
-     * ★ **경고만** 한다. 단어 검사라 "추첨" 요청의 "당첨" 같은 말이 오탐될 수 있고, 막으면 정상 요청이 재시도로 몰린다(기간과 같은 결정).
-     */
+    // 생성 결과에 요청에 없던 숫자 없는 약속(추첨·경품·할인·적립·쿠폰·무료·선착순·전용 자격)이 있는지 본다
     public static List<Failure> promisesInGenerated(String html, String source) {
         if (html == null || html.isBlank()) return List.of();
         String src = source == null ? "" : source;
@@ -245,7 +223,7 @@ public final class ValueCheck {
             for (String w : g[1].split(",")) {
                 if (text.contains(w)) {
                     out.add(Failure.of(FailureCode.VALUE_ADDED_PROMISE, sanitizeCode(w),
-                            "\"" + w + "\" 는 요청문에 없는 약속입니다."));
+                            "\"" + w + "\" 는 요청문에 없는 약속입니다.", w));
                     break;
                 }
             }
@@ -253,13 +231,13 @@ public final class ValueCheck {
         return out;
     }
 
-    /** 기간 · 날짜 단위의 키인가 — 시간 · 일 · 분 · 초 · 주 · 개월 */
+    // 기간·날짜 단위의 키인가 - 시간·일·분·초·주·개월 
     private static boolean isPeriod(String key) {
         return key.startsWith("시간:") || key.startsWith("일:") || key.startsWith("분:")
                 || key.startsWith("초:") || key.startsWith("주:") || key.startsWith("개월:");
     }
 
-    /** 수치를 (종류, 값) 키로 바꾼다 — 표기 차이(기가/GB, 문제/개, 만원/원)를 없앤다 */
+    // 수치를 (종류, 값) 키로 바꾼다 - 표기 차이(기가/GB, 문제/개, 만원/원)를 없앤다
     static String genKey(String token) {
         String t = token.replaceAll("\\s+", "").replace(",", "");
         Matcher m = GEN_PARTS.matcher(t);
@@ -288,7 +266,7 @@ public final class ValueCheck {
         };
     }
 
-    /** Failure.code 에 쓸 수 없는 문자를 제거합니다 */
+    // Failure.code 에 쓸 수 없는 문자를 제거
     private static String sanitizeCode(String token) {
         return token.replaceAll("[^a-zA-Z0-9가-힣_\\-]", "_");
     }

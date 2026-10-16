@@ -393,11 +393,11 @@ public class GenerationService {
     private void notePeriodWarnings(GenerationJob job, GenerateCommand cmd, RetryService.Result res) {
         List<String> periods = res.lastWarnings().stream()
                 .filter(f -> f.kind() == com.newvent.registry.FailureCode.VALUE_ADDED_PERIOD)
-                .map(f -> f.message().replaceAll("^\"(.*?)\".*$", "$1"))
+                .map(com.newvent.registry.BlockValidator.Failure::subject)
                 .distinct().toList();
         List<String> promises = res.lastWarnings().stream()
                 .filter(f -> f.kind() == com.newvent.registry.FailureCode.VALUE_ADDED_PROMISE)
-                .map(f -> f.message().replaceAll("^\"(.*?)\".*$", "$1"))
+                .map(com.newvent.registry.BlockValidator.Failure::subject)
                 .distinct().toList();
         if (periods.isEmpty() && promises.isEmpty()) return;
         log.warn("REQ-LLM-41 — 요청에 없던 기간 {} · 약속 {} (event={}). 저장은 했고 관리자에게 알린다.",
