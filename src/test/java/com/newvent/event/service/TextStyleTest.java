@@ -9,7 +9,9 @@ import org.jsoup.nodes.Document;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.newvent.common.exception.code.ErrorCode;
 import com.newvent.event.dto.request.TextStyle;
+import com.newvent.event.exception.DirectEditErrorCode;
 import com.newvent.event.exception.DirectEditException;
 
 /**
@@ -96,13 +98,25 @@ class TextStyleTest {
         assertTrue(out.contains("color: #111111"), out);
     }
 
+    /**
+     * ★★ 코드까지 본다. 버튼 코드(INVALID_BUTTON_STYLE)를 돌려쓰면 제목 색·크기를 틀려도
+     *   화면에 "지원하지 않는 버튼 스타일 값입니다" 가 뜬다 — 관리자가 버튼을 쳐다보게 된다.
+     */
     @Test
-    @DisplayName("못 쓰는 값은 거절한다")
+    @DisplayName("★ 못 쓰는 값은 제목 전용 코드로 거절한다")
     void 못_쓰는_값() {
-        assertThrows(DirectEditException.class, () -> new TextStyle("red", null, null, null));
-        assertThrows(DirectEditException.class, () -> new TextStyle("#fff", null, null, null));
-        assertThrows(DirectEditException.class, () -> new TextStyle(null, "huge", null, null));
+        assertEquals(DirectEditErrorCode.INVALID_TEXT_STYLE, codeOf("red", null, null, null));
+        assertEquals(DirectEditErrorCode.INVALID_TEXT_STYLE, codeOf("#fff", null, null, null));
+        assertEquals(DirectEditErrorCode.INVALID_TEXT_STYLE, codeOf(null, "huge", null, null));
+        assertEquals(DirectEditErrorCode.INVALID_TEXT_STYLE, codeOf(null, null, "초록", null));
+        assertEquals(DirectEditErrorCode.INVALID_TEXT_STYLE, codeOf(null, null, null, "bigger"));
+
         assertEquals("#aabbcc", new TextStyle("#AABBCC", null, null, null).titleColor());
+    }
+
+    private static ErrorCode codeOf(String titleColor, String titleSize, String headingColor, String headingSize) {
+        return assertThrows(DirectEditException.class,
+                () -> new TextStyle(titleColor, titleSize, headingColor, headingSize)).getErrorCode();
     }
 
     // ★ 버튼(CTA_NOT_FOUND)과 다르다. 버튼은 반드시 있어야 하지만 제목은 없을 수 있다

@@ -53,7 +53,7 @@ public record TextStyle(
         String t = value.trim();
         if (t.isEmpty()) return null;
         if (!HEX_COLOR.matcher(t).matches()) {
-            throw new DirectEditException(DirectEditErrorCode.INVALID_BUTTON_STYLE);
+            throw new DirectEditException(DirectEditErrorCode.INVALID_TEXT_STYLE);
         }
         return t.toLowerCase();
     }
@@ -63,7 +63,7 @@ public record TextStyle(
         String t = value.trim().toLowerCase();
         if (t.isEmpty()) return null;
         if (!SIZES.contains(t)) {
-            throw new DirectEditException(DirectEditErrorCode.INVALID_BUTTON_STYLE);
+            throw new DirectEditException(DirectEditErrorCode.INVALID_TEXT_STYLE);
         }
         return t;
     }
