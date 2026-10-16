@@ -231,7 +231,7 @@ public final class ValueCheck {
         return out;
     }
 
-    // 기간·날짜 단위의 키인가 - 시간·일·분·초·주·개월 
+    // 기간·날짜 단위의 키인가 - 시간·일·분·초·주·개월
     private static boolean isPeriod(String key) {
         return key.startsWith("시간:") || key.startsWith("일:") || key.startsWith("분:")
                 || key.startsWith("초:") || key.startsWith("주:") || key.startsWith("개월:");
