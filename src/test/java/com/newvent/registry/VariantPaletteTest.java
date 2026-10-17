@@ -605,10 +605,12 @@ class VariantPaletteTest {
     @DisplayName("★ 배치 안내 — 생성과 '영역을 안 고른 백지 hero 수정' 에만 나가고, 라우터는 hero STYLE 예시를 갖는다")
     void 배치_프롬프트() {
         String gen = PromptBuilder.generate("가을 이벤트");
-        for (Layout l : Layout.all()) assertTrue(gen.contains(l.cssClass()), l.cssClass() + " 가 생성 프롬프트에 없습니다");
-
         String hero = PromptBuilder.edit(Block.HERO, false, true);
-        for (Layout l : Layout.all()) assertTrue(hero.contains(l.cssClass()), l.cssClass() + " 가 hero 수정 프롬프트에 없습니다");
+        for (Layout l : Layout.all()) {
+            // 기본 배치는 늘 실리고, 확장 배치는 요청문이 부를 때만 실린다 (Layout.forPrompt)
+            assertEquals(l.core(), gen.contains(l.cssClass()), l.cssClass() + " — 생성 프롬프트");
+            assertEquals(l.core(), hero.contains(l.cssClass()), l.cssClass() + " — hero 수정 프롬프트");
+        }
 
         assertFalse(PromptBuilder.edit(Block.HERO, false, false).contains(Layout.PREFIX), "영역을 고른 수정에 배치가 안내됐습니다 — 선택 밖이 움직입니다");
         assertFalse(PromptBuilder.edit(Block.HERO, true, true).contains(Layout.PREFIX), "템플릿 hero 에 배치가 안내됐습니다");

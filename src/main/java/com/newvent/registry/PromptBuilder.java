@@ -263,7 +263,7 @@ public final class PromptBuilder {
         }
         addMatchedPalettes(s, seed);
         s.add("- 페이지 배치: hero 의 class 에 아래 중 하나를 붙인다 (하나만). 영역들이 페이지에 놓이는 자리다.");
-        for (Layout l : Layout.all()) s.add("    " + l.cssClass() + " : " + l.desc());
+        for (Layout l : Layout.forPrompt(seed)) s.add("    " + l.cssClass() + " : " + l.desc());
         s.add(LAYOUT_CRITERIA);
     }
 
@@ -502,7 +502,7 @@ public final class PromptBuilder {
             addMatchedTheme(s, requestText);
             s.add("- 페이지 배치: 영역들이 페이지에 놓이는 자리를 바꿔 달라는 요청이면 "
                     + "아래 중 하나를 <section> 의 class 에 붙인다 (하나만). 페이지 전체에 적용된다.");
-            for (Layout l : Layout.all()) s.add("    " + l.cssClass() + " : " + l.desc());
+            for (Layout l : Layout.forPrompt(requestText)) s.add("    " + l.cssClass() + " : " + l.desc());
             s.add("  ★ 페이지 배치만 바꿔 달라는 요청이면 layout-* 하나만 붙인다. "
                     + "이 영역의 배치(v-hero-*) · 페이지 분위기(theme-*) · 색감(palette-*)은 지금 그대로 둔다.");
         }

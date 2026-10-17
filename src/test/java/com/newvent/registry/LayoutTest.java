@@ -173,4 +173,18 @@ class LayoutTest {
         assertEquals(3, Layout.MASONRY.minContentBlocks());
         assertEquals(3, Layout.L_SHAPE.minContentBlocks());
     }
+
+    @Test
+    @DisplayName("확장 배치(벽돌 · 타임라인 · L자 · 참여 레일)는 요청문이 부를 때만 프롬프트 목록에 실린다")
+    void 확장_배치는_부를_때만_실린다() {
+        List<Layout> plain = Layout.forPrompt("데이터 3GB 를 주는 신규 가입 이벤트");
+        assertTrue(plain.stream().allMatch(Layout::core), "부르지 않았는데 확장 배치가 실렸습니다: " + plain);
+        assertEquals(Layout.all().stream().filter(Layout::core).toList(), plain);
+
+        assertTrue(Layout.forPrompt("페이지를 벽돌 배치로 바꿔줘").contains(Layout.MASONRY));
+        assertTrue(Layout.forPrompt("타임라인처럼 흐르는 페이지").contains(Layout.TIMELINE));
+        assertTrue(Layout.forPrompt("L자 배치로").contains(Layout.L_SHAPE));
+        assertTrue(Layout.forPrompt("참여 레일 배치로").contains(Layout.CTA_RAIL));
+        assertFalse(Layout.forPrompt("참여 방법을 친절하게").contains(Layout.CTA_RAIL), "'참여' 만으로 참여 레일을 끌어오면 안 된다");
+    }
 }
