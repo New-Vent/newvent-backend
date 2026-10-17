@@ -2,6 +2,7 @@ package com.newvent.event.service;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -20,6 +21,7 @@ import org.jsoup.select.NodeVisitor;
 import com.newvent.event.dto.request.ButtonStyle;
 import com.newvent.event.dto.request.DirectEditRequest.ItemRemoval;
 import com.newvent.event.dto.request.TextEdit;
+import com.newvent.event.dto.request.TextFormat;
 import com.newvent.event.dto.request.TextStyle;
 import com.newvent.event.exception.DirectEditErrorCode;
 import com.newvent.event.exception.DirectEditException;
@@ -48,14 +50,26 @@ public final class DirectEditor {
     }
 
     /** 미리보기 HTML과 저장본에 공통으로 적용하는 편집 가능 문구 순서. */
-    public record EditableText(int index, String before) {}
+    public record EditableText(int index, String before, Map<String, String> format) {
+        public EditableText(int index, String before) {
+            this(index, before, Map.of());
+        }
+    }
 
     public static List<EditableText> editableTexts(String html) {
         Objects.requireNonNull(html, "html은 필수입니다.");
         List<TextNode> nodes = collectTextNodes(Jsoup.parseBodyFragment(html));
         List<EditableText> result = new ArrayList<>(nodes.size());
         for (int i = 0; i < nodes.size(); i++) {
-            result.add(new EditableText(i, editableValue(nodes.get(i))));
+            TextNode node = nodes.get(i);
+            Map<String, String> format = new LinkedHashMap<>();
+            if (marked(node)) {
+                Map<String, String> styles = parseInlineStyle(((Element) node.parent()).attr("style"));
+                for (String key : List.of("color", "font-size", "font-weight")) {
+                    if (styles.containsKey(key)) format.put(key, styles.get(key));
+                }
+            }
+            result.add(new EditableText(i, editableValue(node), Map.copyOf(format)));
         }
         return List.copyOf(result);
     }
@@ -217,9 +231,11 @@ public final class DirectEditor {
         doc.outputSettings().prettyPrint(false);
 
         List<TextNode> textNodes = collectTextNodes(doc);
+        var indexes = new HashSet<Integer>();
 
         for (TextEdit edit : edits) {
             int idx = edit.index();
+            if (!indexes.add(idx)) throw new DirectEditException(DirectEditErrorCode.DUPLICATE_TEXT_INDEX);
             if (idx < 0 || idx >= textNodes.size()) {
                 throw new DirectEditException(DirectEditErrorCode.INVALID_TEXT_INDEX);
             }
@@ -233,6 +249,13 @@ public final class DirectEditor {
                 throw new DirectEditException(DirectEditErrorCode.BEFORE_TEXT_MISMATCH);
             }
 
+        }
+
+        // 원본 인덱스로 모든 항목을 검증한 뒤 문구와 서식을 변경한다.
+        for (TextEdit edit : edits) {
+            int idx = edit.index();
+            TextNode targetNode = textNodes.get(idx);
+
             if (!marked(targetNode)) {
                 String id = TEXT_ID_PREFIX + idx;
                 while (doc.getElementById(id) != null) id += "-next";
@@ -242,9 +265,25 @@ public final class DirectEditor {
                 holder.appendChild(targetNode);
             }
             targetNode.text(edit.after().replace("\r\n", "\n").replace('\r', '\n'));
+            applyFormat((Element) targetNode.parent(), edit.format());
         }
 
         return doc.body().html();
+    }
+
+    private static void applyFormat(Element holder, TextFormat format) {
+        if (format == null) return;
+        Map<String, String> styles = parseInlineStyle(holder.attr("style"));
+        if (format.reset()) {
+            for (String key : List.of("color", "-webkit-text-fill-color", "font-size", "font-weight")) styles.remove(key);
+        }
+        if (format.color() != null) {
+            styles.put("color", format.color());
+            styles.put("-webkit-text-fill-color", format.color());
+        }
+        if (format.size() != null) styles.put("font-size", format.size() + "px");
+        if (format.bold() != null) styles.put("font-weight", format.bold() ? "700" : "400");
+        holder.attr("style", serializeInlineStyle(styles));
     }
 
     /**
