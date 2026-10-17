@@ -32,6 +32,16 @@ public class EventAsset extends BaseTimeEntity {
     @Column(name = "event_id", nullable = false, updatable = false)
     private Long eventId;
 
+    /**
+     * 이벤트별 고정 번호 — 관리자가 "2번 이미지" 라고 말하는 그 번호다.
+     *
+     * ★★ 목록 순서로 세면 1번을 지운 순간 2번이 1번이 된다.
+     *   "1번 이미지를 배경으로" 가 다른 사진을 가리키게 되고 관리자는 그걸 모른다.
+     * ★ 다시 쓰지 않는다. 지운 번호는 구멍으로 남는다 (1, 3, 4).
+     */
+    @Column(nullable = false, updatable = false)
+    private int seq;
+
     /** ImageProbe 가 디코딩해서 알아낸 형식 — 브라우저가 보낸 값이 아니다 */
     @Column(nullable = false, length = 8, updatable = false)
     private String extension;
@@ -62,10 +72,11 @@ public class EventAsset extends BaseTimeEntity {
     @Column(length = 120)
     private String caption;
 
-    public EventAsset(String id, Long eventId, String extension, String contentType,
+    public EventAsset(String id, Long eventId, int seq, String extension, String contentType,
                       long byteSize, String url, double scrim, Asset.Tone tone, String caption) {
         this.id = id;
         this.eventId = eventId;
+        this.seq = seq;
         this.extension = extension;
         this.contentType = contentType;
         this.byteSize = byteSize;

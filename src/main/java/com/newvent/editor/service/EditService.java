@@ -40,6 +40,7 @@ import com.newvent.registry.AssetEdit;
 import com.newvent.registry.Block;
 import com.newvent.registry.BlockMerge;
 import com.newvent.registry.BlockValidator;
+import com.newvent.registry.ColorWords;
 import com.newvent.registry.Layout;
 import com.newvent.registry.PageShell;
 import com.newvent.registry.Palette;
@@ -312,7 +313,7 @@ public class EditService {
             if (job.checkCancelled()) return;
             String beforeStep = BlockValidator.blockOf(doc, step.block());
 
-            Applied applied = apply(job, cmd, doc, step);
+            Applied applied = apply(job, cmd, doc, step, plan.size() > 1);
             if (applied == null) return;
 
             doc = applied.html();
@@ -376,7 +377,8 @@ public class EditService {
     private boolean applyAssetEdit(GenerationJob job, EditCommand cmd, String doc,
                                    VersionStore.Snapshot base) {
         List<Asset.Ref> uploaded = assets.assetsOf(cmd.eventId());
-        AssetEdit.Result read = AssetEdit.read(cmd.requestText(), uploaded.size());
+        // ★ 페이지를 같이 준다. "배경 없애줘" 를 받을지 비켜설지는 **지금 사진이 있는지**로 갈린다
+        AssetEdit.Result read = AssetEdit.read(cmd.requestText(), uploaded, doc);
 
         // ★★ 막힌 조합은 **모델에게 안 넘긴다.** 또렷하게 말한 요청이라 모델이 받으면
         //   어떻게든 끼워 넣는다 — 혜택 카드 하나에 사진이 통째로 들어가 레이아웃이 깨졌다.
@@ -401,11 +403,12 @@ public class EditService {
         after = PageShell.settle(after);
         job.to(GenerationJob.Phase.SAVING);
 
-        // ★ 자리를 안 말하고 뺀 경우에는 role · block 이 없다 (AssetEdit.Plan 참고)
-        String summary = step.role() == null
-                ? step.index() + "번 이미지 제거"
-                : (step.remove() ? "이미지 제거 — " : "이미지 배치 — ")
-                        + step.block().key() + " " + step.role().cssClass();
+        // ★★ 자리를 안 말하고 뺀 경우에는 role · block 이 **둘 다 null** 이다 (AssetEdit.Plan 참고).
+        //   그래서 role 을 먼저 보고, null 이 아닐 때만 자리 이름을 만든다 —
+        //   여기서 null 검사를 뒤로 미뤘다가 "1번 이미지 빼줘" 에 NPE 가 났다(실측).
+        // ★ 사람이 읽는 이름으로 쓴다. key() · cssClass() 를 그대로 쓰면
+        //   버전 이력에 "hero ev-asset-bg" 가 찍힌다 — 관리자가 CSS class 를 읽게 된다.
+        String summary = AssetEdit.summary(step);
         VersionStore.Saved saved =
                 versions.save(cmd.eventId(), after, base.versionId(), summary, job.chatRequestId());
         log.info("이미지 수정 저장 (event={}, versionId={}, v{}, source=v{}) — 모델 호출 0회",
@@ -611,6 +614,25 @@ public class EditService {
                 }
             }
         }
+        // ★ 팔레트로 낼 수 없는 색을 말했으면 모델이 팔레트를 고르기 전에 되묻는다.
+        //   "바탕색은 노란색으로" 에 노란 팔레트가 없어서, 봄(분홍) 같은 엉뚱한 걸 골라 놓고 "반영했어요" 가 나갔다.
+        //   페이지 전체 색감 경로(hero STYLE)에서만 본다 — 영역 하나의 배경은 색 이름 변형(v-surface-yellow …)이 받는다.
+        //   영역을 골라 고치는 요청(hasBlocks)에는 팔레트를 안내하지 않으므로 이 길을 안 탄다.
+        // ★ 한 요청에 페이지 전체 색과 영역 배경색이 같이 있을 수 있다("제목은 파랑, 혜택 배경은 노랑").
+        //   라우터가 hero 말고 STYLE 로 짚은 영역을 넘겨, 그 영역을 가리키는 말이 있는 절의 색은 세지 않는다(PR #226 리뷰).
+        if (!cmd.hasBlocks() && plan.stream().anyMatch(r -> r.block() == Block.HERO && r.op() == Op.STYLE)) {
+            List<Block> areaBlocks = plan.stream()
+                    .filter(r -> r.op() == Op.STYLE && r.block() != Block.HERO)
+                    .map(Decision.Run::block).toList();
+            Optional<ColorWords.Unsupported> unsupported =
+                    ColorWords.firstUnsupported(RequestFilter.clean(cmd.requestText()), areaBlocks);
+            if (unsupported.isPresent()) {
+                log.info("수정 — 팔레트에 없는 색이라 되묻는다 (event={}, 색={})",
+                        cmd.eventId(), unsupported.get().group().name());
+                job.askBack(ColorWords.message(unsupported.get()));
+                return null;
+            }
+        }
         log.info("수정 계획 (event={}, job={}) — {}", cmd.eventId(), job.jobId(),
                 plan.stream().map(r -> r.op() + ":" + r.block().key()).toList());
         return plan;
@@ -652,7 +674,7 @@ public class EditService {
     /**
      * 연산 하나를 문서에 반영한다.
      */
-    private Applied apply(GenerationJob job, EditCommand cmd, String doc, Decision.Run step) {
+    private Applied apply(GenerationJob job, EditCommand cmd, String doc, Decision.Run step, boolean multiArea) {
         Block block = step.block();
         String before = BlockValidator.blockOf(doc, block);
 
@@ -697,7 +719,8 @@ public class EditService {
         // ★ 항목 하나를 더하는 요청인가. 시스템 프롬프트 · 사용자 프롬프트 · 검증기
         //   **세 곳이 같은 답**을 써야 한다. 한 곳이라도 빠지면 지시가 어긋나고,
         //   어긋난 지시를 받은 모델은 그대로 두거나 지어낸다 — 둘 다 실패다
-        boolean addItem = step.op() == Op.ADD && !before.isBlank();
+        boolean createFormBlock = step.op() == Op.ADD && before.isBlank() && block.itemsAreFormValues();
+        boolean addItem = step.op() == Op.ADD && (!before.isBlank() || createFormBlock);
 
         // ★ 한 번만 읽는다. 프롬프트에 주는 목록과 검증기가 대조하는 목록이
         //   **같아야** 한다 — 두 번 읽으면 그 사이에 삭제된 이미지를 안내하게 된다
@@ -714,8 +737,8 @@ public class EditService {
                     //   그대로 나가서, 사용자 프롬프트의 "하나만 더한다" 와 정면으로 어긋난다
                     // ★★ 올라온 이미지 목록을 같이 넘긴다. 비면 안내가 한 줄도 안 나간다
                     PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks(),
-                            step.op() == Op.STYLE, addItem, uploaded),
-                    userPrompt(cmd, step, before, serverLayout != null),
+                            step.op() == Op.STYLE, addItem, uploaded, createFormBlock),
+                    userPrompt(cmd, step, before, serverLayout != null, multiArea),
                     // ★ 항목을 하나 더하는 요청이면 검증기에 그렇게 알린다. 안 알리면
                     //   ITEM_ADDED 로 4회가 전부 터지고 관리자는 이유를 못 듣는다
                     // ★★ **같은 목록**을 검증기에도 준다. 여기 없는 src 는 <img> 째로 떨어진다 —
@@ -832,7 +855,13 @@ public class EditService {
      *
      * ★ 현재 내용을 준다. 이게 없으면 모델은 무엇을 고칠지 모른다
      */
-    private static String userPrompt(EditCommand cmd, Decision.Run step, String before, boolean serverSetsLayout) {
+    /** 사용자에게도 모델에게도 읽히는 영역 이름 — "혜택 — 항목은 폼 값…" 에서 앞 낱말만 */
+    private static String areaName(Block block) {
+        return block.desc().split("[—.]")[0].strip();
+    }
+
+    private static String userPrompt(EditCommand cmd, Decision.Run step, String before, boolean serverSetsLayout,
+                                     boolean multiArea) {
         StringJoiner s = new StringJoiner("\n");
         if (cmd.title() != null && !cmd.title().isBlank()) {
             s.add("이벤트 제목: " + cmd.title().strip());
@@ -843,6 +872,16 @@ public class EditService {
         //   보여 주면 "좌우로 나눠줘" 를 읽고 hero 자체 모양(v-hero-split)을 바꾼다 — 배치를 서버로 옮긴 이유가 그것이다
         s.add(RequestFilter.clean(serverSetsLayout ? Layout.withoutLayoutTalk(cmd.requestText()) : cmd.requestText()));
         s.add("");
+
+        // ★ 영역마다 모델을 따로 부르는데 요청문은 통째로 간다. 여러 영역이 섞인 요청("전체는 파랑으로 바꾸고 혜택 배경은
+        //   노랑으로")에서 모델이 다른 영역의 색을 집었다 — 혜택 호출에서 노랑 대신 파랑을 골랐다(실측, PR #226 리뷰).
+        //   이 호출이 맡은 영역을 말해 주고 그 영역 몫만 따르게 한다. 영역이 하나뿐인 요청에는 붙이지 않는다.
+        if (multiArea) {
+            s.add("[이번 호출은 한 영역만 고친다]");
+            s.add("- 위 요청에는 다른 영역 이야기도 섞여 있다. **" + areaName(step.block()) + "** 영역에 해당하는 부분만 따른다.");
+            s.add("- 다른 영역에 대한 말(색 · 문구 · 모양)은 이 영역에 적용하지 않는다.");
+            s.add("");
+        }
 
         if (step.content() != null && !step.content().isBlank()) {
             s.add("[관리자가 직접 쓴 문구 — 이 문구를 그대로 쓴다]");
@@ -863,6 +902,14 @@ public class EditService {
         if (before.isBlank()) {
             s.add("[현재 상태]");
             s.add("이 영역이 아직 없습니다. 새로 만드세요.");
+            if (step.op() == Op.ADD && step.block() == Block.BENEFITS) {
+                s.add("혜택 블록을 처음부터 복원합니다. 아래 관리자가 적은 내용으로 혜택 항목을 정확히 1개만 만드세요.");
+                s.add("<section data-block=\"benefits\" class=\"v-benefits-grid v-surface-tint\"> 안에 소제목과 <ul><li> 하나를 둡니다. <li> 안에 .benefit-icon 이모지와 .benefit-name 혜택명을 둡니다.");
+                s.add("요청에 없는 설명, 금액, 수량, 기간은 만들지 마세요. 근거가 없는 .benefit-desc 또는 .benefit-value 는 비워 둔 요소를 만들지 말고 생략하세요.");
+            } else if (step.op() == Op.ADD && step.block() == Block.PRIZE) {
+                s.add("경품 블록을 표준 서식으로 처음부터 만듭니다. <section data-block=\"prize\" class=\"v-prize-list\"> 안에 <div class=\"block-header\"><div class=\"sub-label\">Prize</div><h2 class=\"title\">경품 안내</h2></div> 와 <ul><li> 경품 항목 하나를 둡니다.");
+                s.add("관리자가 적은 경품 내용만 사용하세요. 등수, 당첨 인원, 추첨 조건 등 요청에 없는 내용을 추가하지 마세요.");
+            }
         } else {
             s.add("[현재 내용 — 이 영역을 수정한다]");
             s.add(before);

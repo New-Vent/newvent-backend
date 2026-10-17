@@ -179,29 +179,22 @@ public final class PromptBuilder {
         //   분량을 말로만 시키는 것보다 보여주는 쪽이 세다.
         s.add("예:");
         s.add("<section data-block=\"hero\" class=\"v-hero-center palette-summer\">");
-        s.add("  <span class=\"badge\">선착순</span>");
+        s.add("  <span class=\"badge\">이벤트</span>");
         s.add("  <h1>여름 데이터 대방출</h1>");
         s.add("  <p>이번 여름, 데이터 걱정 없이 마음껏 즐기세요.</p>");
         s.add("</section>");
         s.add("<section data-block=\"benefits\" class=\"v-benefits-grid v-surface-tint\">");
         s.add("  <div class=\"block-header\"><div class=\"sub-label\">Event Benefits</div>");
         s.add("    <h2 class=\"title\">이벤트 혜택</h2></div>");
+        // ★ 예시에 구체적인 값(3GB · 55,000원 → 38,500원 · 6개월 한정)을 두지 않는다.
+        //   모델이 그 값과 같은 숫자(5GB · 10GB · 월 요금 할인)를 요청에 없는데도 그대로 베껴 썼다 —
+        //   생성 시험 22개 페이지 중 19개가 요청에 없는 수치를 담았다(Bedrock 실측, #230).
+        //   값이 없는 카드 하나를 보여 준다: 받는 값은 요청문에 값이 있을 때만 쓴다.
         s.add("  <ul>");
         s.add("    <li>");
-        s.add("      <div class=\"benefit-icon\">\uD83D\uDCF6</div>");
-        s.add("      <div class=\"benefit-name\">데이터 <strong class=\"t-accent\">3GB</strong> 지급</div>");
-        s.add("      <div class=\"benefit-desc\">가입을 완료하면 바로 사용할 수 있습니다.</div>");
-        s.add("      <div class=\"benefit-value\">즉시 지급</div>");
-        s.add("    </li>");
-        // ★ 둘째 카드는 "할인 혜택" 꼴을 보여준다 — 꼬리말 · 취소선 · 큰 숫자.
-        //   말로 "가격을 강조해라" 라고 하는 것보다 한 번 보여주는 쪽이 세다.
-        s.add("    <li>");
-        s.add("      <span class=\"benefit-tag\">6개월 한정</span>");
-        s.add("      <div class=\"benefit-icon\">\uD83C\uDF9F\uFE0F</div>");
-        s.add("      <div class=\"benefit-name\">월 요금 할인</div>");
-        s.add("      <div class=\"benefit-desc\">가입 후 6개월 동안 자동으로 적용됩니다.</div>");
-        s.add("      <div class=\"benefit-value\"><span class=\"t-strike\">55,000원</span> "
-                + "<strong class=\"t-big\">38,500</strong>원</div>");
+        s.add("      <div class=\"benefit-icon\">\uD83C\uDF81</div>");
+        s.add("      <div class=\"benefit-name\">혜택 이름</div>");
+        s.add("      <div class=\"benefit-desc\">요청문에 적힌 조건을 한 문장으로 설명합니다.</div>");
         s.add("    </li>");
         s.add("  </ul>");
         s.add("</section>");
@@ -223,7 +216,7 @@ public final class PromptBuilder {
         s.add("");
         // ★ 왜 분량을 시키는가 — **안 시키면 하한에 딱 맞춰 멈춘다 (Bedrock 실측)**
         //   gemma-3-27b 백지 생성 출력이 97 · 109 · 145 토큰이었다.
-        //   페이지 전체가 315자, 혜택은 minItems 인 2개 정확히.
+        //   페이지 전체가 315자, 혜택은 minItems 인 1개 이상.
         //   모델이 분량을 못 내는 게 아니라 **얼마나 쓸지를 안 알려줬다.**
         //   유일한 압력이 검증기의 하한이었고, 모델은 정확히 거기까지만 썼다.
         s.add("분량:");
@@ -238,24 +231,36 @@ public final class PromptBuilder {
         //   할인 쿠폰이 benefits 와 coupon 에 **각각 두 번** 나왔다.
         //   서로 어긋나는 지시를 두 군데 두면 뒤엣것이 이긴다. 범위를 맞춘다.
         if (triggered.isEmpty()) {
-            s.add("- 혜택은 요청문에 있는 것을 빠짐없이 담고, 항목마다 한 문장으로 설명을 붙인다.");
+            s.add("- 혜택은 요청문에 있는 것을 빠짐없이 담고, 항목마다 한 문장으로 설명을 붙인다. "
+                    + "요청문에 없는 혜택 항목을 더하지 마라. 혜택이 하나뿐이면 하나만 쓴다.");
         } else {
             StringJoiner tk = new StringJoiner(" · ");
             for (Block b : triggered) tk.add(b.key());
-            s.add("- 혜택은 " + tk + " 로 보낸 것을 뺀 나머지만 담고, 항목마다 한 문장으로 설명을 붙인다.");
+            s.add("- 혜택은 " + tk + " 로 보낸 것을 뺀 나머지만 담고, 항목마다 한 문장으로 설명을 붙인다. "
+                    + "요청문에 없는 혜택 항목을 더하지 마라.");
         }
         // ★ 칸을 비우면 템플릿보다 **더** 허전해 보인다 — benefit-icon 이 비면
         //   연한 배경의 54px 빈 사각형만 남는다. 구조를 시켰으면 채우기도 시켜야 한다.
-        s.add("- 혜택 항목의 칸을 비워 두지 마라. 이모지 · 이름 · 설명 · 받는 값을 모두 채운다.");
-        s.add("- 받는 값은 짧게 쓴다 (예: 3GB, 30% 할인, 6개월, 즉시 지급). 문장을 넣지 마라.");
+        // ★ 전에는 "받는 값까지 모두 채운다" 였다. 요청문에 값이 없으면 모델이 만들어 채웠다("5천원 상당", "10GB").
+        //   채우기를 시키는 규칙이 "수치를 만들어내지 마라" 를 이겼다 — 서로 어긋나는 지시는 뒤엣것이 이긴다.
+        //   이모지 · 이름 · 설명은 채우고(benefit-icon 이 비면 빈 사각형이 남는다), 받는 값 칸은 값이 있을 때만 만든다.
+        s.add("- 이모지 · 이름 · 설명은 항상 채운다. 받는 값은 요청문에 값이 있을 때만 쓰고, "
+                + "없으면 <div class=\"benefit-value\"> 를 만들지 마라.");
+        s.add("- 받는 값은 짧게 쓴다. 요청문에 적힌 값만 쓰고, 문장을 넣지 마라.");
         s.add("- 요청문에 할인 전후 가격이 있으면 받는 값에 "
                 + "<span class=\"t-strike\">원래 가격</span> 과 <strong class=\"t-big\">할인가</strong> 를 같이 쓴다.");
-        s.add("- 할인율 · 수량 한정 · 등수 같은 짧은 꼬리말은 benefit-tag 에 쓴다 (예: 78% OFF, 선착순 100명).");
+        s.add("- 할인율 · 수량 한정 · 등수 같은 짧은 꼬리말은 요청문에 있을 때만 benefit-tag 에 쓴다.");
         //   반대로 참여 방법은 모델이 만드는 영역이다(레지스트리 Source.LLM).
         //   절차를 지어내는 것은 허용이고, 그래서 요청문에 없어도 만들라고 시킨다.
-        s.add("- 참여 방법은 3단계로 쓴다. 요청문에 절차가 없으면 일반적인 온라인 응모 절차로 쓴다.");
+        // ★ 전에는 "일반적인 온라인 응모 절차" 였다 — 증정 요청에 "응모 → 당첨자 발표" 가 붙었다(#230 종단 측정, 요청에 없던 추첨).
+        s.add("- 참여 방법은 3단계로 쓴다. 요청문에 절차가 없으면 '이벤트 확인 → 참여하기 → 완료' 처럼 "
+                + "추첨 · 당첨 · 발표 · 응모를 말하지 않는 단순한 절차로 쓴다.");
+        s.add("- 요청문에 혜택이 없으면 혜택 영역에는 '이벤트 참여' 한 항목만 쓴다. "
+                + "할인 · 적립 · 포인트 · 쿠폰 · 경품 · 증정 · 초청 같은 혜택을 만들지 마라.");
+        s.add("- 요청문에 없는 추첨 · 선착순 · 참여 자격(전용 · VIP · 신규 · 회원 한정)을 쓰지 마라.");
         // ★ step-title 과 step-desc 는 글씨 크기·색이 다르다(15px 진하게 / 13px 흐리게).
         //   둘에 같은 문장을 넣으면 같은 말이 두 번 보인다. 역할을 갈라서 시킨다.
+        s.add("- 일정 · 발표일 · 당첨 인원 · 참여 횟수는 요청문에 있을 때만 쓴다. 질문에 대한 답이 요청문에 없으면 답을 지어내지 마라.");
         s.add("- 참여 방법은 단계마다 제목과 설명을 따로 쓴다. 제목은 두세 단어, 설명은 한 문장이다.");
         // ★ 번호를 쓰게 하면 화면에 두 번 보인다. 변형이 li::before 로 이미 그린다.
         s.add("- 단계 번호를 글자로 적지 마라. '1단계', '1.', 'STEP 1' 을 쓰지 마라. 화면이 자동으로 붙인다.");
@@ -266,10 +271,13 @@ public final class PromptBuilder {
         //   검증기는 문체를 못 본다. 프롬프트가 유일한 방어선이다.
         s.add("문체:");
         s.add("- 존댓말로 쓴다. 반말을 쓰지 마라.");
-        s.add("- 과장하지 마라. 확인되지 않은 최상급 표현을 쓰지 마라.");
+        s.add("- 과장하지 마라. 확인되지 않은 최상급 표현을 쓰지 마라. '특별한 · 푸짐한 · 풍성한 · 프리미엄 · 놓치지 마세요' 도 쓰지 마라.");
         s.add("");
         s.add("금지:");
         for (String line : 지어내기_금지()) s.add(line);
+        // ★ 생성에만 붙인다 — 위 목록은 수정 프롬프트도 쓴다. 생성은 빈 문서에서 만들어서 지어낼 여지가 훨씬 크다.
+        s.add("- 요청문에 없는 숫자(금액 · 수량 · 기간 · 인원 · 할인율 · 횟수)를 쓰지 마라. 값을 모르면 그 문구를 아예 빼라.");
+        s.add("- 요청문에 없는 상품 · 서비스 · 브랜드 이름을 쓰지 마라.");
         s.add("- 대괄호 자리표시자를 절대 남기지 마라. 값을 모르면 그 문장을 아예 빼라.");
         // ★ "이모지를 쓰지 마라" 를 뺐다. 템플릿이 이모지를 쓰므로 톤을 맞춘다.
         //   적극적으로 쓰라고 시키지도 않는다 — 금지를 뺀 것과 권장하는 것은
@@ -351,6 +359,13 @@ public final class PromptBuilder {
      */
     public static String edit(Block b, boolean templateBlock, boolean allowPalette,
                               boolean looksRequest, boolean addItem, List<Asset.Ref> assets) {
+        return edit(b, templateBlock, allowPalette, looksRequest, addItem, assets, false);
+    }
+
+    /** 혜택 블록이 통째로 삭제된 뒤 다시 생성되는 요청인가. */
+    public static String edit(Block b, boolean templateBlock, boolean allowPalette,
+                              boolean looksRequest, boolean addItem, List<Asset.Ref> assets,
+                              boolean createFormBlock) {
         if (b.source() == Block.Source.SERVER) {
             throw new IllegalArgumentException(
                     b.key() + " 는 서버 소유입니다. 모델에게 수정시키면 안 됩니다.");
@@ -435,11 +450,21 @@ public final class PromptBuilder {
         // ★ 항목 하나를 더하는 요청이면 위 금지문 대신 이것이 나간다.
         //   "같은 태그 · 같은 class" 가 꼭 있어야 한다 — 없으면 모델이 템플릿 카드
         //   (.benefit-card) 를 <li> 로 만들어 붙이고 디자인이 깨진다.
-        if (addItem) {
+        if (addItem && !createFormBlock) {
             s.add("- 이 목록에 항목을 **하나만** 더한다. 기존 항목은 손대지 마라.");
             s.add("- 더한 항목은 기존 항목과 **같은 태그 · 같은 class** 로 만든다.");
             s.add("- 더한 항목에 금액 · 수량 · 기간 같은 수치를 지어내 넣지 마라. "
                     + "관리자가 적어 준 문구에 있는 것만 쓴다.");
+        }
+        if (createFormBlock && b == Block.BENEFITS) {
+            s.add("- 혜택 블록을 처음부터 복원한다. 표준 카드 구조를 따른다: <section data-block=\"benefits\" class=\"v-benefits-grid v-surface-tint\"> 안에 <ul> 하나, 그 안에 <li> 하나, 그 안에 내용이 있는 .benefit-icon 과 .benefit-name 을 둔다.");
+            s.add("- 아이콘은 혜택에 어울리는 이모지 하나로 채우고, 혜택 이름은 반드시 실제 문구로 채운다.");
+            s.add("- 관리자 문구에 없는 설명, 금액, 수량, 기간은 지어내지 않는다. 근거가 없는 설명이나 값은 빈 요소로 남기지 말고 해당 요소를 생략한다.");
+        }
+        if (createFormBlock && b == Block.PRIZE) {
+            s.add("- 경품 블록을 표준 서식으로 처음부터 만든다. <section data-block=\"prize\" class=\"v-prize-list\"> 안에 <div class=\"block-header\"><div class=\"sub-label\">Prize</div><h2 class=\"title\">경품 안내</h2></div>, <ul>, 관리자가 요청한 경품 <li> 하나를 둔다.");
+            s.add("- 섹션에 class=\"ev-block\" 을 붙이지 마라. 새 경품 영역의 기본 스타일이 적용되지 않는다.");
+            s.add("- 요청에 있는 경품명과 금액만 쓴다. 등수, 당첨 인원, 추첨 방식 등 요청에 없는 조건이나 경품을 지어내지 마라.");
         }
 
         s.add("");
@@ -523,6 +548,14 @@ public final class PromptBuilder {
                 //   hero 는 배경 변형 대상이 아니라 아예 안 나간다.
                 s.add("  ★ 이름은 분위기(봄 · 여름 · 라벤더)이고, 색은 **설명**에 적혀 있다. "
                         + "특정 색(보라색 · 파란색 …)으로 바꿔 달라면 그 색 이름이 **설명에 적힌** 것을 고른다.");
+                // ★ "원래대로 되돌려줘" 에 palette-brand · palette-pastel 이 붙었다(실제 화면, 2/6).
+                //   brand 설명에 "기본" · "특별한 분위기 요청이 없을 때" 가 있어 "원래대로"와 가깝게 읽힌다.
+                //   BASE 설명만 고쳐서는 부족했고, 되돌리기는 palette-base 라고 직접 말해 줘야 했다.
+                //   "취소해줘" · "방금 바꾼 거 취소해줘" 에는 spring 같은 임의의 팔레트가 붙었다.
+                //   채팅에는 직전 수정을 되돌리는 기능이 없다(버전 복원은 따로). 그래도 새 색을 고르는 것보다는
+                //   색을 원래대로 두는 쪽이 덜 놀랍다.
+                s.add("  ★ 원래대로 · 원래 색 · 초기화 · 복구 · 취소 · 이전으로 · 되돌려 달라는 요청은 palette-base 를 고른다. "
+                        + "다른 팔레트를 새로 고르지 않는다.");
                 for (Palette p : Palette.all()) {
                     s.add("    " + p.cssClass() + " : " + p.desc());
                 }
@@ -614,7 +647,7 @@ public final class PromptBuilder {
         //   ★ 병합 해결에서 이 줄을 빠뜨려 BlankCardMarkupTest 가 깨졌다.
         s.add("- 단, 혜택 <li> 바로 안의 꼬리말은 benefit-tag 를 쓴다. t-badge 를 쓰지 마라.");
         s.add("- <span> · <mark> · <strong> 의 class 에 아래 이름을 붙인다. 목록에 없는 이름은 쓰지 마라.");
-        s.add("  예) <span class=\"t-badge t-badge-red\">한정</span> · <strong class=\"t-accent\">3GB</strong>");
+        s.add("  예) <span class=\"t-badge t-badge-red\">한정</span> · <strong class=\"t-accent\">핵심 단어</strong>");
         for (Inline i : Inline.values()) {
             s.add("    " + i.cssClass() + " : " + i.desc());
         }
@@ -650,6 +683,26 @@ public final class PromptBuilder {
         // ★ "겉모양만" 이라고만 쓰면 모델이 색·굵기로 좁게 읽는다. "더 화려하게" 는
         //   레이아웃·분위기 요청인데 EDIT 으로 떨어져 문구만 고쳐졌다(실제 화면).
         s.add("- \"STYLE\"   겉모양을 바꾼다 — 색·크기·굵기, 그리고 더 화려하게·눈에 띄게·고급스럽게 같은 분위기 요청");
+        // ★ 아래 두 줄이 없으면 예시와 말투가 다른 페이지 전체 요청("원래 색으로 되돌려줘" · "전체를 노랑으로" ·
+        //   "차분한 분위기로 해줘" · "원 상태로 돌아가줘")에 모델이 14개 영역 전부에 연산을 냈다(out 174 토큰).
+        //   RouteParser 는 MAX_OPS(3) 를 넘으면 통째로 버려서 관리자는 "이해하지 못했습니다" 만 봤다(실제 화면).
+        //   더 나쁜 건 되돌리기 계열이 **DELETE** 로 샌 것이다 — "이전으로 돌려줘" → DELETE faq,
+        //   "방금 바꾼 거 취소해줘" → DELETE hero. 연산이 하나면 파서를 통과해 영역이 지워질 수 있다.
+        //   페이지 전체 색감은 hero 하나가 맡는다(Palette · PageShell.hoistPalette).
+        // ★ 둘째 줄은 규칙이 너무 넓어져 생긴 부작용을 막는다 — 대상 없는 "작성해줘" · "생성해줘" 가
+        //   STYLE hero 로 가서 색이 바뀌었다.
+        //   처음에는 "색·분위기·되돌리기 말이 없으면 STYLE 을 쓰지 않는다" 로 썼는데, 그러면 "제목을 크게 해줘" ·
+        //   "글씨를 굵게 해줘" 같은 크기·굵기 요청도 STYLE 을 못 쓴다(PR #226 리뷰). 위 STYLE 정의에 있는 겉모양
+        //   말 전부(색·분위기·크기·굵기·배치·이미지)와 되돌리기를 "겉모양을 바꾸려는 말" 로 묶고,
+        //   그런 말이 없는 단순 만들기·작성 요청에만 막는다.
+        //   (Bedrock gemma-3-27b 실측: 색 · 되돌리기 · 취소 · 만들기 · 기존 분류 71문장 중 71 통과,
+        //    이 두 줄이 없을 때 같은 유형 66문장 중 36)
+        s.add("");
+        s.add("- 페이지 전체의 색·분위기를 바꾸는 요청과, 원래대로 되돌리는 요청"
+                + "(되돌려줘 · 원래대로 · 원 상태로 · 복구 · 초기화 · 처음으로 · 이전으로 · 취소)은 "
+                + "영역을 나열하지 않는다. hero 하나만 쓴다. 되돌리기·취소는 삭제(DELETE)가 아니다.");
+        s.add("- 겉모양(색 · 분위기 · 크기 · 굵기 · 배치 · 이미지)을 바꾸려는 말이 없는 단순 만들기·작성 요청에는 "
+                + "STYLE 을 쓰지 않는다. 영역을 말하지 않은 만들기·작성 요청은 ADD 로 한다.");
         s.add("");
         s.add("content 규칙:");
         s.add("- 사용자가 **직접 쓴 문구**가 있으면 그 문구만 그대로 넣는다.");
@@ -671,6 +724,12 @@ public final class PromptBuilder {
         // ★ 페이지 전체 색감은 hero 의 STYLE 로 보낸다. 팔레트를 고르는 자리가 hero 다
         //   (Palette · PageShell.hoistPalette). 이 예시가 없으면 "알 수 없는 영역" 으로 떨어진다.
         s.add("\"전체 색감을 가을 느낌으로 바꿔줘\"");
+        s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null}]}");
+        s.add("");
+        // ★ 위 예시와 **짝**이다. 되돌리기도 새 색감을 고르는 것과 같은 길(hero 의 palette-base)이다.
+        //   이 예시만으로는 부족했다 — "원래대로" · "색 초기화" 는 여전히 14개 영역으로 샜고,
+        //   바로 위 규칙 줄까지 있어야 같은 문장 10개가 모두 hero 하나로 갔다(Bedrock gemma-3-27b 실측).
+        s.add("\"원래 색으로 되돌려줘\"");
         s.add("{\"ops\":[{\"op\":\"STYLE\",\"target\":\"hero\",\"content\":null}]}");
         s.add("");
         // ★★ 올린 이미지를 넣는 요청. **문구가 아니라 겉모양이라 STYLE 이다.**

@@ -299,6 +299,108 @@ class EditServiceTest {
     }
 
     @Test
+    @DisplayName("팔레트에 없는 색(노랑)을 페이지 전체로 말하면 되묻는다 — 엉뚱한 팔레트를 고르지 않는다")
+    void 팔레트에_없는_색은_되묻는다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+
+        GenerationJob job = run("바탕색은 노란색으로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertTrue(job.message().contains("'노랑' 색감은 지원하지 않습니다"), job.message());
+        assertTrue(job.message().contains("고를 수 있는 색:"), job.message());
+        assertEquals(0, retry.calls(), "블록 수정 모델을 부르면 안 된다");
+        assertEquals(1, versionNo(), "행이 생기면 안 된다");
+    }
+
+    @Test
+    @DisplayName("팔레트에 있는 색(파랑)은 되묻지 않고 그대로 진행한다")
+    void 팔레트에_있는_색은_진행한다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(NEW_HERO));
+
+        GenerationJob job = run("전체 색감을 파란색으로 바꿔줘");
+
+        assertNotEquals(GenerationJob.Phase.ASK_BACK, job.phase(), String.valueOf(job.message()));
+        assertEquals(1, retry.calls());
+    }
+
+    @Test
+    @DisplayName("피하려고 말한 색('노란색 말고 파란색으로')은 되묻지 않는다 — PR #226 리뷰")
+    void 제외하는_색은_되묻지_않는다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null));
+        retry.willReturn(ok(NEW_HERO));
+
+        GenerationJob job = run("노란색 말고 파란색으로 바꿔줘");
+
+        assertNotEquals(GenerationJob.Phase.ASK_BACK, job.phase(), String.valueOf(job.message()));
+        assertEquals(1, retry.calls());
+    }
+
+    @Test
+    @DisplayName("페이지 전체 색과 영역 배경색이 섞여도 영역 배경으로 말한 색은 거절하지 않는다 — PR #226 리뷰")
+    void 영역_배경색은_섞여도_거절하지_않는다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null), new RawRoute("STYLE", "benefits", null));
+        retry.willReturn(ok(NEW_HERO), ok(NEW_BENEFITS));
+
+        // 노랑은 혜택 배경(v-surface-yellow)이고, 제목 쪽 색은 파랑이라 지원한다
+        GenerationJob job = run("제목은 파란색으로, 혜택 배경은 노란색으로 바꿔줘");
+
+        assertNotEquals(GenerationJob.Phase.ASK_BACK, job.phase(), String.valueOf(job.message()));
+        assertEquals(2, retry.calls(), "연산마다 한 번씩 부른다");
+    }
+
+    @Test
+    @DisplayName("영역이 여럿이면 영역마다 '이 영역 몫만 따른다' 를 모델에게 알린다 — 요청문이 통째로 가기 때문이다")
+    void 영역이_여럿이면_각_호출에_맡은_영역을_알린다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null), new RawRoute("STYLE", "benefits", null));
+        retry.willReturn(ok(NEW_HERO), ok(NEW_BENEFITS));
+
+        run("전체는 파란색으로 바꾸고 혜택 배경은 노란색으로 해줘");
+
+        assertEquals(2, retry.prompts().size());
+        for (String prompt : retry.prompts()) {
+            assertTrue(prompt.contains("[이번 호출은 한 영역만 고친다]"), "영역이 여럿인데 맡은 영역 안내가 없습니다:\n" + prompt);
+            assertTrue(prompt.contains("해당하는 부분만 따른다"), prompt);
+        }
+    }
+
+    @Test
+    @DisplayName("영역이 하나뿐이면 그 안내를 붙이지 않는다")
+    void 영역이_하나면_맡은_영역_안내가_없다() {
+        router.willReturn(new RawRoute("EDIT", "hero", "가을 대축제"));
+        retry.willReturn(ok(NEW_HERO));
+
+        run("제목을 가을 대축제로 바꿔줘");
+
+        assertEquals(1, retry.prompts().size());
+        assertFalse(retry.prompts().getFirst().contains("[이번 호출은 한 영역만 고친다]"), retry.prompts().getFirst());
+    }
+
+    @Test
+    @DisplayName("섞인 요청이어도 제목 쪽에 건 없는 색은 되묻는다")
+    void 제목_쪽_없는_색은_섞여도_되묻는다() {
+        router.willReturn(new RawRoute("STYLE", "hero", null), new RawRoute("STYLE", "benefits", null));
+
+        GenerationJob job = run("제목은 노란색으로, 혜택 배경은 파란색으로 바꿔줘");
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertTrue(job.message().contains("'노랑' 색감은 지원하지 않습니다"), job.message());
+        assertEquals(0, retry.calls());
+    }
+
+    @Test
+    @DisplayName("영역을 고르고 말한 색은 팔레트 검사를 타지 않는다 — 영역 배경은 색 이름 변형이 받는다")
+    void 영역_지정_요청은_색_검사를_타지_않는다() {
+        router.willReturn(new RawRoute("STYLE", "steps", null));
+        retry.willReturn(ok(NEW_HERO));
+
+        GenerationJob job = run("참여 방법 영역 배경을 노란색으로 바꿔줘");
+
+        // 라우터가 hero 가 아닌 영역을 짚었으므로 페이지 전체 색감 경로가 아니다
+        assertFalse(job.message() != null && job.message().contains("색감은 지원하지 않습니다"), job.message());
+    }
+
+    @Test
     @DisplayName("내용 없는 항목 추가는 되묻는다 — 모델이 지어내면 안 된다")
     void 내용_없는_추가는_되묻는다() {
         router.willReturn(new RawRoute("ADD", "steps", null));

@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 class AssetTest {
 
     private static final String OK = "https://cdn.newvent.test/assets/a1b2";
-    private static final List<Asset.Ref> ALLOW = List.of(new Asset.Ref(OK, null, 0, Asset.Tone.LIGHT));
+    private static final List<Asset.Ref> ALLOW = List.of(new Asset.Ref(1, OK, null, 0, Asset.Tone.LIGHT));
 
     private static Element clean(String html) {
         return Jsoup.parseBodyFragment(BlockValidator.sanitizeGenerated(html, ALLOW)).body();
@@ -148,7 +148,7 @@ class AssetTest {
     @DisplayName("배경이 아니면 판정을 안 붙인다")
     void 배경만_칠한다() {
         String html = BlockValidator.sanitizeGenerated(hero("<img class=\"ev-asset-art\" src=\"" + OK + "\">"),
-                List.of(new Asset.Ref(OK, null, 0, Asset.Tone.DARK)));
+                List.of(new Asset.Ref(1, OK, null, 0, Asset.Tone.DARK)));
 
         assertFalse(Jsoup.parseBodyFragment(html).selectFirst("img").className().contains("on-"));
     }
@@ -158,14 +158,14 @@ class AssetTest {
     @DisplayName("판정이 없으면 아무것도 안 붙인다")
     void 판정_없음() {
         String html = BlockValidator.sanitizeGenerated(hero("<img class=\"ev-asset-bg\" src=\"" + OK + "\">"),
-                List.of(new Asset.Ref(OK, null, 0, null)));
+                List.of(new Asset.Ref(1, OK, null, 0, null)));
 
         assertFalse(Jsoup.parseBodyFragment(html).selectFirst("img").className().contains("on-"));
     }
 
     private static Element toned(Asset.Tone tone, double scrim) {
         String html = BlockValidator.sanitizeGenerated(hero("<img class=\"ev-asset-bg\" src=\"" + OK + "\">"),
-                List.of(new Asset.Ref(OK, null, scrim, tone)));
+                List.of(new Asset.Ref(1, OK, null, scrim, tone)));
         return Jsoup.parseBodyFragment(html).selectFirst("img");
     }
 
@@ -184,8 +184,8 @@ class AssetTest {
     /* ── 프롬프트 안내 ─────────────────────────────────────────── */
 
     private static final List<Asset.Ref> REFS = List.of(
-            new Asset.Ref(OK, "강아지 일러스트", 0, Asset.Tone.LIGHT),
-            new Asset.Ref("https://cdn.newvent.test/assets/a2b3", null, 0, Asset.Tone.DARK));
+            new Asset.Ref(1, OK, "강아지 일러스트", 0, Asset.Tone.LIGHT),
+            new Asset.Ref(2, "https://cdn.newvent.test/assets/a2b3", null, 0, Asset.Tone.DARK));
 
     // ★ "이미지를 넣을 수 있다" 만 알려 주면 모델이 주소를 지어낸다. 올린 게 없으면 한 줄도 안 나가야 한다.
     @Test
@@ -218,7 +218,11 @@ class AssetTest {
 
         String benefits = PromptBuilder.edit(Block.BENEFITS, false, false, false, false, REFS);
         assertTrue(benefits.contains("ev-asset-icon"));
-        assertFalse(benefits.contains("ev-asset-bg"));
+        // ★ 혜택에도 영역 배경을 쓴다 — 카드에 판을 깔아서 글자가 읽힌다 (95-assets/01-assets.css)
+        assertTrue(benefits.contains("ev-asset-bg"));
+        // 제목 옆 그림 · 로고는 여전히 hero 전용이다. 혜택에는 글자 칸을 나눌 구조가 없다
+        assertFalse(benefits.contains("ev-asset-art"));
+        assertFalse(benefits.contains("ev-asset-logo"));
     }
 
     // ★ 변형 · 테마와 다르다. 이미지는 템플릿 블록에도 걸린다 — 95-assets 의 CSS 는 .ev-block 을 안 가린다.
@@ -236,6 +240,10 @@ class AssetTest {
         assertFalse(Asset.of(Block.HERO).contains(Asset.ICON));
 
         assertTrue(Asset.of(Block.BENEFITS).contains(Asset.ICON));
-        assertFalse(Asset.of(Block.BENEFITS).contains(Asset.BG));
+        assertTrue(Asset.of(Block.BENEFITS).contains(Asset.BG));
+        assertTrue(Asset.of(Block.STEPS).contains(Asset.BG));
+        assertFalse(Asset.of(Block.BENEFITS).contains(Asset.ART));
+        // ★ 유의사항은 뺀다. 자기 크림색 판이 "읽고 넘어가라" 는 신호다 — 사진이 덮으면 안 된다
+        assertFalse(Asset.of(Block.NOTICES).contains(Asset.BG));
     }
 }

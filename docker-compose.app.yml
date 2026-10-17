@@ -45,8 +45,9 @@ services:
       #   prod 는 JWT_SECRET · CORS_ALLOWED_ORIGINS 가 없거나 로컬 값이면 기동을 멈춘다 (ProdAuthGuard)
       SPRING_PROFILES_ACTIVE: "${SPRING_PROFILES_ACTIVE:-dev}"
 
-      #   localhost 가 아니라 서비스 이름이다.
-      DB_URL: "jdbc:postgresql://postgres:5432/${DB_NAME}"
+      #   DB 주소 — 기본은 compose 가 띄운 postgres 컨테이너.
+      #   RDS 적용을 위한 세팅
+      DB_URL: "${DB_URL:-jdbc:postgresql://postgres:5432/${DB_NAME}}"
       DB_USERNAME: "${DB_USERNAME}"
       DB_PASSWORD: "${DB_PASSWORD}"
 

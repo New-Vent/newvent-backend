@@ -257,6 +257,12 @@ class TemplateRoundTripTest {
 
             assertEquals(Slots.keysOf(t.html()), Slots.keysOf(html),
                     t.code() + " 슬롯 자체가 사라졌습니다. 비우는 것과 지우는 것은 다릅니다.");
+
+            // ★ 참여 이름표 — 템플릿 5종에는 없고 initialHtml 이 심어 주어야 한다
+            //   bindGame 과 프론트 둘 다 이 이름표로 참여 UI 를 띄울지 정한다
+            assertEquals(1, d.body().select("[data-behavior=participate]").size(),
+                    t.code() + " 에 참여 이름표가 심기지 않았습니다. "
+                            + "이게 없으면 설정만 붙여도 참여 UI 가 안 열립니다.");
         }
     }
 

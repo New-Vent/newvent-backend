@@ -121,6 +121,44 @@ class BlockRegistryTest {
     }
 
     @Test
+    @DisplayName("라우터 프롬프트 — 페이지 전체 색감 요청은 hero 하나로 보내라고 안내하고, 되돌리기 예시가 있다")
+    void 라우터가_페이지_전체_색감을_hero_하나로_안내한다() {
+        String router = PromptBuilder.router();
+
+        // 이 규칙이 빠지면 "원래 색으로 되돌려줘" · "전체를 노랑으로" 에 모델이 14개 영역 전부에 STYLE 을 내고,
+        // RouteParser 가 MAX_OPS(3) 초과로 버려서 "요청을 이해하지 못했습니다" 가 나온다.
+        assertTrue(router.contains("영역을 나열하지 않는다. hero 하나만 쓴다."),
+                "페이지 전체 요청을 hero 하나로 보내는 규칙이 라우터 프롬프트에서 빠졌습니다.");
+        assertTrue(router.contains("되돌리기·취소는 삭제(DELETE)가 아니다."),
+                "되돌리기 요청이 DELETE 로 새는 걸 막는 문장이 빠졌습니다.");
+        assertTrue(router.contains("겉모양(색 · 분위기 · 크기 · 굵기 · 배치 · 이미지)을 바꾸려는 말이 없는 단순 만들기·작성 요청에는 STYLE 을 쓰지 않는다."),
+                "대상 없는 작성 요청이 STYLE 로 새는 걸 막는 문장이 빠졌습니다.");
+        assertTrue(router.contains("\"원래 색으로 되돌려줘\""),
+                "되돌리기 예시가 라우터 프롬프트에서 빠졌습니다.");
+    }
+
+    /**
+     * #230 — 생성 프롬프트가 지어내기를 시키던 규칙과 예시 값.
+     * 혜택 "2개 이상" · "받는 값을 모두 채운다" 는 금지 규칙과 정면으로 충돌했고(뒤엣것이 이긴다),
+     * 예시의 3GB · 55,000원 → 38,500원 · 선착순 100명은 요청에 없는데도 그대로 베껴졌다.
+     */
+    @Test
+    @DisplayName("생성 프롬프트 — 혜택을 지어내게 시키는 규칙과 구체적인 예시 값이 없다")
+    void 생성_프롬프트가_지어내기를_시키지_않는다() {
+        String gen = PromptBuilder.generate("영화 예매권을 증정해");
+
+        assertFalse(gen.contains("2개 이상 나열"), "혜택 2개 이상을 요구하면 하나뿐인 요청에서 둘째를 지어낸다");
+        assertFalse(gen.contains("받는 값을 모두 채운다"), "값 칸 채우기를 시키면 값이 없는 요청에서 수치를 만든다");
+        for (String example : new String[]{"3GB", "55,000원", "38,500", "78% OFF", "선착순 100명", "30% 할인", "6개월 한정"}) {
+            assertFalse(gen.contains(example), "프롬프트 예시에 구체적인 값이 남아 있습니다: " + example);
+        }
+        assertTrue(gen.contains("요청문에 없는 혜택 항목을 더하지 마라"), "혜택을 더하지 말라는 규칙이 빠졌습니다");
+        assertTrue(gen.contains("요청문에 없는 숫자"), "요청에 없는 숫자 금지 규칙이 빠졌습니다");
+        assertEquals(1, Block.BENEFITS.minItems(),
+                "혜택 최소 개수를 2 로 올리면 검증기가 하나뿐인 혜택을 재시도시켜 결국 둘째를 지어낸다");
+    }
+
+    @Test
     @DisplayName("CSS 정화 — 허용 속성만 남는다")
     void CSS_정화가_위험한_속성을_지운다() {
         String dirty = """

@@ -33,51 +33,79 @@
 - `template_id`는 넣지 않는다 (nullable, 템플릿 행 불필요)
 - 등급: 지정 없으면 NORMAL, 2건만 지정 (아래 표 참고)
 
-## 전체 목록 (29건 → 이벤트 29·버전 29·청크 약 101)
+## 전체 목록 (40건 → 이벤트 40·버전 40·청크 약 189)
 
-### 템플릿 변형 14종
-
-| # | 제목 | 블록 | 청크 | 등급 |
-|---|---|---|---|---|
-| 1 | 프로야구 승부예측 이벤트 | hero·benefits·steps·cta | 4 | NORMAL |
-| 2 | 축구 응원 스코어 맞히기 | hero·benefits·steps·cta | 4 | NORMAL |
-| 3 | 시즌 응원 투표 | hero·highlight·cta | 3 | NORMAL |
-| 4 | 한가위 출석체크 복주머니 | hero·benefits·steps·cta | 4 | NORMAL |
-| 5 | 설날 세뱃돈 뽑기 | hero·steps·cta | 3 | NORMAL |
-| 6 | 추석 선물대전 | hero·benefits·cta | 3 | NORMAL |
-| 7 | 최우수 등급 감사 쿠폰팩 | hero·benefits·audience·cta | 4 | BEST |
-| 8 | 우수 등급 무료배송 | hero·benefits·cta | 3 | EXCELLENT |
-| 9 | 로열티 리워드 | hero·intro·benefits·cta | 4 | NORMAL |
-| 10 | 72시간 타임딜 특가 | hero·highlight·benefits·cta | 4 | NORMAL |
-| 11 | 선착순 클리어런스 | hero·benefits·steps·cta | 4 | NORMAL |
-| 12 | 게릴라 반짝세일 | hero·cta | 2 | NORMAL |
-| 13 | 신규 서비스 사전예약 | hero·benefits·steps·cta | 4 | NORMAL |
-| 14 | 얼리버드 대기자 모집 | hero·steps·faq·cta | 4 | NORMAL |
-
-### 실제형 10종
+### 스포츠 응원 7종 (theme-sports · highlight 상단형)
 
 | # | 제목 | 블록 | 청크 | 등급 |
 |---|---|---|---|---|
-| 15 | 여름 데이터 대방출 | hero·benefits·cta | 3 | NORMAL |
-| 16 | 가을 할인 쿠폰 프로모션 | hero·benefits·steps·cta | 4 | NORMAL |
-| 17 | 연말 감사 경품 이벤트 | hero·cta | 2 | NORMAL |
-| 18 | 신년 무제한 요금제 세일 | hero·benefits·compare·cta | 4 | NORMAL |
-| 19 | 봄맞이 축제 | hero·benefits·steps·cta | 4 | NORMAL |
-| 20 | 블랙프라이데이 빅세일 | hero·benefits·steps·cta | 4 | NORMAL |
-| 21 | 신학기 준비 패키지 | hero·benefits·steps·faq·cta | 5 | NORMAL |
-| 22 | 여름 워터페스티벌 | hero·benefits·steps·cta | 4 | NORMAL |
-| 23 | 블랙프라이데이 플래시딜 | hero·highlight·benefits·cta | 4 | NORMAL |
-| 24 | 신년 카운트다운 | hero·steps·cta | 3 | NORMAL |
+| 1 | 프로야구 승부예측 이벤트 | hero·highlight·benefits·steps·cta | 5 | NORMAL |
+| 2 | 축구 응원 스코어 맞히기 | hero·highlight·benefits·steps·cta | 5 | NORMAL |
+| 3 | 이달의 응원왕 투표 | hero·highlight·steps·cta | 4 | NORMAL |
+| 4 | 농구 3점슛 챌린지 | hero·highlight·benefits·faq·cta | 5 | NORMAL |
+| 5 | e스포츠 승자 예측 | hero·highlight·benefits·steps·cta | 5 | NORMAL |
+| 6 | 마라톤 응원 메시지 | hero·highlight·steps·cta | 4 | NORMAL |
+| 7 | 야구 올스타 투표 | hero·highlight·benefits·cta | 4 | NORMAL |
 
-### 엣지 케이스 5종
+### 시즌·명절 9종 (theme-holiday · 일정 상단형)
 
-| # | 제목 | 블록 | 청크 | 검증 포인트 |
+| # | 제목 | 블록 | 청크 | 등급 |
 |---|---|---|---|---|
-| 25 | 초긴 안내문 이벤트 | hero·cta | 3 (hero 2개로 분할) | 800자 초과 시 청크 분할 |
-| 26 | 특수문자 대잔치 | hero·benefits·cta | 3 | 이모지·★♪ 임베딩 |
-| 27 | 최소 구성 이벤트 | hero·cta | 2 | 최소 블록 구성 |
-| 28 | Welcome Global Event | hero·benefits·cta | 3 | 영문 임베딩 품질 |
-| 29 | 요금제 비교표 이벤트 | hero·compare·cta | 3 | 중첩 `<div>`+`<table>` 파싱 |
+| 8 | 한가위 출석체크 복주머니 | hero·steps·benefits·cta | 4 | NORMAL |
+| 9 | 설날 세뱃돈 뽑기 | hero·steps·benefits·cta | 4 | NORMAL |
+| 10 | 추석 선물대전 | hero·steps·benefits·faq·cta | 5 | NORMAL |
+| 11 | 크리스마스 데이터 선물 | hero·steps·benefits·cta | 4 | NORMAL |
+| 12 | 연말 감사 인사 이벤트 | hero·highlight·steps·benefits·cta | 5 | NORMAL |
+| 13 | 신년 카운트다운 | hero·steps·faq·cta | 4 | NORMAL |
+| 14 | 봄맞이 축제 | hero·steps·benefits·cta | 4 | NORMAL |
+| 15 | 설 연휴 로밍 혜택 | hero·steps·benefits·cta | 4 | NORMAL |
+| 16 | 어린이날 가족 이벤트 | hero·steps·benefits·faq·cta | 5 | NORMAL |
+
+### 멤버십·요금제 10종 (theme-vip · 등급 상단형)
+
+| # | 제목 | 블록 | 청크 | 등급 |
+|---|---|---|---|---|
+| 17 | 최우수 등급 감사 쿠폰팩 | hero·audience·benefits·cta | 4 | BEST |
+| 18 | 우수 등급 무료배송 | hero·audience·benefits·faq·cta | 5 | EXCELLENT |
+| 19 | 로열티 리워드 | hero·intro·benefits·cta | 4 | NORMAL |
+| 20 | 여름 데이터 대방출 | hero·intro·benefits·steps·cta | 5 | NORMAL |
+| 21 | 신년 무제한 요금제 세일 | hero·compare·benefits·faq·cta | 5 | NORMAL |
+| 22 | 데이터 충전소 | hero·intro·benefits·steps·cta | 5 | NORMAL |
+| 23 | 장기가입 감사 프로그램 | hero·intro(2분할)·benefits·cta | 5 | NORMAL |
+| 24 | 생일 축하 쿠폰 | hero·intro·benefits·steps·cta | 5 | NORMAL |
+| 25 | 친구 초대 리워드 | hero·intro·benefits·steps·faq·cta | 6 | NORMAL |
+| 26 | 멤버십 데이 | hero·intro·benefits·cta | 4 | NORMAL |
+
+### 특가·할인 8종 (theme-sale · 마감·가격 상단형)
+
+| # | 제목 | 블록 | 청크 | 등급 |
+|---|---|---|---|---|
+| 27 | 72시간 타임딜 특가 | hero·highlight·benefits·steps·cta | 5 | NORMAL |
+| 28 | 선착순 클리어런스 | hero·highlight·benefits·steps·cta | 5 | NORMAL |
+| 29 | 게릴라 반짝세일 | hero·highlight·benefits·cta | 4 | NORMAL |
+| 30 | 가을 할인 쿠폰 프로모션 | hero·highlight·benefits·steps·cta | 5 | NORMAL |
+| 31 | 블랙프라이데이 빅세일 | hero·highlight·benefits·steps·cta | 5 | NORMAL |
+| 32 | 신학기 준비 패키지 | hero·highlight·benefits·steps·faq·cta | 6 | NORMAL |
+| 33 | 여름 워터페스티벌 | hero·highlight·benefits·steps·faq·cta | 6 | NORMAL |
+| 34 | 블랙프라이데이 플래시딜 | hero·highlight·benefits·steps·cta | 5 | NORMAL |
+
+### 출시·예약 6종 (theme-launch · 안내 상단형)
+
+| # | 제목 | 블록 | 청크 | 등급 |
+|---|---|---|---|---|
+| 35 | 신규 서비스 사전예약 | hero·intro·benefits·steps·cta | 5 | NORMAL |
+| 36 | 얼리버드 대기자 모집 | hero·intro·steps·faq·cta | 5 | NORMAL |
+| 37 | 신규 요금제 출시 | hero·intro·benefits·compare·cta | 5 | NORMAL |
+| 38 | 앱 리뉴얼 기념 이벤트 | hero·intro·benefits·steps·cta | 5 | NORMAL |
+| 39 | 5G 커버리지 확대 기념 | hero·intro·benefits·cta | 4 | NORMAL |
+| 40 | 키즈 요금제 출시 | hero·intro·benefits·faq·cta | 5 | NORMAL |
+
+### 청킹 엣지 (주제형 2건으로 대체)
+
+| # | 제목 | 블록 | 검증 포인트 |
+|---|---|---|---|
+| 23 | 장기가입 감사 프로그램 | intro 900자 초과 → 2분할 | 800자 초과 시 청크 분할 |
+| 25 | 친구 초대 리워드 | faq 질문 3개 | 중첩 `<dl>` 파싱 |
 
 ## HTML 작성 규칙 (새 시드 추가 시)
 
@@ -87,7 +115,12 @@
 3. `compare·audience·faq`는 트리거 단어가 본문에 있어야 청킹된다:
    비교표(`비교표`·`vs`) / 대상(`참여 대상` 등) / 질문(`자주 묻는 질문`·`FAQ`)
 4. `cta()` 헬퍼 사용 — `<a class="btn">` 형태 (event.css 스타일 적용 대상)
-5. 등급이 필요하면 `new SeedDefinition(제목, html, 등급)` 3인자 사용
+5. 카테고리별 겉모습은 `secV(블록, 변형, 내용)` + `60-variants` 클래스로 구분한다.
+   `data-block` 값은 그대로 두는 것이 조건이다 (바꾸면 청크 누락).
+   현재 배정: 스포츠(center·badge·grid·numbered) / 시즌(left·glow·checklist·timeline·qa) /
+   멤버십(minimal·cards·lead·pricing·checklist) / 특가(poster·danger·coupon·cards·leftbar) /
+   출시(split·boxed·spotlight·arrows·flush)
+6. 등급이 필요하면 `new SeedDefinition(제목, html, 등급)` 3인자 사용
 
 ## 검증
 
@@ -125,7 +158,7 @@ RAG_EVAL=1 ./gradlew test --tests "com.newvent.rag.RagEvalSmokeTest"
 - `prod`에서 실행 금지 (Runner + Generator 이중 차단).
   시연 등 시간 제한 예외는 `-PseedAllowProd`로 명시적 허용. 시연 후 `SEED:` 데이터를 반드시 삭제할 것
 - 동시에 두 번 실행하지 않는다 — 멱등 검사가 통과 순간에만 유효해서 중복 적재될 수 있다 (1인 수동 실행 전제)
-- 임베딩 호출 비용: 약 101청크분 Bedrock 호출 (29건 기준)
+- 임베딩 호출 비용: 약 189청크분 Bedrock 호출 (40건 기준)
 
 ## 어디서 테스트하나 (배포 서버 포함)
 

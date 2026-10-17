@@ -66,6 +66,8 @@ public class AssetService implements AssetUrls, AssetCleanup {
 
         String ext = "jpeg".equals(probed.format()) ? "jpg" : probed.format();
         String id = UUID.randomUUID().toString().replace("-", "");
+        // ★ 번호는 올릴 때 한 번 정하고 끝까지 안 바꾼다. 지운 번호는 다시 안 쓴다 (EventAsset.seq)
+        int seq = assets.maxSeqOf(eventId) + 1;
         AssetStore.Stored stored = store.put(eventId, id, ext, bytes);
 
         // ★★ 파일을 먼저 쓰고 행을 넣는다. 그 사이에 터지면 트랜잭션은 되돌아가지만
@@ -74,7 +76,7 @@ public class AssetService implements AssetUrls, AssetCleanup {
         //   박스 디스크가 유한하니 쌓이게 두면 안 된다.
         try {
             EventAsset saved = assets.save(new EventAsset(
-                    id, eventId, ext, "image/" + probed.format(),
+                    id, eventId, seq, ext, "image/" + probed.format(),
                     stored.bytes(), stored.url(), probed.scrim(), probed.tone(), trim(caption)));
             return AssetResponse.from(saved);
         } catch (RuntimeException e) {
@@ -107,12 +109,12 @@ public class AssetService implements AssetUrls, AssetCleanup {
         } catch (RuntimeException e) {
             log.warn("이벤트 {} 의 이미지 파일을 지우지 못했습니다 — 고아 파일이 남습니다", eventId, e);
         }
-        assets.deleteAll(assets.findByEventIdOrderByCreatedAtAsc(eventId));
+        assets.deleteAll(assets.findByEventIdOrderBySeqAsc(eventId));
     }
 
     @Transactional(readOnly = true)
     public List<AssetResponse> list(long eventId) {
-        return assets.findByEventIdOrderByCreatedAtAsc(eventId).stream()
+        return assets.findByEventIdOrderBySeqAsc(eventId).stream()
                 .map(AssetResponse::from).toList();
     }
 
@@ -123,8 +125,8 @@ public class AssetService implements AssetUrls, AssetCleanup {
     @Override
     @Transactional(readOnly = true)
     public List<Asset.Ref> assetsOf(long eventId) {
-        return assets.findByEventIdOrderByCreatedAtAsc(eventId).stream()
-                .map(a -> new Asset.Ref(a.getUrl(), a.getCaption(), a.getScrim(), a.getTone()))
+        return assets.findByEventIdOrderBySeqAsc(eventId).stream()
+                .map(a -> new Asset.Ref(a.getSeq(), a.getUrl(), a.getCaption(), a.getScrim(), a.getTone()))
                 .toList();
     }
 
