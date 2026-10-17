@@ -244,9 +244,60 @@ public class BlockValidator {
             }
         }
         checkShape(target, el, f, true);
+        if (target == Block.BENEFITS && allowOneMore && (before == null || before.isBlank())) {
+            checkRecreatedBenefits(el, f);
+        }
+        if (target == Block.PRIZE && allowOneMore && (before == null || before.isBlank())) {
+            checkRecreatedPrize(el, f);
+        }
         checkItemCount(target, before, el, f, allowOneMore);
         checkPreserved(before, html, f);
         return f;
+    }
+
+    /** 새 경품 영역은 기본 CSS가 인식하는 머리말·변형 class·목록 구조여야 한다. */
+    private static void checkRecreatedPrize(Element el, List<Failure> f) {
+        int count = el.select("ul > li").size();
+        if (el.hasClass("ev-block")) {
+            f.add(Failure.of(FailureCode.EMPTY_BLOCK, Block.PRIZE.key(),
+                    "새 경품 영역에 ev-block class 를 붙이지 마세요. 표준 스타일이 적용되지 않습니다."));
+        }
+        if (!el.hasClass("v-prize-list")) {
+            f.add(Failure.of(FailureCode.EMPTY_BLOCK, Block.PRIZE.key(),
+                    "경품 영역에 class=\"v-prize-list\" 를 적용하세요."));
+        }
+        if (el.selectFirst(".block-header h2.title") == null) {
+            f.add(Failure.of(FailureCode.EMPTY_BLOCK, Block.PRIZE.key(),
+                    "경품 영역에 .block-header 안의 h2.title 머리말을 포함하세요."));
+        }
+        if (count != 1) {
+            f.add(Failure.of(FailureCode.FEW_ITEMS, Block.PRIZE.key(),
+                    "새 경품 영역에는 <ul><li> 항목을 정확히 하나 넣으세요."));
+        }
+    }
+
+    /** 삭제된 혜택 블록을 복원할 때만 카드 마크업을 고정해 일반 텍스트 카드가 저장되지 않게 한다. */
+    private static void checkRecreatedBenefits(Element el, List<Failure> f) {
+        List<Element> items = el.select("ul > li");
+        if (items.size() != 1) {
+            f.add(Failure.of(FailureCode.FEW_ITEMS, Block.BENEFITS.key(),
+                    "복원하는 혜택은 <ul><li> 항목을 정확히 1개만 사용하세요."));
+            return;
+        }
+        Element item = items.get(0);
+        for (String selector : List.of(".benefit-icon", ".benefit-name")) {
+            if (item.select(selector).size() != 1) {
+                f.add(Failure.of(FailureCode.EMPTY_BLOCK, Block.BENEFITS.key(),
+                        "혜택 항목 안에 " + selector + " 요소를 정확히 하나씩 포함하세요."));
+            }
+        }
+        for (String selector : List.of(".benefit-icon", ".benefit-name")) {
+            Element field = item.selectFirst(selector);
+            if (field != null && field.text().isBlank()) {
+                f.add(Failure.of(FailureCode.EMPTY_BLOCK, Block.BENEFITS.key(),
+                        "혜택 항목의 " + selector + " 내용을 비워 두지 마세요."));
+            }
+        }
     }
 
     /**

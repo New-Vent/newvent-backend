@@ -216,7 +216,7 @@ public final class PromptBuilder {
         s.add("");
         // ★ 왜 분량을 시키는가 — **안 시키면 하한에 딱 맞춰 멈춘다 (Bedrock 실측)**
         //   gemma-3-27b 백지 생성 출력이 97 · 109 · 145 토큰이었다.
-        //   페이지 전체가 315자, 혜택은 minItems 인 2개 정확히.
+        //   페이지 전체가 315자, 혜택은 minItems 인 1개 이상.
         //   모델이 분량을 못 내는 게 아니라 **얼마나 쓸지를 안 알려줬다.**
         //   유일한 압력이 검증기의 하한이었고, 모델은 정확히 거기까지만 썼다.
         s.add("분량:");
@@ -359,6 +359,13 @@ public final class PromptBuilder {
      */
     public static String edit(Block b, boolean templateBlock, boolean allowPalette,
                               boolean looksRequest, boolean addItem, List<Asset.Ref> assets) {
+        return edit(b, templateBlock, allowPalette, looksRequest, addItem, assets, false);
+    }
+
+    /** 혜택 블록이 통째로 삭제된 뒤 다시 생성되는 요청인가. */
+    public static String edit(Block b, boolean templateBlock, boolean allowPalette,
+                              boolean looksRequest, boolean addItem, List<Asset.Ref> assets,
+                              boolean createFormBlock) {
         if (b.source() == Block.Source.SERVER) {
             throw new IllegalArgumentException(
                     b.key() + " 는 서버 소유입니다. 모델에게 수정시키면 안 됩니다.");
@@ -443,11 +450,21 @@ public final class PromptBuilder {
         // ★ 항목 하나를 더하는 요청이면 위 금지문 대신 이것이 나간다.
         //   "같은 태그 · 같은 class" 가 꼭 있어야 한다 — 없으면 모델이 템플릿 카드
         //   (.benefit-card) 를 <li> 로 만들어 붙이고 디자인이 깨진다.
-        if (addItem) {
+        if (addItem && !createFormBlock) {
             s.add("- 이 목록에 항목을 **하나만** 더한다. 기존 항목은 손대지 마라.");
             s.add("- 더한 항목은 기존 항목과 **같은 태그 · 같은 class** 로 만든다.");
             s.add("- 더한 항목에 금액 · 수량 · 기간 같은 수치를 지어내 넣지 마라. "
                     + "관리자가 적어 준 문구에 있는 것만 쓴다.");
+        }
+        if (createFormBlock && b == Block.BENEFITS) {
+            s.add("- 혜택 블록을 처음부터 복원한다. 표준 카드 구조를 따른다: <section data-block=\"benefits\" class=\"v-benefits-grid v-surface-tint\"> 안에 <ul> 하나, 그 안에 <li> 하나, 그 안에 내용이 있는 .benefit-icon 과 .benefit-name 을 둔다.");
+            s.add("- 아이콘은 혜택에 어울리는 이모지 하나로 채우고, 혜택 이름은 반드시 실제 문구로 채운다.");
+            s.add("- 관리자 문구에 없는 설명, 금액, 수량, 기간은 지어내지 않는다. 근거가 없는 설명이나 값은 빈 요소로 남기지 말고 해당 요소를 생략한다.");
+        }
+        if (createFormBlock && b == Block.PRIZE) {
+            s.add("- 경품 블록을 표준 서식으로 처음부터 만든다. <section data-block=\"prize\" class=\"v-prize-list\"> 안에 <div class=\"block-header\"><div class=\"sub-label\">Prize</div><h2 class=\"title\">경품 안내</h2></div>, <ul>, 관리자가 요청한 경품 <li> 하나를 둔다.");
+            s.add("- 섹션에 class=\"ev-block\" 을 붙이지 마라. 새 경품 영역의 기본 스타일이 적용되지 않는다.");
+            s.add("- 요청에 있는 경품명과 금액만 쓴다. 등수, 당첨 인원, 추첨 방식 등 요청에 없는 조건이나 경품을 지어내지 마라.");
         }
 
         s.add("");
