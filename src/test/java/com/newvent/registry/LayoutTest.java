@@ -157,4 +157,20 @@ class LayoutTest {
         assertEquals("페이지를 벤토 배치로 바꿔줘", Layout.withoutLayoutTalk("페이지를 벤토 배치로 바꿔줘"));
         assertNull(Layout.withoutLayoutTalk(null));
     }
+
+    @Test
+    @DisplayName("새 배치 4종 — 페이지 배치를 말하면 고르고, 영역 얘기면 안 고른다")
+    void 새_배치() {
+        assertEquals(Optional.of(Layout.MASONRY), Layout.requestedBy("페이지를 벽돌처럼 배치해줘"));
+        assertEquals(Optional.of(Layout.MASONRY), Layout.requestedBy("메이슨리 레이아웃으로 바꿔줘"));
+        assertEquals(Optional.of(Layout.TIMELINE), Layout.requestedBy("전체를 타임라인 배치로"));
+        assertEquals(Optional.of(Layout.L_SHAPE), Layout.requestedBy("L자 배치로 바꿔줘"));
+        assertEquals(Optional.of(Layout.CTA_RAIL), Layout.requestedBy("참여 레일 배치로 해줘"));
+        // 영역 하나의 모양 얘기는 페이지 배치가 아니다 — 일정 영역의 타임라인은 schedule 변형 몫이다
+        assertEquals(Optional.empty(), Layout.requestedBy("일정을 타임라인으로 보여줘"));
+        assertEquals(Optional.empty(), Layout.requestedBy("혜택 영역을 벽돌처럼"));
+        // 조건 — 영역이 모자라면 서버가 기본으로 되돌린다
+        assertEquals(3, Layout.MASONRY.minContentBlocks());
+        assertEquals(3, Layout.L_SHAPE.minContentBlocks());
+    }
 }

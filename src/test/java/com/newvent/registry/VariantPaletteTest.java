@@ -29,10 +29,202 @@ class VariantPaletteTest {
         for (Variant v : Variant.values()) {
             assertTrue(v.cssClass().startsWith(Variant.PREFIX), v + " 가 v- 로 시작하지 않습니다");
             assertTrue(seen.add(v.cssClass()), v.cssClass() + " 가 두 번 나옵니다");
+            if (!v.core()) assertTrue(v.desc().contains(" — "), v + " 설명에 \"이름 — 설명\" 꼴이 없습니다 (열쇠말을 못 뽑는다)");
         }
+        Set<String> palettes = new HashSet<>();
         for (Palette p : Palette.values()) {
             assertTrue(p.cssClass().startsWith(Palette.PREFIX), p + " 가 palette- 로 시작하지 않습니다");
+            assertTrue(palettes.add(p.cssClass()), p.cssClass() + " 가 두 번 나옵니다");
+            if (!p.core()) assertTrue(p.desc().contains(" — "), p + " 설명에 \"이름 — 색\" 꼴이 없습니다 (열쇠말을 못 뽑는다)");
         }
+    }
+
+    @Test
+    @DisplayName("팔레트 확장: 기본 19개는 그대로, 확장은 125개, 어두운 팔레트는 night · esports 포함 24개")
+    void 팔레트_확장_개수() {
+        assertEquals(19, Palette.basics().size());
+        assertEquals(19 + 125, Palette.values().length);
+        assertEquals(24, Palette.all().stream().filter(Palette::dark).count());
+        // 기본은 선언 맨 앞에 몰려 있다 — 프롬프트의 기본 목록 순서가 확장 때문에 흔들리지 않는다
+        for (int i = 0; i < 19; i++) assertTrue(Palette.values()[i].core(), Palette.values()[i] + " 는 기본이어야 합니다");
+    }
+
+    @Test
+    @DisplayName("팔레트 확장: 요청문에 이름이 나오면 기본 뒤에 붙고, 없으면 기본만")
+    void 팔레트_확장_요청문() {
+        assertEquals(Palette.basics(), Palette.forPrompt(null));
+        assertEquals(Palette.basics(), Palette.forPrompt("신규 가입 이벤트 페이지를 만들어줘"));
+
+        List<Palette> jeju = Palette.forPrompt("제주 감성으로 여름 여행 이벤트");
+        assertTrue(jeju.contains(Palette.JEJU));
+        assertEquals(Palette.basics(), jeju.subList(0, 19), "기본 목록이 앞에 그대로 있어야 합니다");
+
+        assertEquals(Palette.CHUSEOK, Palette.matched("추석 맞이 한가위 선물").get(0));
+        assertTrue(Palette.matched("단청 느낌으로 전통스럽게").contains(Palette.DANCHEONG));
+    }
+
+    @Test
+    @DisplayName("팔레트 확장: 흔한 색 이름 · '기본' 같은 말은 확장을 끌어오지 않는다")
+    void 팔레트_확장_흔한말() {
+        assertEquals(List.of(), Palette.matched("전체 색을 보라색으로 바꿔줘"));
+        assertEquals(List.of(), Palette.matched("기본 정보에 맞게 만들어줘"));
+        // 많이 맞아도 MAX_MATCHED 를 넘지 않는다
+        assertTrue(Palette.matched("단청 오방색 한복 청자 백자 제주 부산 한옥 서울 야경").size() <= Palette.MAX_MATCHED);
+    }
+
+    /**
+     * ★ 기본 122개는 그대로다 — 확장이 들어와도 표본 · 수정 목록의 기본 부분은 한 글자도 안 바뀐다.
+     *   확장(배치 56 · 배경 16 · 움직임 8, registry-candidates.json 의 채택분)은 요청문이 이름을 부를 때만 붙는다.
+     */
+    @Test
+    @DisplayName("변형 확장: 기본 122개 + 확장 80개(배치 56 · 배경 16 · 움직임 8), 요청문이 안 부르면 예전 목록 그대로")
+    void 변형_확장_구조() {
+        List<Variant> all = List.of(Variant.values());
+        assertEquals(122, all.stream().filter(Variant::core).count());
+        assertEquals(80, all.stream().filter(v -> !v.core()).count());
+        assertEquals(56, all.stream().filter(v -> !v.core() && v.group() == Variant.Group.LAYOUT).count());
+        // ★ 배경 확장은 무늬 · 질감 · 경계뿐이다 — 고정 색 배경(namedColor)은 늘리지 않는다
+        assertEquals(16, all.stream().filter(v -> !v.core() && v.group() == Variant.Group.SURFACE).count());
+        assertTrue(all.stream().filter(v -> !v.core() && v.group() == Variant.Group.SURFACE)
+                .noneMatch(Variant::namedColor));
+        // ★ 움직임은 전부 확장이다 — 아무 말이 없는데 페이지가 움직이면 안 된다
+        assertTrue(all.stream().filter(v -> v.group() == Variant.Group.MOTION).noneMatch(Variant::core));
+        assertEquals(8, all.stream().filter(v -> v.group() == Variant.Group.MOTION).count());
+        // 배치 확장은 블록 전용이다
+        assertTrue(all.stream().filter(v -> !v.core() && v.group() == Variant.Group.LAYOUT)
+                .allMatch(v -> v.block() != null && !v.namedColor()));
+        for (Block b : Block.llmBlocks()) {
+            List<Variant> core = Variant.of(b).stream().filter(Variant::core).toList();
+            assertEquals(core, Variant.forEdit(b, "신규 가입 이벤트 혜택을 다듬어줘"), b.key());
+            assertEquals(Variant.sample(b, "가을 이벤트", 4), Variant.forPrompt(b, "가을 이벤트", 4), b.key());
+            assertTrue(Variant.sample(b, "영수증 메달 항공권", 4).stream().allMatch(Variant::core),
+                    b.key() + " 표본에 확장이 섞였습니다");
+        }
+        // ★ "가을" 은 이제 낙엽 무늬(배경 확장)를 부른다 — 확장을 부르지 않는 말로 본다
+        assertEquals(Variant.sampleSurfaces("신규 가입", 4), Variant.surfacesForPrompt("신규 가입", 4));
+        assertFalse(PromptBuilder.generate("신규 가입 이벤트").contains("요청문이 말한 모양과"),
+                "요청문이 안 불렀는데 확장 안내 줄이 나갔습니다");
+    }
+
+    @Test
+    @DisplayName("변형 확장: 이름을 부르면 그 블록 목록 뒤에 붙고, 다른 블록에는 안 붙는다")
+    void 변형_확장_요청문() {
+        assertEquals(List.of(Variant.BENEFITS_RECEIPT), Variant.matched(Block.BENEFITS, "혜택을 영수증 모양으로"));
+        assertEquals(List.of(), Variant.matched(Block.STEPS, "혜택을 영수증 모양으로"));
+        assertEquals(List.of(Variant.PRIZE_MEDAL), Variant.matched(Block.PRIZE, "경품을 메달처럼 보여줘"));
+        assertEquals(List.of(Variant.COUPON_BOARDING_PASS), Variant.matched(Block.COUPON, "탑승권 느낌 쿠폰"));
+        assertEquals(List.of(Variant.COMPARE_VS), Variant.matched(Block.COMPARE, "A vs B 대결 구도로"));
+        // 같은 이름(브루탈)이 두 블록에 있으면 블록마다 자기 것만
+        assertEquals(List.of(Variant.HERO_BRUTAL), Variant.matched(Block.HERO, "브루탈하게"));
+        assertEquals(List.of(Variant.CTA_BRUTAL), Variant.matched(Block.CTA, "브루탈하게"));
+
+        String gen = PromptBuilder.generate("영수증 모양 혜택으로 신규 가입 이벤트");
+        assertTrue(gen.contains("v-benefits-receipt"));
+        assertTrue(gen.contains("요청문이 말한 모양과 이름이 맞는 것: v-benefits-receipt"));
+        String edit = PromptBuilder.edit(Block.BENEFITS, false, false, true, false, List.of(), "영수증 모양으로 바꿔줘");
+        assertTrue(edit.contains("v-benefits-receipt") && edit.contains("요청문이 말한 모양과"));
+    }
+
+    /**
+     * ★ Bedrock 실측 두 건을 고정한다 (이벤트 5682 — "봄 벚꽃 축제")
+     *   ① "페이지는 벽돌 배치로" 가 혜택 변형 v-benefits-masonry(벽돌)까지 끌어와 "선물 포장" 대신 골라졌다
+     *   ② "종이 공예처럼 아기자기하게" 인데 요청문의 "축제" 때문에 theme-bloom 이 골라졌다
+     */
+    @Test
+    @DisplayName("변형 · 테마 짚기: 페이지 배치 얘기는 변형을 끌어오지 않고, 이름이 더 맞는 테마를 짚는다")
+    void 배치_얘기와_테마_짚기() {
+        String text = "봄 벚꽃 축제 이벤트. 종이 공예처럼 아기자기하고 따뜻하게. 페이지는 벽돌 배치로. "
+                + "혜택은 선물 포장 모양으로.";
+        assertFalse(Variant.matched(Block.BENEFITS, text).contains(Variant.BENEFITS_MASONRY),
+                "페이지 배치(벽돌) 얘기가 혜택 변형을 끌어왔습니다");
+        assertTrue(Variant.matched(Block.BENEFITS, text).contains(Variant.BENEFITS_GIFT));
+        // 영역 모양으로 벽돌을 말하면 그때는 실린다
+        assertTrue(Variant.matched(Block.BENEFITS, "혜택 카드를 벽돌처럼 쌓아줘").contains(Variant.BENEFITS_MASONRY));
+
+        assertEquals(java.util.Optional.of(Theme.PAPERCRAFT), Theme.matched(text));
+        assertEquals(java.util.Optional.of(Theme.BRUTALIST), Theme.matched("브루탈하고 힙하게"));
+        assertEquals(java.util.Optional.empty(), Theme.matched("신규 가입 이벤트"));
+        assertTrue(PromptBuilder.generate(text).contains("이름이 맞는 테마: theme-papercraft"));
+        assertTrue(PromptBuilder.edit(Block.HERO, false, true, true, false, List.of(), "종이 공예 느낌으로 바꿔줘")
+                .contains("이름이 맞는 테마: theme-papercraft"));
+    }
+
+    @Test
+    @DisplayName("배경 확장: 계절 · 질감 말이 나오면 생성 배경 목록에 붙고, 배경을 쓰는 블록의 수정 목록에도 붙는다")
+    void 배경_확장() {
+        assertTrue(Variant.matchedSurfaces("겨울 눈송이 이벤트").contains(Variant.SURFACE_SNOW));
+        assertTrue(Variant.matchedSurfaces("가을 단풍 축제").contains(Variant.SURFACE_LEAVES));
+        assertEquals(List.of(), Variant.matchedSurfaces("신규 가입 이벤트"));
+        String gen = PromptBuilder.generate("한지 느낌의 전통 명절 이벤트");
+        assertTrue(gen.contains("v-surface-hanji"), "배경 확장이 생성 프롬프트에 안 실렸습니다");
+        // 배경을 쓰는 블록(intro)에는 실리고, 안 쓰는 블록(cta)에는 안 실린다
+        assertTrue(Variant.forEdit(Block.INTRO, "공책 줄노트처럼").contains(Variant.SURFACE_NOTEBOOK));
+        assertFalse(Variant.forEdit(Block.CTA, "공책 줄노트처럼").contains(Variant.SURFACE_NOTEBOOK));
+    }
+
+    @Test
+    @DisplayName("움직임: hero 는 흩날림만, cta 는 버튼 강조 + 공통 등장, 유의사항에는 없다, 배치와 같이 남는다")
+    void 움직임() {
+        assertTrue(Variant.of(Block.HERO).contains(Variant.HERO_ANIM_SNOWFALL));
+        assertFalse(Variant.of(Block.HERO).contains(Variant.ANIM_FADE_UP), "hero 는 첫 화면이라 등장 효과가 없습니다");
+        assertTrue(Variant.of(Block.CTA).containsAll(List.of(Variant.CTA_ANIM_PULSE, Variant.ANIM_FADE_UP)));
+        assertTrue(Variant.of(Block.BENEFITS).contains(Variant.ANIM_STAGGER));
+        assertFalse(Variant.of(Block.BENEFITS).contains(Variant.HERO_ANIM_SNOWFALL));
+        assertTrue(Variant.of(Block.NOTICES).stream().noneMatch(v -> v.group() == Variant.Group.MOTION));
+
+        assertEquals(List.of(Variant.HERO_ANIM_SNOWFALL), Variant.matched(Block.HERO, "함박눈이 내리는 겨울 이벤트"));
+        assertEquals(List.of(Variant.ANIM_STAGGER), Variant.matchedMotions("혜택이 차례로 나타나게"));
+        String gen = PromptBuilder.generate("벚꽃 꽃잎이 흩날리는 봄 이벤트");
+        assertTrue(gen.contains("v-anim-petal-fall") && gen.contains("움직임:"), "hero 움직임이 생성 프롬프트에 안 실렸습니다");
+        assertFalse(PromptBuilder.generate("신규 가입 이벤트").contains("v-anim-"), "요청문 없이 움직임이 실렸습니다");
+
+        // 묶음이 다르다 — 배치 하나 + 움직임 하나가 같이 남고, 움직임 둘이면 앞의 것만
+        Element sec = root("<section data-block=\"cta\" class=\"v-cta-pill v-anim-pulse v-anim-heart-beat\"><a class=\"btn\">x</a></section>",
+                "section");
+        Variant.sanitize(sec, Block.CTA);
+        assertEquals(Set.of("v-cta-pill", "v-anim-pulse"), sec.classNames());
+    }
+
+    /**
+     * ★ 흔한 말이 확장을 끌어오면 블록마다 엉뚱한 모양이 실린다.
+     *   이벤트 요청에 자주 나오는 문장이 확장을 하나도 안 부르는지 본다.
+     */
+    @Test
+    @DisplayName("변형 확장: 흔한 요청 문장은 확장을 끌어오지 않는다")
+    void 변형_확장_흔한말() {
+        List<String> plain = List.of(
+                "신규 가입 고객에게 데이터 3GB 를 주는 이벤트",
+                "혜택 카드를 크게 보여줘",
+                "참여 방법을 단계별로 정리해줘",
+                "경품 목록을 큰 글씨로",
+                "버튼을 더 눈에 띄게",
+                "자주 묻는 질문을 깔끔하게",
+                "일정을 보기 좋게 바꿔줘",
+                "요금제 비교표를 만들어줘",
+                "숫자를 크게 강조해줘",
+                "전체 배경을 밝게");
+        for (String text : plain) {
+            for (Block b : Block.llmBlocks()) {
+                assertEquals(List.of(), Variant.matched(b, text), b.key() + " ← \"" + text + "\"");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("팔레트 확장: 생성 · 수정 프롬프트에 요청문이 부른 확장이 실린다")
+    void 팔레트_확장_프롬프트() {
+        assertTrue(PromptBuilder.generate("제주 감성 여름 이벤트").contains("palette-jeju"));
+        assertFalse(PromptBuilder.generate("신규 가입 이벤트").contains("palette-jeju"));
+        assertTrue(PromptBuilder.edit(Block.HERO, false, true, true, false, List.of(), "전체를 단청 색으로 바꿔줘")
+                .contains("palette-dancheong"));
+        assertFalse(PromptBuilder.edit(Block.HERO, false, true, true, false, List.of())
+                .contains("palette-dancheong"));
+        // 목록에만 두면 모델이 못 고른다 (Bedrock 실측) — 목록 아래에서 한 번 더 짚는다
+        String edit = PromptBuilder.edit(Block.HERO, false, true, true, false, List.of(), "전체 색을 단청 느낌으로 바꿔줘");
+        assertTrue(edit.contains("이름이 맞는 색감: palette-dancheong"), "요청문이 부른 팔레트를 짚는 줄이 없습니다");
+        assertFalse(PromptBuilder.edit(Block.HERO, false, true, true, false, List.of(), "전체 색을 보라색으로")
+                .contains("이름이 맞는 색감"), "흔한 색 요청에는 짚는 줄이 없어야 합니다");
+        assertTrue(PromptBuilder.generate("제주 감성 여름 이벤트").contains("이름이 맞는 색감: palette-jeju"));
     }
 
     @Test
@@ -513,9 +705,11 @@ class VariantPaletteTest {
         String p = PromptBuilder.generate();
         // 변형은 블록마다 기본을 뺀 몇 개만 싣는다 (아래 표본 테스트). 기본은 class 를 안 붙이면 나온다고 안내한다
         assertTrue(p.contains("붙이지 않으면 평범한 기본 모양"));
-        for (Palette pl : Palette.values()) {
+        // ★ 기본 팔레트만 늘 실린다. 확장은 요청문이 부를 때만이다 (아래 팔레트_확장_* 테스트)
+        for (Palette pl : Palette.basics()) {
             if (pl != Palette.BASE) assertTrue(p.contains(pl.cssClass()), pl.cssClass());
         }
+        assertFalse(p.contains("palette-jeju"), "요청문 없이 확장 팔레트가 실렸습니다");
         assertTrue(p.contains("요청문이 그 내용을 직접 말할 때만"));
 
         // ★ 블록 목록이 세 묶음이다 — 만들 영역(core) · 이번 요청에 꼭 넣을 영역(열쇠말이 걸린 것) ·
@@ -544,6 +738,16 @@ class VariantPaletteTest {
     void 모든_변형이_어딘가로는_나간다() {
         String gen = PromptBuilder.generate();
         for (Variant v : Variant.values()) {
+            // ★ 확장은 요청문이 부를 때만 나간다 — 이름을 말하면 나가는지 본다
+            if (!v.core()) {
+                String name = v.desc().substring(0, v.desc().indexOf(" — "));
+                boolean called = Block.llmBlocks().stream()
+                        .filter(b -> Variant.of(b).contains(v))
+                        .anyMatch(b -> PromptBuilder.edit(b, false, false, true, false, List.of(), name + " 모양으로")
+                                .contains(v.cssClass()));
+                assertTrue(called, v.cssClass() + " 는 이름(" + name + ")을 불러도 수정 프롬프트에 안 나갑니다");
+                continue;
+            }
             if (gen.contains(v.cssClass())) continue;
             boolean inEdit = Block.llmBlocks().stream()
                     .filter(b -> Variant.of(b).contains(v))
@@ -585,7 +789,9 @@ class VariantPaletteTest {
     @DisplayName("생성 프롬프트의 변형 표본 — 블록마다 최대 4개, 같은 요청문이면 같고, 요청문을 바꾸면 전부 한 번은 나온다")
     void 변형_표본() {
         for (Block b : Block.llmBlocks()) {
-            List<Variant> layouts = Variant.of(b).stream().filter(v -> v.group() == Variant.Group.LAYOUT).toList();
+            // ★ 표본은 기본에서만 뽑는다. 확장은 요청문이 부를 때만 붙는다 (변형_확장_*)
+            List<Variant> layouts = Variant.of(b).stream()
+                    .filter(v -> v.group() == Variant.Group.LAYOUT && v.core()).toList();
             if (layouts.isEmpty()) continue;
 
             List<Variant> one = Variant.sample(b, "가을 이벤트", 4);
