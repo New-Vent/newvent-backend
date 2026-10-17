@@ -1,5 +1,6 @@
 package com.newvent.participation.service;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -49,6 +50,11 @@ public class ParticipationService {
 
         // 실제 참여는 게시 중인 이벤트에만 허용함
         if (event.getStatus() != EventStatus.PUBLISHED) {
+            throw new EventException(EventErrorCode.EVENT_NOT_ACCESSIBLE);
+        }
+
+        // 페이지 공개와 참여 가능 시각은 별개다. 직접 API를 호출해도 시작 전 참여는 막는다.
+        if (event.getStartDate() != null && OffsetDateTime.now().isBefore(event.getStartDate())) {
             throw new EventException(EventErrorCode.EVENT_NOT_ACCESSIBLE);
         }
 

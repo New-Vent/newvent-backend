@@ -1,5 +1,6 @@
 package com.newvent.participation.service;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -41,6 +42,14 @@ public class ParticipationStatusService {
     public ParticipationStatusResponse getStatus(Long eventId, Long userId) {
         Event event = publicEventService.getPublicEvent(eventId);
         User user = userService.getById(userId);
+
+        if (event.getStartDate() != null && OffsetDateTime.now().isBefore(event.getStartDate())) {
+            return ParticipationStatusResponse.builder()
+                    .participated(false)
+                    .canParticipate(false)
+                    .unavailableReason(ParticipationUnavailableReason.NOT_STARTED)
+                    .build();
+        }
 
         boolean participated = participationRepository.existsByEventIdAndUserId(eventId, userId);
         boolean gradeAllowed = gradeRank(user.getMembershipGrade()) >= gradeRank(event.getGrade());
