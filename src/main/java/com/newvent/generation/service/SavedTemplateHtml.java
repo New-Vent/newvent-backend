@@ -17,16 +17,24 @@ import com.newvent.registry.Slots;
 public final class SavedTemplateHtml {
     private SavedTemplateHtml() {}
 
-    private static class Approved {
-        private static final Set<String> SCRIPTS = new ResourceTemplateLoader().all().stream()
-                .flatMap(t -> parse(t.html()).select("script").stream())
-                .map(Element::outerHtml).collect(Collectors.toUnmodifiableSet());
+    private static volatile Set<String> approvedScripts;
+
+    private static Set<String> approvedScripts() {
+        Set<String> v = approvedScripts;
+        if (v == null) {
+            v = new ResourceTemplateLoader().all().stream()
+                    .flatMap(t -> parse(t.html()).select("script").stream())
+                    .map(Element::outerHtml).collect(Collectors.toUnmodifiableSet());
+            approvedScripts = v;
+        }
+        return v;
     }
 
     public static String clean(String html) {
         Document source = parse(html);
+        Set<String> approved = approvedScripts();
         List<String> scripts = source.select("script").stream()
-                .map(Element::outerHtml).filter(Approved.SCRIPTS::contains).distinct().toList();
+                .map(Element::outerHtml).filter(approved::contains).distinct().toList();
         Element root = PageShell.rootOf(source);
         List<String> palettes = root == null ? List.of() : root.classNames().stream()
                 .filter(c -> Palette.find(c).isPresent()).limit(1).toList();
