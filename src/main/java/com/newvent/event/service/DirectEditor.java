@@ -1,11 +1,14 @@
 package com.newvent.event.service;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -16,6 +19,7 @@ import org.jsoup.select.NodeTraversor;
 import org.jsoup.select.NodeVisitor;
 
 import com.newvent.event.dto.request.ButtonStyle;
+import com.newvent.event.dto.request.DirectEditRequest.ItemRemoval;
 import com.newvent.event.dto.request.TextEdit;
 import com.newvent.event.dto.request.TextFormat;
 import com.newvent.event.dto.request.TextStyle;
@@ -35,6 +39,7 @@ import com.newvent.registry.Slot;
 public final class DirectEditor {
 
     private DirectEditor() {}
+    private static final Set<Block> ADMIN_KEEP = EnumSet.of(Block.HERO, Block.NOTICES, Block.CTA);
     private static final String TEXT_ID_PREFIX = "nv-direct-text-";
     private static boolean marked(TextNode node) {
         return node.parent() instanceof Element el && el.normalName().equals("span")
@@ -45,9 +50,9 @@ public final class DirectEditor {
     }
 
     /** 미리보기 HTML과 저장본에 공통으로 적용하는 편집 가능 문구 순서. */
-    public record EditableText(int index, String before, Map<String, String> format, Integer deleteDepth) {
+    public record EditableText(int index, String before, Map<String, String> format) {
         public EditableText(int index, String before) {
-            this(index, before, Map.of(), null);
+            this(index, before, Map.of());
         }
     }
 
@@ -64,13 +69,7 @@ public final class DirectEditor {
                     if (styles.containsKey(key)) format.put(key, styles.get(key));
                 }
             }
-            Element target = deletionTarget(node);
-            Integer deleteDepth = null;
-            if (target != null) {
-                deleteDepth = 0;
-                for (Node parent = node.parent(); parent != target; parent = parent.parent()) deleteDepth++;
-            }
-            result.add(new EditableText(i, editableValue(node), Map.copyOf(format), deleteDepth));
+            result.add(new EditableText(i, editableValue(node), Map.copyOf(format)));
         }
         return List.copyOf(result);
     }
@@ -100,6 +99,49 @@ public final class DirectEditor {
             html = applyTextStyle(html, textStyle);
         }
         return html;
+    }
+
+    /** 관리자 직접수정에서 블록 또는 레지스트리 항목을 삭제한다. */
+    public static String applyDeletions(String html, List<String> removeBlocks,
+                                        Map<String, List<ItemRemoval>> removeItems) {
+        if ((removeBlocks == null || removeBlocks.isEmpty())
+                && (removeItems == null || removeItems.isEmpty())) return html;
+        Document doc = Jsoup.parseBodyFragment(html);
+        doc.outputSettings().prettyPrint(false);
+        Set<String> removing = new LinkedHashSet<>(removeBlocks == null ? List.of() : removeBlocks);
+        for (String key : removing) {
+            Block block = Block.of(key);
+            if (ADMIN_KEEP.contains(block))
+                throw new DirectEditException(DirectEditErrorCode.BLOCK_DELETE_FORBIDDEN,
+                        block.key() + " 영역은 직접수정에서 지울 수 없습니다.");
+        }
+        if (removeItems != null) for (var entry : removeItems.entrySet()) {
+            Block block = Block.of(entry.getKey());
+            if (removing.contains(block.key()))
+                throw new DirectEditException(DirectEditErrorCode.ITEM_DELETE_MISMATCH, "같은 요청에서 블록과 그 항목을 함께 지울 수 없습니다.");
+            Element section = doc.selectFirst(block.selector());
+            if (section == null || block.must() == null)
+                throw new DirectEditException(DirectEditErrorCode.ITEM_DELETE_MISMATCH);
+            List<Element> items = new ArrayList<>(section.select(block.must()).stream().distinct().toList());
+            List<ItemRemoval> removals = entry.getValue().stream().sorted((a, b) -> Integer.compare(b.index(), a.index())).toList();
+            for (ItemRemoval removal : removals) {
+                if (removal.index() >= items.size()) throw new DirectEditException(DirectEditErrorCode.ITEM_DELETE_MISMATCH);
+                // sourceVersionId 가 가리키는 HTML은 불변이므로, 이 버전의 항목 순번이 안정적인 기준이다.
+                // 브라우저 textContent 와 Jsoup 텍스트 추출은 구조 공백 처리 차이로 달라질 수 있어
+                // 문구 비교를 인덱스 검증의 추가 조건으로 삼지 않는다.
+                items.get(removal.index()).remove();
+                items.set(removal.index(), null);
+            }
+            int remaining = section.select(block.must()).size();
+            if (remaining < block.minItems())
+                throw new DirectEditException(DirectEditErrorCode.TOO_FEW_ITEMS,
+                        block.key() + "은 항목이 " + block.minItems() + "개 이상 있어야 합니다. 지금은 " + remaining + "개가 남습니다.");
+        }
+        for (String key : removing) {
+            Element target = doc.selectFirst(Block.of(key).selector());
+            if (target != null) target.remove();
+        }
+        return doc.body().html();
     }
 
     /**
@@ -190,12 +232,6 @@ public final class DirectEditor {
 
         List<TextNode> textNodes = collectTextNodes(doc);
         var indexes = new HashSet<Integer>();
-        List<Element> deletions = new ArrayList<>();
-        Map<Element, Integer> shapeCounts = new LinkedHashMap<>();
-        for (Element section : doc.select("[data-block]")) {
-            Block.find(section.attr("data-block")).filter(block -> block.must() != null)
-                    .ifPresent(block -> shapeCounts.put(section, section.select(block.must()).size()));
-        }
 
         for (TextEdit edit : edits) {
             int idx = edit.index();
@@ -213,16 +249,10 @@ public final class DirectEditor {
                 throw new DirectEditException(DirectEditErrorCode.BEFORE_TEXT_MISMATCH);
             }
 
-            if (edit.delete()) {
-                Element target = deletionTarget(targetNode);
-                if (target == null) throw new DirectEditException(DirectEditErrorCode.TEXT_DELETE_NOT_ALLOWED);
-                deletions.add(target);
-            }
         }
 
-        // 원본 인덱스로 모든 항목을 검증한 뒤 변경한다. 삭제는 마지막에 적용한다.
+        // 원본 인덱스로 모든 항목을 검증한 뒤 문구와 서식을 변경한다.
         for (TextEdit edit : edits) {
-            if (edit.delete()) continue;
             int idx = edit.index();
             TextNode targetNode = textNodes.get(idx);
 
@@ -237,15 +267,6 @@ public final class DirectEditor {
             targetNode.text(edit.after().replace("\r\n", "\n").replace('\r', '\n'));
             applyFormat((Element) targetNode.parent(), edit.format());
         }
-        deletions.forEach(Element::remove);
-        // 개별로는 가능해도 여러 항목을 함께 지워 최소 개수를 깨뜨리는 요청은 저장하지 않는다.
-        if (!deletions.isEmpty()) shapeCounts.forEach((section, beforeCount) -> {
-            Block block = Block.of(section.attr("data-block"));
-            int minimum = Math.min(beforeCount, Math.max(1, block.minItems()));
-            if (section.select(block.must()).size() < minimum) {
-                throw new DirectEditException(DirectEditErrorCode.TEXT_DELETE_NOT_ALLOWED);
-            }
-        });
 
         return doc.body().html();
     }
@@ -263,44 +284,6 @@ public final class DirectEditor {
         if (format.size() != null) styles.put("font-size", format.size() + "px");
         if (format.bold() != null) styles.put("font-weight", format.bold() ? "700" : "400");
         holder.attr("style", serializeInlineStyle(styles));
-    }
-
-    /** 다른 문구나 기능을 포함하지 않는 가장 바깥의 문구 컨테이너까지만 삭제한다. */
-    private static Element deletionTarget(TextNode node) {
-        Element parent = (Element) node.parent();
-        if (parent.closest("[data-block=notices], [data-block=cta], [data-block=hero] h1, [data-slot], [data-behavior], a, button, label") != null) return null;
-        for (Element ancestor = parent; ancestor != null && !ancestor.hasAttr("data-block"); ancestor = ancestor.parent()) {
-            if (!ancestor.id().isEmpty() && !ancestor.id().startsWith(TEXT_ID_PREFIX)) return null;
-        }
-        Element result = null;
-        for (Element candidate = parent; candidate != null; candidate = candidate.parent()) {
-            if (candidate.hasAttr("data-block") || !candidate.is("span,p,div,li,h1,h2,h3,h4,h5,h6,strong,em,b,i,small")) break;
-            boolean unsafe = false;
-            for (Element el : candidate.getAllElements()) {
-                if (el.hasAttr("data-block") || el.hasAttr("data-slot") || el.hasAttr("data-behavior")
-                        || (!el.id().isEmpty() && !el.id().startsWith(TEXT_ID_PREFIX))
-                        || el.is("a,button,input,select,textarea,img,svg,canvas,video,iframe,script,style")) {
-                    unsafe = true;
-                    break;
-                }
-                for (var attr : el.attributes()) {
-                    if (attr.getKey().startsWith("on") || attr.getKey().startsWith("data-action")) unsafe = true;
-                }
-                for (TextNode text : el.textNodes()) {
-                    if (text != node && (!text.isBlank() || marked(text))) unsafe = true;
-                }
-            }
-            if (unsafe) break;
-            Element section = candidate.closest("[data-block]");
-            Block block = section == null ? null : Block.find(section.attr("data-block")).orElse(null);
-            if (block != null && block.must() != null) {
-                int count = section.select(block.must()).size();
-                int removed = candidate.select(block.must()).size();
-                if (count - removed < Math.min(count, Math.max(1, block.minItems()))) break;
-            }
-            result = candidate;
-        }
-        return result;
     }
 
     /**

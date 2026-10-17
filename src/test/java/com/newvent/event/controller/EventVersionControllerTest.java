@@ -224,16 +224,14 @@ class EventVersionControllerTest {
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
                                 {"sourceVersionId":102,"edits":[
-                                  {"index":0,"before":"제목","after":"제목","format":{"color":"#d60076","size":24,"bold":true}},
-                                  {"index":1,"before":"소개","after":"소개","delete":true}
-                                ]}
+                                  {"index":0,"before":"제목","after":"제목","format":{"color":"#d60076","size":24,"bold":true}}
+                                ],"removeItems":{"benefits":[{"index":0,"before":"혜택"}]}}
                                 """))
                 .andExpect(status().isOk());
         verify(directEditService).directEdit(eq(12L), argThat(request ->
                 request.edits().get(0).format().size() == 24
                         && !request.edits().get(0).format().reset()
-                        && !request.edits().get(0).delete()
-                        && request.edits().get(1).delete()), eq(1L));
+                        && request.removeItems().get("benefits").get(0).index() == 0), eq(1L));
     }
 
     @Test

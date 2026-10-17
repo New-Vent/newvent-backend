@@ -45,7 +45,7 @@ questions:
     expectedBlock: cta
   - query: "참여 대상 등급"
     expectedBlock: audience
-  - query: "A형과 B형 요금제는 뭐가 달라?"
+  - query: "기본형과 무제한형 요금제는 뭐가 달라?"
     expectedBlock: compare
   - query: "연차에 따라 단계별 보상이 지급되는 방식"
     expectedBlock: intro
@@ -82,10 +82,10 @@ questions:
   - query: "가족 결합 할인"
     expectedBlock: benefits
 
-  # ── 시드: 엣지 케이스 ──
-  - query: "free data for new members"
-    expectedBlock: benefits
+  # ── 시드: 엣지 케이스 (주제형 2건) ──
+  - query: "친구 초대 적립 한도"
+    expectedBlock: faq
   - query: "리뷰 작성 시 적립"
     expectedBlock: benefits
-  - query: "안내문이 여러 청크로 나뉘어 저장되는지"
-    expectedBlock: hero
+  - query: "장기가입 지원금 차감 방식"
+    expectedBlock: intro

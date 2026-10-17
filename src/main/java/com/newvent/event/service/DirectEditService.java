@@ -72,6 +72,9 @@ public class DirectEditService {
         String updatedHtml = DirectEditor.apply(
                 baseHtml, request.edits(), request.buttonStyle(), request.textStyle());
 
+        // 삭제는 문구 인덱스 편집 뒤, 블록 순서 적용 전에 수행한다.
+        updatedHtml = DirectEditor.applyDeletions(updatedHtml, request.removeBlocks(), request.removeItems());
+
         // 3-2. 블록 순서. ★ 문구·버튼을 고친 **뒤**다 —
         //      TextEdit 은 문서 전체를 훑은 텍스트 노드 번호로 자리를 가리키므로,
         //      순서를 먼저 바꾸면 그 번호가 전부 밀려 엉뚱한 문구가 바뀐다.

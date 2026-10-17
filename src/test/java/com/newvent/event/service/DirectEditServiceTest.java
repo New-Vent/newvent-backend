@@ -91,14 +91,15 @@ class DirectEditServiceTest {
 
     @Test
     void textFormatAndDeletionSaveOneVersionFromOriginalBase() {
-        String html = "<section data-block='benefits'><p>첫째</p><p>둘째</p></section>";
+        String html = "<section data-block='benefits'><ul><li>첫째</li><li>둘째</li></ul></section>";
         Event event = ownedEvent();
         when(eventRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(event));
         when(versionStore.htmlOf(1L, 12L)).thenReturn(Optional.of(html));
         when(versionStore.save(eq(1L), any(String.class), eq(12L))).thenReturn(new VersionStore.Saved(13L, 5));
         var request = new DirectEditRequest(12L, List.of(
-                new TextEdit(0, "첫째", "첫째", null, true),
-                new TextEdit(1, "둘째", "새 문구", new com.newvent.event.dto.request.TextFormat("#d60076", 24, true, false), false)), null);
+                new TextEdit(1, "둘째", "새 문구", new com.newvent.event.dto.request.TextFormat("#d60076", 24, true, false))),
+                null, null, null, null, null, null,
+                java.util.Map.of("benefits", List.of(new DirectEditRequest.ItemRemoval(0, "첫째"))));
         var response = directEditService.directEdit(1L, request, 1L);
         assertThat(response.versionId()).isEqualTo(13L);
         verify(versionStore, times(1)).save(eq(1L), argThat(result ->

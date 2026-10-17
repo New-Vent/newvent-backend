@@ -19,15 +19,13 @@ public record TextEdit(
         String before,
         @Schema(description = "바꿀 문구. 빈 문자열과 줄바꿈을 쓸 수 있다.")
         String after,
-        TextFormat format,
-        Boolean delete) {
+        TextFormat format) {
 
     public TextEdit(int index, String before, String after) {
-        this(index, before, after, null, false);
+        this(index, before, after, null);
     }
 
     public TextEdit {
-        delete = Boolean.TRUE.equals(delete);
         if (index < 0) {
             throw new IllegalArgumentException("텍스트 인덱스는 0 이상이어야 합니다. 입력: " + index);
         }
