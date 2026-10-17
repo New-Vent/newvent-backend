@@ -52,7 +52,7 @@ public class PublicEventController {
     @Operation(
             summary = "공개 이벤트 상세",
             description = "게시 HTML 에 이벤트 기간을 채워 준다. 없거나 게시 전이거나 휴지통에 있으면 404 (EVENT404-0), "
-                    + "공개 기간 밖이거나 종료됐으면 404 (EVENT404-2)")
+                    + "시작 전에도 조회할 수 있다. 종료일이 지났거나 종료됐으면 404 (EVENT404-2)")
     @GetMapping("/{eventId}")
     public ApiResponse<PublicEventResponse> getEvent(@PathVariable Long eventId) {
         Event event = publicEventService.getPublicEvent(eventId);

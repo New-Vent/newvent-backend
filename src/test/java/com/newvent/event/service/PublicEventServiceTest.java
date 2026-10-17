@@ -71,13 +71,13 @@ class PublicEventServiceTest {
     }
 
     @Test
-    @DisplayName("시작 전인 이벤트를 조회하면 EventNotAccessibleException으로 응답")
+    @DisplayName("게시된 이벤트는 시작 전에도 조회할 수 있다")
     void 조회_시작전() {
         OffsetDateTime now = OffsetDateTime.now();
         Event event = newEvent(1L, EventStatus.PUBLISHED, now.plusDays(1), now.plusDays(10));
         when(eventRepository.findPublicEventById(1L, EventStatus.DRAFT)).thenReturn(Optional.of(event));
 
-        assertThrows(EventNotAccessibleException.class, () -> publicEventService.getPublicEvent(1L));
+        assertEquals(event, publicEventService.getPublicEvent(1L));
     }
 
     @Test
