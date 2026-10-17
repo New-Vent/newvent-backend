@@ -26,10 +26,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  *   편집·정화 뒤에 그 스크립트가 <b>글자 하나도 안 틀리고</b> 남았는지 보려는 것이다.
  *   AST 비교가 아니다. 템플릿 리소스가 유일한 승인 원본이고, 거기와 다르면 모델이 지어낸 것이다.
  *
- * ★ 기동할 때 한 번 읽는다 — 리소스가 운영 중에 바뀌지 않는다
+ * ★ 처음 쓸 때 한 번 읽는다 — 리소스가 운영 중에 바뀌지 않는다
  *   {@code ResourceTemplateLoader} 와 같은 규칙으로 {@code templates.json} 과
  *   {@code templates/{code}.html} 을 읽는다. 거기와 중복이지만 레지스트리는
  *   {@code generation.service} 를 몰라야 해서 여기 들고 왔다.
+ *
+ * ★ static final 초기화로 두지 않는다 — PageShell.noticesHtml 과 같은 이유
+ *   거기서 던지면 클래스가 "초기화 실패" 로 기억되어 이후 접근이 전부 NoClassDefFoundError 가 되고,
+ *   진짜 원인은 첫 줄에만 남는다. 지연 로딩이면 부를 때마다 같은 원인이 그대로 나온다.
  */
 public final class ApprovedScripts {
 
@@ -38,11 +42,21 @@ public final class ApprovedScripts {
     private static final String DIR = "templates/";
     private static final String INDEX = DIR + "templates.json";
 
-    public static final Set<String> SCRIPTS = load();
+    private static volatile Set<String> scripts;
+
+    /** 승인된 &lt;script&gt; 의 outerHtml 집합 */
+    public static Set<String> scripts() {
+        Set<String> v = scripts;
+        if (v == null) {
+            v = load();
+            scripts = v;
+        }
+        return v;
+    }
 
     /** 그 &lt;script&gt; 가 템플릿 승인본인가 */
     public static boolean contains(Element script) {
-        return SCRIPTS.contains(script.outerHtml());
+        return scripts().contains(script.outerHtml());
     }
 
     private static Set<String> load() {

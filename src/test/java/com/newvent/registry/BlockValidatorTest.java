@@ -235,4 +235,57 @@ public class BlockValidatorTest {
                 BlockValidator.validateEdited(Block.BENEFITS, BEFORE_3, plus(2), true),
                 "item_added_benefits"));
     }
+
+    private static final String BEFORE_BUTTONS =
+            "<section data-block=\"benefits\"><div class=\"benefits-list\">"
+            + "<div class=\"benefit-card\">A<button class=\"btn\">받기</button></div>"
+            + "<div class=\"benefit-card\">B<button class=\"btn\">받기</button></div>"
+            + "</div></section>";
+
+    private static String plusButtons(int cards, int buttonsEach) {
+        StringBuilder more = new StringBuilder();
+        for (int i = 0; i < cards; i++) {
+            more.append("<div class=\"benefit-card\">새").append(i);
+            for (int j = 0; j < buttonsEach; j++) more.append("<button class=\"btn\">받기</button>");
+            more.append("</div>");
+        }
+        return BEFORE_BUTTONS.replace("</div></section>", more + "</div></section>");
+    }
+
+    @Test
+    @DisplayName("버튼 달린 카드를 하나 복제해 더하면 통과한다")
+    void 버튼_달린_카드_하나는_통과() {
+        assertEquals(List.of(),
+                BlockValidator.validateEdited(Block.BENEFITS, BEFORE_BUTTONS, plusButtons(1, 1), true));
+    }
+
+    @Test
+    @DisplayName("템플릿 혜택 카드를 하나 복제해 더하면 통과한다 - flash_sale")
+    void 템플릿_혜택_카드_하나는_통과() throws Exception {
+        Element before = Jsoup.parse(text("templates/flash_sale.html"))
+                .selectFirst("section[data-block=benefits]");
+        Element after = before.clone();
+        Element card = after.selectFirst(".benefit-card");
+        card.parent().appendChild(card.clone());
+
+        assertEquals(List.of(),
+                BlockValidator.validateEdited(Block.BENEFITS, before.outerHtml(), after.outerHtml(), true));
+    }
+
+    @Test
+    @DisplayName("항목 추가여도 카드 하나보다 버튼이 많이 늘면 막는다")
+    void 카드_하나보다_버튼이_많이_늘면_막는다() {
+        assertTrue(hasCode(
+                BlockValidator.validateEdited(Block.BENEFITS, BEFORE_BUTTONS, plusButtons(1, 2), true),
+                "button_invented"));
+    }
+
+    @Test
+    @DisplayName("항목 추가 요청이 아니면 버튼이 늘면 막는다 - 기존 동작 그대로")
+    void 항목_추가가_아니면_버튼_증가를_막는다() {
+        String after = BEFORE_BUTTONS.replace("A<button", "A<button class=\"btn\">더</button><button");
+        assertTrue(hasCode(
+                BlockValidator.validateEdited(Block.BENEFITS, BEFORE_BUTTONS, after, false),
+                "button_invented"));
+    }
 }

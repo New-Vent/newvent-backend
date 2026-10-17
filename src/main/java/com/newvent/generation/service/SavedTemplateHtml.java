@@ -21,7 +21,7 @@ public final class SavedTemplateHtml {
         Document source = parse(html);
         // ★ 승인 목록은 registry.ApprovedScripts 가 한 곳에 들고 있다 — PageShell 과 같은 것을 본다
         List<String> scripts = source.select("script").stream()
-                .map(Element::outerHtml).filter(ApprovedScripts.SCRIPTS::contains).distinct().toList();
+                .map(Element::outerHtml).filter(ApprovedScripts.scripts()::contains).distinct().toList();
         Element root = PageShell.rootOf(source);
         List<String> palettes = root == null ? List.of() : root.classNames().stream()
                 .filter(c -> Palette.find(c).isPresent()).limit(1).toList();

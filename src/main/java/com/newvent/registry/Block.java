@@ -87,7 +87,8 @@ public enum Block {
             "ul li, .benefit-card", "ul, .benefits-list", 1, null),
 
     // ★ 경품은 실제로 지급해야 하는 약속이다 — benefits 와 같이 항목은 폼 값(MIXED + minItems).
-    //   그래서 itemsAreFormValues() 가 참이 되어 "경품 하나 더" 같은 ADD 는 관문이 거절한다.
+    //   그래서 itemsAreFormValues() 가 참이 되어, 모델이 항목을 지어내지 못하게 프롬프트가 막는다.
+    //   "경품 하나 더" 같은 ADD 는 관리자가 내용을 적어 줬을 때만 하나까지 통과한다 (내용이 없으면 관문이 되묻는다).
     //   "응모" 는 열쇠말로 쓰지 않는다 — "응모를 완료합니다" 처럼 거의 모든 이벤트 문장에 나온다.
     PRIZE("prize", false, false, Source.MIXED,
             "경품 — 등수와 경품은 요청문에 있는 것만 쓴다. 경품을 지어내지 마라",
@@ -256,7 +257,7 @@ public enum Block {
     public String container() { return container; }
 
     /**
-     * 이 블록의 **항목이 관리자가 정하는 값인가.** 지금은 benefits 하나다.
+     * 이 블록의 **항목이 관리자가 정하는 값인가.** 지금은 benefits 와 prize 둘이다.
      *
      * ★ 관문(Gate)이 되묻기를 판정하는 근거다
      *
@@ -278,11 +279,6 @@ public enum Block {
         return Arrays.stream(values())
                 .filter(b -> b.source == Source.SERVER)
                 .collect(Collectors.toList());
-    }
-
-    /** preview 에서 클릭해 수정 대상으로 고를 수 있는 블록 */
-    public static List<Block> clickable() {
-        return llmBlocks();
     }
 
     public static Block of(String key) {

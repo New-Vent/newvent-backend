@@ -197,7 +197,7 @@ class BehaviorTest {
     @DisplayName("★ 조립 — 승인된 템플릿 <script> 는 behavior 가 있어도 살아남는다 (타이머·토스트가 멈추지 않는다)")
     void 승인된_템플릿_스크립트는_보존된다() {
         // 승인 목록에서 하나를 뽑는다 — 기본 제공 템플릿 5종 중 하나의 자체 연출 스크립트
-        String approved = ApprovedScripts.SCRIPTS.iterator().next();
+        String approved = ApprovedScripts.scripts().iterator().next();
         String fragment = "<div class=\"ev-container event-page theme-sale\">"
                 + "<section data-block=\"cta\" data-behavior=\"participate\">"
                 + "<button class=\"cta-btn\">참여하기</button></section>"

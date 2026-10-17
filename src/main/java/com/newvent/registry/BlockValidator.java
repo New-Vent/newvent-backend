@@ -251,8 +251,18 @@ public class BlockValidator {
             checkRecreatedPrize(el, f);
         }
         checkItemCount(target, before, el, f, allowOneMore);
-        checkPreserved(before, html, f);
+        checkPreserved(before, html, f, allowOneMore ? buttonsPerItem(target, before) : 0);
         return f;
+    }
+
+    private static int buttonsPerItem(Block target, String before) {
+        if (target.container() == null || target.must() == null) return 0;
+        Element box = Jsoup.parseBodyFragment(before == null ? "" : before).body()
+                .selectFirst(target.container());
+        if (box == null) return 0;
+        return box.select(target.must()).stream()
+                .mapToInt(item -> item.select("button").size())
+                .max().orElse(0);
     }
 
     /** 새 경품 영역은 기본 CSS가 인식하는 머리말·변형 class·목록 구조여야 한다. */
@@ -381,7 +391,7 @@ public class BlockValidator {
      *              없어지면 타이머가 멈추고, 복제하면 id 중복으로 첫 번째만 잡힌다
      *   class      단, **이름표 붙은 요소의 것만.** 아래 diffClasses 참고
      */
-    private static void checkPreserved(String before, String after, List<Failure> f) {
+    private static void checkPreserved(String before, String after, List<Failure> f, int buttonSlack) {
         diff(Slots.keysOf(before), Slots.keysOf(after), f,
                 FailureCode.SLOT_LOST, "data-slot=\"%s\" 가 붙은 태그를 지웠습니다. "
                         + "그 자리는 서버가 채우는 곳입니다. 태그와 속성을 원래대로 두세요.",
@@ -410,10 +420,11 @@ public class BlockValidator {
 
         // ★ 버튼은 늘 수 없다. 수정 정화는 원래 버튼을 지키려고 <button> 을 허용하는데,
         //   그 틈으로 동작(data-behavior) 없는 버튼이 들어오면 눌러도 아무 일이 없는 버튼이 게시된다.
-        //   줄어드는 것(카드 삭제)은 허용한다. 카드 추가는 서버가 먼저 복제하므로(duplicateCard) 개수가 같다
+        //   줄어드는 것(카드 삭제)은 허용한다.
+        //   카드 추가는 모델이 기존 카드를 복제하므로 카드 하나만큼(buttonSlack)은 늘어도 된다
         int wasButtons = Jsoup.parseBodyFragment(before == null ? "" : before).select("button").size();
         int nowButtons = Jsoup.parseBodyFragment(after == null ? "" : after).select("button").size();
-        if (nowButtons > wasButtons) {
+        if (nowButtons > wasButtons + buttonSlack) {
             f.add(Failure.of(FailureCode.BUTTON_INVENTED,
                     "버튼(<button>)을 새로 만들었습니다. 버튼은 동작이 붙어야 해서 서버만 만듭니다. "
                             + "원래 있던 버튼만 그대로 두고 문구만 고치세요."));
@@ -523,7 +534,7 @@ public class BlockValidator {
         return sanitizeEdited(html, List.of());
     }
 
-    /** @param allowedAssets {@link #sanitizeGenerated(String, Set)} 참고 */
+    /** @param allowedAssets {@link #sanitizeGenerated(String, List)} 참고 */
     public static String sanitizeEdited(String html, List<Asset.Ref> allowedAssets) {
         return clean(html, true, allowedAssets);
     }
@@ -533,10 +544,6 @@ public class BlockValidator {
      *   서버가 조립한 최종 문서에 걸면 문서 밖 script 가 다 죽는다.
      *   순서:  sanitize(모델 출력) → merge   (반대로 하지 말 것)
      */
-    private static String clean(String html, boolean keepInteractive) {
-        return clean(html, keepInteractive, List.of());
-    }
-
     private static String clean(String html, boolean keepInteractive, List<Asset.Ref> allowedAssets) {
         Safelist s = Safelist.relaxed()
                 .addAttributes(":all", "style", "data-block", "class")
@@ -735,25 +742,6 @@ public class BlockValidator {
             out.append(prop).append(':').append(val).append(';');
         }
         return out.toString();
-    }
-
-    /**
-     * 모델이 뭘 돌려주든 그 블록 자리에만 끼워 넣는다.
-     * 실험에서 모델이 "조각만" 또는 "전체를" 돌려주는 게 제각각이었고
-     * 프롬프트로 통제되지 않았습니다. 서버가 판별해서 병합합니다.
-     */
-    public static String merge(String currentDoc, Block target, String modelOutput) {
-        Document cur = Jsoup.parseBodyFragment(currentDoc);
-        Document out = Jsoup.parseBodyFragment(modelOutput);
-
-        Element incoming = out.body().selectFirst(target.selector());
-        if (incoming == null) return currentDoc;      // 대상 블록이 없으면 원본 유지
-
-        Element old = cur.body().selectFirst(target.selector());
-        if (old == null) cur.body().appendChild(incoming);
-        else old.replaceWith(incoming);
-
-        return cur.body().html();
     }
 
     /** 문서에서 블록 하나만 떼어낸다 — 수정 요청과 validateEdited 의 before 로 쓴다 */
