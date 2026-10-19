@@ -534,6 +534,41 @@ public class EditService {
         return out;
     }
 
+    private static final String ASK_UNCLEAR = "요청을 이해하지 못했습니다. 어느 부분을 어떻게 바꿀지 알려 주세요. "
+            + "(예: 제목을 '가을 대축제' 로 바꿔줘)";
+
+    /**
+     * 무엇을 어떻게 바꾸라는 말인지 알 수 없다고 모델이 판단했는가 (#237).
+     *
+     * ★ 알 수 없다고 **확실히 답했을 때만** true 다. 호출 실패 · 잘림 · 규격 밖 출력은 모두 false —
+     *   판정기 장애가 수정을 막으면 안 된다(생성 · 동작 배치기와 같은 선택). 재시도는 없다.
+     * ★ 새 묶음이다 — 라우터는 jobId 묶음을 쓴다. 같이 쓰면 (request_id, attempt_no) 유니크에 걸린다.
+     */
+    private boolean isUnknownRequest(EditCommand cmd) {
+        try {
+            LlmCallContext ctx = LlmCallContext.newGroup(cmd.eventId());
+            com.newvent.infra.llm.LlmClient.Response res = gateway.call(ctx,
+                    com.newvent.infra.llm.LlmClient.Request.router(PromptBuilder.editJudge(),
+                            PromptBuilder.editJudgeUser(RequestFilter.clean(cmd.requestText()))));
+            Boolean known = res.truncated() ? null
+                    : com.newvent.generation.service.RequestVagueness.parseKnown(res.content());
+            recorder.recordSingle(ctx, res, known != null ? List.of() : List.of(
+                    com.newvent.registry.BlockValidator.Failure.of(
+                            res.truncated() ? com.newvent.registry.FailureCode.TRUNCATED
+                                    : com.newvent.registry.FailureCode.ROUTER_PARSE,
+                            "수정 요청 판정 출력이 규격에 맞지 않습니다.")));
+            if (known == null) {
+                log.info("수정 요청 판정 출력을 읽지 못해 수정을 진행 (event={})", cmd.eventId());
+                return false;
+            }
+            if (!known) log.info("무엇을 바꿀지 알 수 없다고 판단해 되묻는다 (event={})", cmd.eventId());
+            return !known;
+        } catch (RuntimeException e) {
+            log.warn("수정 요청 판정 실패 — 수정을 진행 (event={})", cmd.eventId(), e);
+            return false;
+        }
+    }
+
     /**
      * 요청문을 실행 계획으로 바꾼다. <b>모델을 부르는 건 라우터 1회뿐이다.</b>
      *
@@ -546,6 +581,13 @@ public class EditService {
                 && Layout.requestedBy(cmd.requestText()).isPresent()) {
             job.fail("페이지 배치는 페이지 전체에 적용되는 값이라 영역을 고른 채로는 바꿀 수 없습니다. "
                     + "영역 선택을 해제하고 다시 요청해 주세요.");
+            return null;
+        }
+
+        // ★ 무엇을 바꾸라는 말인지 모델이 먼저 본다 (#237) — 라우터는 뜻을 모르는 말을 STYLE:hero 로 읽어
+        //   "시발" 이 버전으로 저장됐다. 영역을 골랐어도 요청문이 말이 안 되면 되묻는다.
+        if (com.newvent.generation.service.RequestVagueness.hasNoLetters(cmd.requestText()) || isUnknownRequest(cmd)) {
+            job.askBack(ASK_UNCLEAR);
             return null;
         }
 
@@ -580,8 +622,7 @@ public class EditService {
         }
         if (routed.isEmpty()) {
             // ★ 모델에게 다시 시키지 않는다. 관리자에게 다시 묻는다
-            job.askBack("요청을 이해하지 못했습니다. 어느 부분을 어떻게 바꿀지 알려 주세요. "
-                    + "(예: 제목을 '가을 대축제' 로 바꿔줘)");
+            job.askBack(ASK_UNCLEAR);
             return null;
         }
 

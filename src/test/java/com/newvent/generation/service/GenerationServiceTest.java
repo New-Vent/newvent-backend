@@ -260,6 +260,92 @@ class GenerationServiceTest {
         assertEquals(1, retry.calls());
     }
 
+    /** 요청 판정기 호출에 정해진 답을 주는 문. 부른 횟수를 센다 */
+    private static final class JudgeGateway implements LlmCallGateway {
+        private final java.util.function.Supplier<LlmClient.Response> answer;
+        int calls;
+        String lastUser;
+
+        JudgeGateway(String content) { this(content, false); }
+        JudgeGateway(String content, boolean truncated) {
+            this.answer = () -> new LlmClient.Response(content, 10, 5, 1L, truncated);
+        }
+        JudgeGateway(RuntimeException boom) { this.answer = () -> { throw boom; }; }
+
+        @Override public void reserve(int expectedCalls) { }
+        @Override public LlmClient.Response call(LlmCallContext ctx, LlmClient.Request req) {
+            // 같은 문을 동작 배치기도 쓴다 — 판정기 호출만 센다
+            if (req.system() != null && req.system().contains("생성 요청을 검사한다")) {
+                calls++;
+                lastUser = req.user();
+            }
+            return answer.get();
+        }
+    }
+
+    private GenerationService withJudge(JudgeGateway judge) {
+        return new GenerationService(retry,
+                new TemplateService(new com.newvent.generation.service.ResourceTemplateLoader()),
+                versions, guard, jobs, LlmCallRecorder.none(), new com.newvent.filtering.FilteringPolicy(),
+                similarity, judge);
+    }
+
+    @Test
+    @DisplayName("모델이 '이벤트를 알 수 없다' 고 하면 생성하지 않고 되묻는다 — 글자 수로는 못 거르는 '안녕' (#237)")
+    void 모델이_알_수_없다고_하면_되묻는다() {
+        JudgeGateway judge = new JudgeGateway("{\"known\":false}");
+
+        GenerationJob job = started(withJudge(judge).start(blank(1L, "안녕하세요")));
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertEquals(RequestVagueness.QUESTION, job.message());
+        assertEquals(0, retry.calls(), "생성 모델을 부르면 안 된다");
+        assertEquals(1, judge.calls);
+        assertTrue(judge.lastUser.contains("안녕하세요"));
+        assertTrue(versions.latest(1L).isEmpty());
+    }
+
+    @Test
+    @DisplayName("모델이 '알 수 있다' 고 하면 그대로 생성한다")
+    void 모델이_알_수_있다고_하면_생성한다() {
+        retry.willReturn(ok(BlockValidator.sanitizeGenerated(GENERATED)));
+        JudgeGateway judge = new JudgeGateway("{\"known\":true}");
+
+        GenerationJob job = await(started(withJudge(judge).start(blank(1L, "신규 가입자에게 쿠폰 줘"))));
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase());
+        assertEquals(1, judge.calls);
+        assertEquals(1, retry.calls());
+    }
+
+    @Test
+    @DisplayName("★ 판정기가 실패 · 잘림 · 규격 밖 출력이면 생성을 진행한다 — 판정 장애가 생성을 막으면 안 된다")
+    void 판정기가_고장나도_생성은_진행한다() {
+        java.util.List<JudgeGateway> broken = java.util.List.of(
+                new JudgeGateway(new IllegalStateException("boom")),
+                new JudgeGateway("{\"known\":false}", true),
+                new JudgeGateway("잘 모르겠어요"),
+                new JudgeGateway((String) null));
+        for (JudgeGateway judge : broken) {
+            retry.willReturn(ok(BlockValidator.sanitizeGenerated(GENERATED)));
+            GenerationJob job = await(started(withJudge(judge).start(blank(1L, "여름 데이터 이벤트"))));
+            assertEquals(GenerationJob.Phase.DONE, job.phase(), "판정이 고장 났는데 생성이 막혔다");
+            assertEquals(1, judge.calls);
+        }
+    }
+
+    @Test
+    @DisplayName("글자 수 판정이 이미 되물으면 판정기를 부르지 않는다 — 호출 낭비")
+    void 이미_되물으면_판정기를_부르지_않는다() {
+        JudgeGateway judge = new JudgeGateway("{\"known\":true}");
+
+        GenerationJob job = started(withJudge(judge).start(
+                new GenerateCommand(1L, null, false, "이벤트", "2026.07.01 ~ 07.31", null, "ㅋㅋㅋ 아무거나 재밌게")));
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertEquals(0, judge.calls);
+    }
+
     @Test
     void 개인정보_확인후에만_생성하고_원문을_전달한다() {
         String request = "데이터 10GB 이벤트, 연락처 a@example.com";
