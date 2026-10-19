@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -56,6 +57,19 @@ class ParticipationStatusServiceTest {
     void 기본은_설정이하나() {
         List<EventGameConfig> one = List.of(config("BASIC"));
         when(eventGameConfigRepository.findAllByEventId(1L)).thenReturn(one);
+    }
+
+    @Test
+    void 시작전에는_NOT_STARTED로_참여불가를_안내한다() {
+        Event event = event(MembershipGrade.NORMAL);
+        ReflectionTestUtils.setField(event, "startDate", OffsetDateTime.now().plusDays(3));
+        when(publicEventService.getPublicEvent(1L)).thenReturn(event);
+        when(userService.getById(7L)).thenReturn(user(MembershipGrade.BEST));
+
+        ParticipationStatusResponse result = service.getStatus(1L, 7L);
+
+        assertFalse(result.canParticipate());
+        assertEquals(ParticipationUnavailableReason.NOT_STARTED, result.unavailableReason());
     }
 
     @Test

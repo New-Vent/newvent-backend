@@ -29,7 +29,7 @@ class GenerationBehaviorPathTest {
             <section data-block="cta"><a href="#" class="btn">참여하기</a></section>
             """;
 
-    /** 배치기 호출만 받는 게이트웨이 — 답을 정해 두고, 받은 요청을 모은다 */
+    /** 배치기 호출만 모으는 게이트웨이 — 답을 정해 두고, 받은 요청을 모은다 */
     static final class FakeGateway implements LlmCallGateway {
         final List<LlmClient.Request> requests = new ArrayList<>();
         final List<LlmCallContext> contexts = new ArrayList<>();
@@ -39,6 +39,10 @@ class GenerationBehaviorPathTest {
 
         @Override
         public LlmClient.Response call(LlmCallContext ctx, LlmClient.Request req) {
+            // 요청 판정기(#237)도 같은 문을 쓴다 — 항상 "알 수 있다" 로 답하고 세지 않는다
+            if (req.system() != null && req.system().contains("생성 요청을 검사한다")) {
+                return new LlmClient.Response("{\"known\":true}", 10, 5, 1, false);
+            }
             requests.add(req);
             contexts.add(ctx);
             return answer.apply(req);

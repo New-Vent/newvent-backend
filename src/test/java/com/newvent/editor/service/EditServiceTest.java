@@ -287,6 +287,87 @@ class EditServiceTest {
         assertEquals(1, versionNo(), "행이 생기면 안 된다");
     }
 
+    /** 수정 요청 판정기 호출에 정해진 답을 주는 문 (#237) */
+    private static final class JudgeGateway implements LlmCallGateway {
+        private final java.util.function.Supplier<com.newvent.infra.llm.LlmClient.Response> answer;
+        int calls;
+        JudgeGateway(String content) { this(content, false); }
+        JudgeGateway(String content, boolean truncated) {
+            this.answer = () -> new com.newvent.infra.llm.LlmClient.Response(content, 10, 5, 1L, truncated);
+        }
+        JudgeGateway(RuntimeException boom) { this.answer = () -> { throw boom; }; }
+        @Override public void reserve(int expectedCalls) { }
+        @Override public com.newvent.infra.llm.LlmClient.Response call(LlmCallContext ctx,
+                com.newvent.infra.llm.LlmClient.Request req) {
+            if (req.system() != null && req.system().contains("수정 요청을 검사한다")) calls++;
+            return answer.get();
+        }
+    }
+
+    private EditService withJudge(JudgeGateway judge) {
+        return new EditService(router, retry, versions, new EventGuard.Open(), jobs, LlmCallRecorder.none(), judge);
+    }
+
+    @Test
+    @DisplayName("모델이 '무엇을 바꿀지 알 수 없다' 고 하면 라우터를 부르지 않고 되묻는다 — '시발' 이 hero 를 바꾼 버전으로 저장되던 문제 (#237)")
+    void 모델이_알_수_없다고_하면_되묻는다() {
+        JudgeGateway judge = new JudgeGateway("{\"known\":false}");
+
+        GenerationJob job = await(started(withJudge(judge).start(cmd("시발"))));
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertTrue(job.message().contains("어느 부분을 어떻게 바꿀지"), job.message());
+        assertEquals(1, judge.calls);
+        assertEquals(0, router.calls(), "라우터를 부르면 안 된다");
+        assertEquals(0, retry.calls());
+        assertEquals(1, versionNo(), "행이 생기면 안 된다");
+    }
+
+    @Test
+    @DisplayName("글자가 하나도 없는 요청('...')은 판정기도 라우터도 부르지 않고 되묻는다 (#237)")
+    void 글자가_없으면_모델_없이_되묻는다() {
+        JudgeGateway judge = new JudgeGateway("{\"known\":true}");
+
+        GenerationJob job = await(started(withJudge(judge).start(cmd("..."))));
+
+        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
+        assertEquals(0, judge.calls, "판정기를 부르면 안 된다");
+        assertEquals(0, router.calls());
+        assertEquals(1, versionNo());
+    }
+
+    @Test
+    @DisplayName("모델이 '알 수 있다' 고 하면 그대로 라우터로 간다")
+    void 모델이_알_수_있다고_하면_라우터로_간다() {
+        router.willReturn(new RawRoute("EDIT", "hero", "가을 대축제"));
+        retry.willReturn(ok(NEW_HERO));
+        JudgeGateway judge = new JudgeGateway("{\"known\":true}");
+
+        GenerationJob job = await(started(withJudge(judge).start(cmd("제목을 가을 대축제로 바꿔줘"))));
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), String.valueOf(job.message()));
+        assertEquals(1, judge.calls);
+        assertEquals(1, router.calls());
+    }
+
+    @Test
+    @DisplayName("★ 판정기가 실패 · 잘림 · 규격 밖 출력이면 수정을 진행한다 — 판정 장애가 수정을 막으면 안 된다")
+    void 판정기가_고장나도_수정은_진행한다() {
+        java.util.List<JudgeGateway> broken = java.util.List.of(
+                new JudgeGateway(new IllegalStateException("boom")),
+                new JudgeGateway("{\"known\":false}", true),
+                new JudgeGateway("잘 모르겠어요"));
+        for (JudgeGateway judge : broken) {
+            router.willReturn(new RawRoute("EDIT", "hero", "가을 대축제"));
+            retry.willReturn(ok(NEW_HERO));
+
+            GenerationJob job = await(started(withJudge(judge).start(cmd("제목을 가을 대축제로 바꿔줘"))));
+
+            assertNotEquals(GenerationJob.Phase.ASK_BACK, job.phase(), "판정이 고장 났는데 되물었다");
+            assertEquals(1, judge.calls);
+        }
+    }
+
     @Test
     @DisplayName("되묻기는 done 이다 — 아니면 프론트가 영원히 폴링한다")
     void 되묻기도_끝난_작업이다() {
@@ -296,20 +377,6 @@ class EditServiceTest {
 
         assertTrue(job.done());
         assertEquals(100, job.phase().percent());
-    }
-
-    @Test
-    @DisplayName("팔레트에 없는 색(노랑)을 페이지 전체로 말하면 되묻는다 — 엉뚱한 팔레트를 고르지 않는다")
-    void 팔레트에_없는_색은_되묻는다() {
-        router.willReturn(new RawRoute("STYLE", "hero", null));
-
-        GenerationJob job = run("바탕색은 노란색으로 바꿔줘");
-
-        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
-        assertTrue(job.message().contains("'노랑' 색감은 지원하지 않습니다"), job.message());
-        assertTrue(job.message().contains("고를 수 있는 색:"), job.message());
-        assertEquals(0, retry.calls(), "블록 수정 모델을 부르면 안 된다");
-        assertEquals(1, versionNo(), "행이 생기면 안 된다");
     }
 
     @Test
@@ -374,18 +441,6 @@ class EditServiceTest {
 
         assertEquals(1, retry.prompts().size());
         assertFalse(retry.prompts().getFirst().contains("[이번 호출은 한 영역만 고친다]"), retry.prompts().getFirst());
-    }
-
-    @Test
-    @DisplayName("섞인 요청이어도 제목 쪽에 건 없는 색은 되묻는다")
-    void 제목_쪽_없는_색은_섞여도_되묻는다() {
-        router.willReturn(new RawRoute("STYLE", "hero", null), new RawRoute("STYLE", "benefits", null));
-
-        GenerationJob job = run("제목은 노란색으로, 혜택 배경은 파란색으로 바꿔줘");
-
-        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
-        assertTrue(job.message().contains("'노랑' 색감은 지원하지 않습니다"), job.message());
-        assertEquals(0, retry.calls());
     }
 
     @Test

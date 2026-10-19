@@ -12,6 +12,7 @@
 | 서버·배포가 **어떻게 돌아가나** | [`infra.md`](infra.md) |
 | 서버에 **접속하는 법** · DB 를 로컬에서 보는 법 | [`infra.md`](infra.md) §3 |
 | 개인정보 필터링 | [`chat-filtering.md`](chat-filtering.md) |
+| LLM 프롬프트 문장이 **왜** 그렇게 생겼나 | [`prompt-builder.md`](prompt-builder.md) |
 | 임베딩 모델을 왜 그걸로 골랐나 | [`rag-embedding-eval.md`](rag-embedding-eval.md) |
 
 ---

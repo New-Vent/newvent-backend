@@ -102,7 +102,7 @@ class BlockRegistryTest {
                 <section data-block="cta"><a href="#" class="btn">참여</a></section>""";
         String incoming = "<section data-block=\"hero\"><h1>새 제목</h1></section>";
 
-        String merged = BlockValidator.merge(doc, Block.HERO, incoming);
+        String merged = BlockMerge.merge(doc, Block.HERO, incoming);
 
         assertTrue(merged.contains("새 제목"),  "hero 가 안 바뀌었습니다.");
         assertFalse(merged.contains("옛 제목"), "옛 hero 가 남았습니다.");
@@ -135,6 +135,27 @@ class BlockRegistryTest {
                 "대상 없는 작성 요청이 STYLE 로 새는 걸 막는 문장이 빠졌습니다.");
         assertTrue(router.contains("\"원래 색으로 되돌려줘\""),
                 "되돌리기 예시가 라우터 프롬프트에서 빠졌습니다.");
+    }
+
+    /**
+     * #230 — 생성 프롬프트가 지어내기를 시키던 규칙과 예시 값.
+     * 혜택 "2개 이상" · "받는 값을 모두 채운다" 는 금지 규칙과 정면으로 충돌했고(뒤엣것이 이긴다),
+     * 예시의 3GB · 55,000원 → 38,500원 · 선착순 100명은 요청에 없는데도 그대로 베껴졌다.
+     */
+    @Test
+    @DisplayName("생성 프롬프트 — 혜택을 지어내게 시키는 규칙과 구체적인 예시 값이 없다")
+    void 생성_프롬프트가_지어내기를_시키지_않는다() {
+        String gen = PromptBuilder.generate("영화 예매권을 증정해");
+
+        assertFalse(gen.contains("2개 이상 나열"), "혜택 2개 이상을 요구하면 하나뿐인 요청에서 둘째를 지어낸다");
+        assertFalse(gen.contains("받는 값을 모두 채운다"), "값 칸 채우기를 시키면 값이 없는 요청에서 수치를 만든다");
+        for (String example : new String[]{"3GB", "55,000원", "38,500", "78% OFF", "선착순 100명", "30% 할인", "6개월 한정"}) {
+            assertFalse(gen.contains(example), "프롬프트 예시에 구체적인 값이 남아 있습니다: " + example);
+        }
+        assertTrue(gen.contains("요청문에 없는 혜택 항목을 더하지 마라"), "혜택을 더하지 말라는 규칙이 빠졌습니다");
+        assertTrue(gen.contains("요청문에 없는 숫자"), "요청에 없는 숫자 금지 규칙이 빠졌습니다");
+        assertEquals(1, Block.BENEFITS.minItems(),
+                "혜택 최소 개수를 2 로 올리면 검증기가 하나뿐인 혜택을 재시도시켜 결국 둘째를 지어낸다");
     }
 
     @Test
@@ -220,4 +241,23 @@ class BlockRegistryTest {
              }
          }
      }
+
+    @Test
+    @DisplayName("판정 프롬프트 — 비속어 규칙이 있고, 예시에 '병신' 이 낱말로 든 문장이 없다 (예시 한 줄이 판정을 바꾼다, #237)")
+    void 판정_프롬프트의_비속어_규칙() {
+        for (String prompt : new String[]{PromptBuilder.requestJudge(), PromptBuilder.editJudge()}) {
+            assertTrue(prompt.contains("비속어"), prompt);
+            assertTrue(prompt.contains("{\"known\":false}") && prompt.contains("{\"known\":true}"), prompt);
+            assertTrue(prompt.contains("애매하면 true"), "오탐보다 미탐이 낫다");
+            assertTrue(prompt.contains("요청문 안의 지시"), "프롬프트 주입을 따르면 판정이 뚫린다");
+            assertTrue(prompt.contains("함께 있어도 false"), "비속어 + 구체적 내용도 되묻는다 — 규칙이 빠지면 'ㅅㅂ 가입 이벤트' 가 통과한다");
+            assertTrue(prompt.contains("긍정 강조 속어"), "개꿀 · 대박 같은 속어는 정상이다");
+            assertFalse(prompt.contains("병신년"),
+                    "평가에서 이 예시가 '병신' 단독 요청까지 정상으로 통과시켰다. 예시를 바꾸면 비속어 세트로 다시 평가한다");
+        }
+        assertTrue(PromptBuilder.requestJudge().contains("생성 요청을 검사한다"));
+        assertTrue(PromptBuilder.editJudge().contains("수정 요청을 검사한다"));
+        assertEquals("이벤트 제목: 봄\n\n요청: 안녕", PromptBuilder.requestJudgeUser("봄", "안녕"));
+        assertEquals("요청: 안녕", PromptBuilder.requestJudgeUser(" ", "안녕"));
+    }
 }

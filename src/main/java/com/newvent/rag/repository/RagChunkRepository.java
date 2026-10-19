@@ -41,7 +41,7 @@ public interface RagChunkRepository extends JpaRepository<RagChunk, Long>{
 			@Param("limit") int limit);
 
 	// 기획용 전역 검색. SEED 제외를 푼 것 빼고 findSimilar 과 같다.
-	// 지금은 시드 29건이 유일한 데이터라 제외하면 빈 목록이 나온다 (실데이터 쌓이면 제외로 전환).
+	// 지금은 시드 40건이 유일한 데이터라 제외하면 빈 목록이 나온다 (실데이터 쌓이면 제외로 전환).
 	@Query(value = """
 		select c.* from rag_chunks c
 		 join events e on e.id = c.event_id

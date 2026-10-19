@@ -1,10 +1,14 @@
 package com.newvent.event.service;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -15,10 +19,13 @@ import org.jsoup.select.NodeTraversor;
 import org.jsoup.select.NodeVisitor;
 
 import com.newvent.event.dto.request.ButtonStyle;
+import com.newvent.event.dto.request.DirectEditRequest.ItemRemoval;
 import com.newvent.event.dto.request.TextEdit;
+import com.newvent.event.dto.request.TextFormat;
 import com.newvent.event.dto.request.TextStyle;
 import com.newvent.event.exception.DirectEditErrorCode;
 import com.newvent.event.exception.DirectEditException;
+import com.newvent.registry.Block;
 import com.newvent.registry.Slot;
 
 /**
@@ -32,6 +39,7 @@ import com.newvent.registry.Slot;
 public final class DirectEditor {
 
     private DirectEditor() {}
+    private static final Set<Block> ADMIN_KEEP = EnumSet.of(Block.HERO, Block.NOTICES, Block.CTA);
     private static final String TEXT_ID_PREFIX = "nv-direct-text-";
     private static boolean marked(TextNode node) {
         return node.parent() instanceof Element el && el.normalName().equals("span")
@@ -42,14 +50,26 @@ public final class DirectEditor {
     }
 
     /** 미리보기 HTML과 저장본에 공통으로 적용하는 편집 가능 문구 순서. */
-    public record EditableText(int index, String before) {}
+    public record EditableText(int index, String before, Map<String, String> format) {
+        public EditableText(int index, String before) {
+            this(index, before, Map.of());
+        }
+    }
 
     public static List<EditableText> editableTexts(String html) {
         Objects.requireNonNull(html, "html은 필수입니다.");
         List<TextNode> nodes = collectTextNodes(Jsoup.parseBodyFragment(html));
         List<EditableText> result = new ArrayList<>(nodes.size());
         for (int i = 0; i < nodes.size(); i++) {
-            result.add(new EditableText(i, editableValue(nodes.get(i))));
+            TextNode node = nodes.get(i);
+            Map<String, String> format = new LinkedHashMap<>();
+            if (marked(node)) {
+                Map<String, String> styles = parseInlineStyle(((Element) node.parent()).attr("style"));
+                for (String key : List.of("color", "font-size", "font-weight")) {
+                    if (styles.containsKey(key)) format.put(key, styles.get(key));
+                }
+            }
+            result.add(new EditableText(i, editableValue(node), Map.copyOf(format)));
         }
         return List.copyOf(result);
     }
@@ -79,6 +99,49 @@ public final class DirectEditor {
             html = applyTextStyle(html, textStyle);
         }
         return html;
+    }
+
+    /** 관리자 직접수정에서 블록 또는 레지스트리 항목을 삭제한다. */
+    public static String applyDeletions(String html, List<String> removeBlocks,
+                                        Map<String, List<ItemRemoval>> removeItems) {
+        if ((removeBlocks == null || removeBlocks.isEmpty())
+                && (removeItems == null || removeItems.isEmpty())) return html;
+        Document doc = Jsoup.parseBodyFragment(html);
+        doc.outputSettings().prettyPrint(false);
+        Set<String> removing = new LinkedHashSet<>(removeBlocks == null ? List.of() : removeBlocks);
+        for (String key : removing) {
+            Block block = Block.of(key);
+            if (ADMIN_KEEP.contains(block))
+                throw new DirectEditException(DirectEditErrorCode.BLOCK_DELETE_FORBIDDEN,
+                        block.key() + " 영역은 직접수정에서 지울 수 없습니다.");
+        }
+        if (removeItems != null) for (var entry : removeItems.entrySet()) {
+            Block block = Block.of(entry.getKey());
+            if (removing.contains(block.key()))
+                throw new DirectEditException(DirectEditErrorCode.ITEM_DELETE_MISMATCH, "같은 요청에서 블록과 그 항목을 함께 지울 수 없습니다.");
+            Element section = doc.selectFirst(block.selector());
+            if (section == null || block.must() == null)
+                throw new DirectEditException(DirectEditErrorCode.ITEM_DELETE_MISMATCH);
+            List<Element> items = new ArrayList<>(section.select(block.must()).stream().distinct().toList());
+            List<ItemRemoval> removals = entry.getValue().stream().sorted((a, b) -> Integer.compare(b.index(), a.index())).toList();
+            for (ItemRemoval removal : removals) {
+                if (removal.index() >= items.size()) throw new DirectEditException(DirectEditErrorCode.ITEM_DELETE_MISMATCH);
+                // sourceVersionId 가 가리키는 HTML은 불변이므로, 이 버전의 항목 순번이 안정적인 기준이다.
+                // 브라우저 textContent 와 Jsoup 텍스트 추출은 구조 공백 처리 차이로 달라질 수 있어
+                // 문구 비교를 인덱스 검증의 추가 조건으로 삼지 않는다.
+                items.get(removal.index()).remove();
+                items.set(removal.index(), null);
+            }
+            int remaining = section.select(block.must()).size();
+            if (remaining < block.minItems())
+                throw new DirectEditException(DirectEditErrorCode.TOO_FEW_ITEMS,
+                        block.key() + "은 항목이 " + block.minItems() + "개 이상 있어야 합니다. 지금은 " + remaining + "개가 남습니다.");
+        }
+        for (String key : removing) {
+            Element target = doc.selectFirst(Block.of(key).selector());
+            if (target != null) target.remove();
+        }
+        return doc.body().html();
     }
 
     /**
@@ -168,9 +231,11 @@ public final class DirectEditor {
         doc.outputSettings().prettyPrint(false);
 
         List<TextNode> textNodes = collectTextNodes(doc);
+        var indexes = new HashSet<Integer>();
 
         for (TextEdit edit : edits) {
             int idx = edit.index();
+            if (!indexes.add(idx)) throw new DirectEditException(DirectEditErrorCode.DUPLICATE_TEXT_INDEX);
             if (idx < 0 || idx >= textNodes.size()) {
                 throw new DirectEditException(DirectEditErrorCode.INVALID_TEXT_INDEX);
             }
@@ -184,6 +249,13 @@ public final class DirectEditor {
                 throw new DirectEditException(DirectEditErrorCode.BEFORE_TEXT_MISMATCH);
             }
 
+        }
+
+        // 원본 인덱스로 모든 항목을 검증한 뒤 문구와 서식을 변경한다.
+        for (TextEdit edit : edits) {
+            int idx = edit.index();
+            TextNode targetNode = textNodes.get(idx);
+
             if (!marked(targetNode)) {
                 String id = TEXT_ID_PREFIX + idx;
                 while (doc.getElementById(id) != null) id += "-next";
@@ -193,9 +265,25 @@ public final class DirectEditor {
                 holder.appendChild(targetNode);
             }
             targetNode.text(edit.after().replace("\r\n", "\n").replace('\r', '\n'));
+            applyFormat((Element) targetNode.parent(), edit.format());
         }
 
         return doc.body().html();
+    }
+
+    private static void applyFormat(Element holder, TextFormat format) {
+        if (format == null) return;
+        Map<String, String> styles = parseInlineStyle(holder.attr("style"));
+        if (format.reset()) {
+            for (String key : List.of("color", "-webkit-text-fill-color", "font-size", "font-weight")) styles.remove(key);
+        }
+        if (format.color() != null) {
+            styles.put("color", format.color());
+            styles.put("-webkit-text-fill-color", format.color());
+        }
+        if (format.size() != null) styles.put("font-size", format.size() + "px");
+        if (format.bold() != null) styles.put("font-weight", format.bold() ? "700" : "400");
+        holder.attr("style", serializeInlineStyle(styles));
     }
 
     /**

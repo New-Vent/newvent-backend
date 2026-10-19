@@ -26,7 +26,7 @@ class EmbeddingServiceIndexAllTest {
         private final List<Long> exploding = new java.util.ArrayList<>();
 
         FakeIndexAll(com.newvent.event.repository.EventRepository events) {
-            super(null, null, null, null, events, null, noTx());
+            super(null, null, null, null, events, null, noTx(), null);
         }
 
         // DB 없이 돈다 — 트랜잭션 경계만 흉내 내고 실제 커밋은 없다
@@ -40,7 +40,7 @@ class EmbeddingServiceIndexAllTest {
         void willExplode(Long eventId) { exploding.add(eventId); }
 
         @Override
-        public int reindex(Long eventId, Long versionId) {
+        public int reindex(Long eventId, Long versionId, Long adminId) {
             if (exploding.contains(eventId)) throw new RuntimeException("색인 터짐");
             return results.getOrDefault(eventId, 0);
         }
@@ -133,7 +133,7 @@ class EmbeddingServiceIndexAllTest {
         com.newvent.event.repository.EventRepository events = mock(com.newvent.event.repository.EventRepository.class);
         EmbeddingService service = indexing(events);
 
-        assertTrue(service.tryClaimReindexSlot());
-        assertFalse(service.tryClaimReindexSlot());
+        assertTrue(service.tryClaimReindexSlot(null));
+        assertFalse(service.tryClaimReindexSlot(null));
     }
 }

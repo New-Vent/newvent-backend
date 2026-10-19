@@ -1,6 +1,7 @@
 package com.newvent.participation.domain;
 
 public enum ParticipationUnavailableReason {
+    NOT_STARTED,
     ALREADY_PARTICIPATED,
     INSUFFICIENT_GRADE,
 

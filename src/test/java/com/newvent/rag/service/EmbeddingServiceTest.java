@@ -23,6 +23,7 @@ import com.newvent.event.repository.EventVersionRepository;
 import com.newvent.generation.repository.LlmCallLogRepository;
 import com.newvent.rag.dto.response.IndexStatusResponse;
 import com.newvent.rag.repository.RagChunkRepository;
+import com.newvent.rag.repository.RagReindexLogRepository;
 
 /** RagChunkRepositoryTest와 같은 실PG 패턴. 임베딩은 Mock(결정적·키 불필요). */
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=validate")
@@ -42,6 +43,9 @@ class EmbeddingServiceTest {
     private LlmCallLogRepository logs;
 
     @Autowired
+    private RagReindexLogRepository reindexLogs;
+
+    @Autowired
     private TestEntityManager tem;
 
     @Autowired
@@ -50,7 +54,7 @@ class EmbeddingServiceTest {
     private EmbeddingService indexing() {
         return new EmbeddingService(versions, chunks,
                 new RagChunkingService(), new MockEmbeddingClient(), events, logs,
-                new TransactionTemplate(txm));
+                new TransactionTemplate(txm), reindexLogs);
     }
 
     private static final String HTML = """
@@ -110,7 +114,8 @@ class EmbeddingServiceTest {
     void 일괄_재색인() {
         Long versionId = seedVersion(HTML);
         Long eventId = eventOf(versionId);
-        int n = indexing().reindex(eventId, null);
+        // 이 테스트는 본문 로직만 본다 — 이력 기록은 별도로 떼어내지 않은 재적재용 통로로 검증
+        int n = indexing().reindexUnlogged(eventId, null);
         assertEquals(2, n);
     }
 

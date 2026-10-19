@@ -202,9 +202,21 @@ public class GenerationService {
             return new StartResult.AlreadyRunning(already.get());
         }
 
+        // ★ 제목도 요청문도 내용이 없으면 만들지 않고 되묻는다 — 빈칸을 모델이 수치와 브랜드로 채운다(#230).
+        //   개인정보 되묻기가 먼저다. 둘 다 모델을 부르지 않는다.
+        String question = input.question();
+        if (question == null && !cmd.hasTemplate()
+                && RequestVagueness.isTooVague(cmd.title(), safeCommand.requestText())) {
+            question = RequestVagueness.QUESTION;
+        }
+        // ★ 글자 수로는 못 거르는 말("안녕", "ㅎㅇ", "asdf")은 모델이 판단한다 (#237). 위 두 되묻기 뒤에만 부른다
+        if (question == null && !cmd.hasTemplate() && isUnknownEvent(cmd, safeCommand.requestText())) {
+            question = RequestVagueness.QUESTION;
+        }
+
         // ⑤ 하루 상한 — 백지 경로만. 템플릿 경로는 모델을 아예 안 부른다
 
-        if (!cmd.hasTemplate() && input.question() == null) {
+        if (!cmd.hasTemplate() && question == null) {
             retry.reserve();
         }
 
@@ -230,14 +242,45 @@ public class GenerationService {
             job.chatRequestId(chatLog.request(cmd.eventId(), input.text(), null, privacy));
         }
 
-        if (input.question() != null) {
-            job.askBack(input.question());
+        if (question != null) {
+            job.askBack(question);
             chatLog.finish(job, cmd.eventId(), null);
             jobs.finish(job);
         } else {
             worker.submit(() -> runSafely(job, safeCommand));
         }
         return new StartResult.Started(job);
+    }
+
+    /**
+     * 요청에서 어떤 이벤트인지 알 수 없다고 모델이 판단했는가 (#237).
+     *
+     * ★ 알 수 없다고 **확실히 답했을 때만** true 다. 호출 실패 · 잘림 · 규격 밖 출력 · 게이트웨이 없음은 모두 false —
+     *   판정기 장애가 생성을 막으면 안 된다(동작 배치기와 같은 선택). 재시도는 없다.
+     * ★ 새 묶음이다 — jobId 묶음은 HTML 생성 재시도가 쓴다(plantBehaviors 와 같은 이유).
+     * ★ 하루 상한은 여기서 보지 않는다. 상한이 찼으면 바로 뒤 retry.reserve() 가 429 로 막는다.
+     */
+    private boolean isUnknownEvent(GenerateCommand cmd, String requestText) {
+        if (gateway == null) return false;
+        try {
+            LlmCallContext ctx = LlmCallContext.newGroup(cmd.eventId());
+            LlmClient.Response res = gateway.call(ctx, LlmClient.Request.router(
+                    PromptBuilder.requestJudge(),
+                    PromptBuilder.requestJudgeUser(cmd.title(), requestText)));
+            Boolean known = res.truncated() ? null : RequestVagueness.parseKnown(res.content());
+            recorder.recordSingle(ctx, res, known != null ? List.of() : List.of(
+                    Failure.of(res.truncated() ? FailureCode.TRUNCATED : FailureCode.ROUTER_PARSE,
+                            "요청 판정 출력이 규격에 맞지 않습니다.")));
+            if (known == null) {
+                log.info("요청 판정 출력을 읽지 못해 생성을 진행 (event={})", cmd.eventId());
+                return false;
+            }
+            if (!known) log.info("요청에서 이벤트를 알 수 없다고 판단해 되묻는다 (event={})", cmd.eventId());
+            return !known;
+        } catch (RuntimeException e) {
+            log.warn("요청 판정 실패 — 생성을 진행 (event={})", cmd.eventId(), e);
+            return false;
+        }
     }
 
     /** 중단 요청 — 즉시 멈추지 않는다. 단계 사이에서 멈춘다 (REQ-LLM-34) */
@@ -366,12 +409,39 @@ public class GenerationService {
             return null;
         }
         checkFormValues(cmd, res.html());
+        notePeriodWarnings(job, cmd, res);
         // ★ 저장 직전에 껍데기를 보장한다 — 래퍼 · 유의사항.
         //   백지는 템플릿이 없으므로 테마를 고를 근거가 없다 → null.
         //   event.css 의 :root 기본값이 쓰인다. 무스타일이 아니다.
         //   동작(data-behavior)도 여기서 서버가 심는다 — 모델 출력의 것은 정화가 이미 지웠다
         String html = plantBehaviors(cmd, plantSlots(res.html()));
         return PageShell.plant(withLayout(cmd, html), null);
+    }
+
+    /**
+     * 요청에 없던 기간 · 날짜가 페이지에 남았으면 로그에 남기고 관리자에게 알린다 (#230).
+     *
+     * ★ 실패로 만들지 않는다 — 재시도를 4번 해도 모델이 같은 기간을 다시 썼고, 정상 요청이 실패로 끝났다.
+     *   대신 저장은 하고 message 로 "확인해 달라" 고 알린다. 금액 · 용량 · 할인율 · 수량은 여전히 막는다.
+     * ★ 게시 시점 경고는 아니다 — 생성 직후 미리보기를 볼 때 보인다. 게시 전 점검은 따로 설계할 일이다.
+     */
+    private void notePeriodWarnings(GenerationJob job, GenerateCommand cmd, RetryService.Result res) {
+        List<String> periods = res.lastWarnings().stream()
+                .filter(f -> f.kind() == com.newvent.registry.FailureCode.VALUE_ADDED_PERIOD)
+                .map(com.newvent.registry.BlockValidator.Failure::subject)
+                .distinct().toList();
+        List<String> promises = res.lastWarnings().stream()
+                .filter(f -> f.kind() == com.newvent.registry.FailureCode.VALUE_ADDED_PROMISE)
+                .map(com.newvent.registry.BlockValidator.Failure::subject)
+                .distinct().toList();
+        if (periods.isEmpty() && promises.isEmpty()) return;
+        log.warn("REQ-LLM-41 — 요청에 없던 기간 {} · 약속 {} (event={}). 저장은 했고 관리자에게 알린다.",
+                periods, promises, cmd.eventId());
+        StringBuilder msg = new StringBuilder("페이지에 요청에 없던 내용이 들어 있어요.");
+        if (!periods.isEmpty()) msg.append(" 기간(").append(String.join(", ", periods)).append(")");
+        if (!promises.isEmpty()) msg.append(" 혜택·조건 표현(").append(String.join(", ", promises)).append(")");
+        msg.append(" 게시하기 전에 미리보기에서 확인해 주세요.");
+        job.notice(msg.toString());
     }
 
     /**

@@ -7,18 +7,23 @@ import io.swagger.v3.oas.annotations.media.Schema;
 /**
  * 에디터 직접 편집 시 단일 텍스트 치환 항목.
  *
- * @param index  [data-block] 내부 문서 순서 텍스트 노드 인덱스 (notices 제외, 0부터 시작)
+ * @param index  [data-block] 내부 문서 순서 텍스트 노드 인덱스 (0부터 시작)
  * @param before 수정 전 텍스트 (불일치 시 409 대응을 위한 안전망)
  * @param after  수정 후 텍스트
  */
 public record TextEdit(
-        @Schema(description = "블록 안 텍스트 노드의 문서 순서 번호. 0부터 세고 유의사항은 뺀다.")
+        @Schema(description = "블록 안 텍스트 노드의 문서 순서 번호. 서버 editableTexts 기준.")
         int index,
         @Schema(description = "화면에 보이던 수정 전 문구. 이미 직접 편집한 문구는 줄바꿈·공백까지 응답 값 그대로 보낸다. "
                 + "서버의 문구와 다르면 409 (DIRECT_EDIT409-0)")
         String before,
         @Schema(description = "바꿀 문구. 빈 문자열과 줄바꿈을 쓸 수 있다.")
-        String after) {
+        String after,
+        TextFormat format) {
+
+    public TextEdit(int index, String before, String after) {
+        this(index, before, after, null);
+    }
 
     public TextEdit {
         if (index < 0) {

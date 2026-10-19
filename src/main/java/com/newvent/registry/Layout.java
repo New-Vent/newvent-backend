@@ -1,8 +1,10 @@
 package com.newvent.registry;
 
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -33,7 +35,7 @@ import java.util.regex.Pattern;
  * ★ 이 파일과 event.css 의 `.layout-*` 규칙(src/event-css/80-layouts)은 짝이다.
  *   칸 크기는 CSS 가 <b>영역 종류</b>로 정한다. 모델이 칸 크기를 고르지 않는다.
  */
-public enum Layout {
+public enum Layout implements Pickable {
     STACK("layout-stack", "세로 한 줄 — 기본. 영역이 적거나 차분하게 읽히는 페이지", 0,
             "(배치|레이아웃).{0,10}(원래|기본(?! ?(색|컬러|톤|테마|글|폰트))|세로 ?한 ?줄|한 ?줄)|(원래|기본) ?(배치|레이아웃)|세로 ?한 ?줄(로|으로)? ?(배치|쌓|바꿔|돌려)"),
     BENTO("layout-bento", "벤토 — 영역을 크기가 다른 칸으로 나란히 놓는다. 내용이 많은 페이지", 4,
@@ -56,7 +58,15 @@ public enum Layout {
     FOCUS("layout-focus", "포커스 — 폭을 좁혀 가운데 한 줄로 놓고 여백을 넓게 둔다. 글처럼 차분하게 읽히는 페이지", 0,
             "(?i)포커스 ?(배치|레이아웃|형)|focus ?(layout|배치|레이아웃)"
             + "|(페이지|전체|영역들을?|영역을).{0,10}(폭|너비)(을|를)? ?.{0,4}(좁게|좁혀|줄여)"
-            + "|(좁은|좁게) ?(한 ?줄|폭) ?.{0,6}(배치|레이아웃)");
+            + "|(좁은|좁게) ?(한 ?줄|폭) ?.{0,6}(배치|레이아웃)"),
+    MASONRY("layout-masonry", "벽돌 — 높이가 다른 칸을 2단에 빈틈없이 쌓는다. 길이가 제각각인 영역이 많을 때", 3,
+            "(?i)(벽돌|메이슨리|masonry|핀터레스트) ?(형|식|처럼)? ?.{0,8}(배치|레이아웃|layout)|(페이지|전체 ?배치|영역들을?).{0,12}(벽돌|메이슨리|masonry|핀터레스트)"),
+    TIMELINE("layout-timeline", "타임라인 — 가운데 세로선을 두고 영역을 좌우로 번갈아 놓는다. 순서 · 흐름이 있는 페이지", 2,
+            "(?i)(페이지|전체|영역들을?).{0,12}타임라인|타임라인 ?(형|식)? ?(배치|레이아웃|layout)"),
+    L_SHAPE("layout-l-shape", "L자 — 소개를 뺀 첫 내용 영역(보통 혜택)을 왼쪽에 길게, 나머지는 오른쪽에 쌓는다. 대표 내용 + 짧은 영역들", 3,
+            "(?i)(l ?자|ㄴ ?자|엘 ?자) ?(형|모양)? ?(배치|레이아웃|layout)"),
+    CTA_RAIL("layout-cta-rail", "참여 레일 — 참여 영역을 오른쪽 칸에 두고 스크롤해도 따라오게 한다. 내용이 긴 페이지", 1,
+            "(?i)(사이드 ?레일|cta ?레일|참여 ?레일|오른쪽 ?레일|레일 ?(형|식)? ?(배치|레이아웃|layout))");
 
     public static final String PREFIX = "layout-";
 
@@ -183,8 +193,15 @@ public enum Layout {
         return requestText != null && requestText.contains("페이지");
     }
 
-    public String cssClass() { return cssClass; }
-    public String desc()     { return desc; }
+    @Override public String cssClass() { return cssClass; }
+    @Override public String desc()     { return desc; }
+
+    /**
+     * 생성 · 수정 프롬프트에 늘 실리는 기본 배치인가. 확장은 요청문이 부를 때만 실린다 ({@link #forPrompt}).
+     * ★ 확장으로 둔 이유 — 다 실으면 보통 요청 생성 프롬프트가 비용 상한(9,000자)을 넘는다.
+     *   검증 · 직접 수정 · 서버가 거는 배치({@link #requestedBy})는 지금처럼 전부를 안다
+     */
+    @Override public boolean core()    { return !EXPANSIONS.contains(this); }
 
     /** 화면에 보일 짧은 이름 — 설명의 앞머리 ("벤토 — …" 의 "벤토") */
     public String label() {
@@ -209,5 +226,22 @@ public enum Layout {
 
     public static List<Layout> all() {
         return List.of(values());
+    }
+
+    private static final Set<Layout> EXPANSIONS = EnumSet.of(MASONRY, TIMELINE, L_SHAPE, CTA_RAIL);
+
+    /** "참여" 는 어느 요청에나 나와서 참여 레일을 아무 데나 끌어온다 */
+    private static final Set<String> NOT_KEYWORDS = Set.of("참여");
+
+    /**
+     * 프롬프트에 실을 배치 — 기본 전부 + 요청문이 부른 확장 (선언 순서).
+     * 요청문이 배치를 직접 말했거나({@link #requestedBy}) 확장의 이름(벽돌 · 타임라인 · L자 · 레일)이 나오면 부른 것이다.
+     */
+    public static List<Layout> forPrompt(String requestText) {
+        List<Layout> expansions = Arrays.stream(values()).filter(l -> !l.core()).toList();
+        Set<Layout> called = EnumSet.noneOf(Layout.class);
+        called.addAll(KeywordMatch.matched(expansions, requestText, expansions.size(), NOT_KEYWORDS, false));
+        requestedBy(requestText).filter(l -> !l.core()).ifPresent(called::add);
+        return Arrays.stream(values()).filter(l -> l.core() || called.contains(l)).toList();
     }
 }

@@ -534,6 +534,41 @@ public class EditService {
         return out;
     }
 
+    private static final String ASK_UNCLEAR = "요청을 이해하지 못했습니다. 어느 부분을 어떻게 바꿀지 알려 주세요. "
+            + "(예: 제목을 '가을 대축제' 로 바꿔줘)";
+
+    /**
+     * 무엇을 어떻게 바꾸라는 말인지 알 수 없다고 모델이 판단했는가 (#237).
+     *
+     * ★ 알 수 없다고 **확실히 답했을 때만** true 다. 호출 실패 · 잘림 · 규격 밖 출력은 모두 false —
+     *   판정기 장애가 수정을 막으면 안 된다(생성 · 동작 배치기와 같은 선택). 재시도는 없다.
+     * ★ 새 묶음이다 — 라우터는 jobId 묶음을 쓴다. 같이 쓰면 (request_id, attempt_no) 유니크에 걸린다.
+     */
+    private boolean isUnknownRequest(EditCommand cmd) {
+        try {
+            LlmCallContext ctx = LlmCallContext.newGroup(cmd.eventId());
+            com.newvent.infra.llm.LlmClient.Response res = gateway.call(ctx,
+                    com.newvent.infra.llm.LlmClient.Request.router(PromptBuilder.editJudge(),
+                            PromptBuilder.editJudgeUser(RequestFilter.clean(cmd.requestText()))));
+            Boolean known = res.truncated() ? null
+                    : com.newvent.generation.service.RequestVagueness.parseKnown(res.content());
+            recorder.recordSingle(ctx, res, known != null ? List.of() : List.of(
+                    com.newvent.registry.BlockValidator.Failure.of(
+                            res.truncated() ? com.newvent.registry.FailureCode.TRUNCATED
+                                    : com.newvent.registry.FailureCode.ROUTER_PARSE,
+                            "수정 요청 판정 출력이 규격에 맞지 않습니다.")));
+            if (known == null) {
+                log.info("수정 요청 판정 출력을 읽지 못해 수정을 진행 (event={})", cmd.eventId());
+                return false;
+            }
+            if (!known) log.info("무엇을 바꿀지 알 수 없다고 판단해 되묻는다 (event={})", cmd.eventId());
+            return !known;
+        } catch (RuntimeException e) {
+            log.warn("수정 요청 판정 실패 — 수정을 진행 (event={})", cmd.eventId(), e);
+            return false;
+        }
+    }
+
     /**
      * 요청문을 실행 계획으로 바꾼다. <b>모델을 부르는 건 라우터 1회뿐이다.</b>
      *
@@ -546,6 +581,13 @@ public class EditService {
                 && Layout.requestedBy(cmd.requestText()).isPresent()) {
             job.fail("페이지 배치는 페이지 전체에 적용되는 값이라 영역을 고른 채로는 바꿀 수 없습니다. "
                     + "영역 선택을 해제하고 다시 요청해 주세요.");
+            return null;
+        }
+
+        // ★ 무엇을 바꾸라는 말인지 모델이 먼저 본다 (#237) — 라우터는 뜻을 모르는 말을 STYLE:hero 로 읽어
+        //   "시발" 이 버전으로 저장됐다. 영역을 골랐어도 요청문이 말이 안 되면 되묻는다.
+        if (com.newvent.generation.service.RequestVagueness.hasNoLetters(cmd.requestText()) || isUnknownRequest(cmd)) {
+            job.askBack(ASK_UNCLEAR);
             return null;
         }
 
@@ -580,8 +622,7 @@ public class EditService {
         }
         if (routed.isEmpty()) {
             // ★ 모델에게 다시 시키지 않는다. 관리자에게 다시 묻는다
-            job.askBack("요청을 이해하지 못했습니다. 어느 부분을 어떻게 바꿀지 알려 주세요. "
-                    + "(예: 제목을 '가을 대축제' 로 바꿔줘)");
+            job.askBack(ASK_UNCLEAR);
             return null;
         }
 
@@ -719,7 +760,8 @@ public class EditService {
         // ★ 항목 하나를 더하는 요청인가. 시스템 프롬프트 · 사용자 프롬프트 · 검증기
         //   **세 곳이 같은 답**을 써야 한다. 한 곳이라도 빠지면 지시가 어긋나고,
         //   어긋난 지시를 받은 모델은 그대로 두거나 지어낸다 — 둘 다 실패다
-        boolean addItem = step.op() == Op.ADD && !before.isBlank();
+        boolean createFormBlock = step.op() == Op.ADD && before.isBlank() && block.itemsAreFormValues();
+        boolean addItem = step.op() == Op.ADD && (!before.isBlank() || createFormBlock);
 
         // ★ 한 번만 읽는다. 프롬프트에 주는 목록과 검증기가 대조하는 목록이
         //   **같아야** 한다 — 두 번 읽으면 그 사이에 삭제된 이미지를 안내하게 된다
@@ -736,7 +778,7 @@ public class EditService {
                     //   그대로 나가서, 사용자 프롬프트의 "하나만 더한다" 와 정면으로 어긋난다
                     // ★★ 올라온 이미지 목록을 같이 넘긴다. 비면 안내가 한 줄도 안 나간다
                     PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks(),
-                            step.op() == Op.STYLE, addItem, uploaded),
+                            step.op() == Op.STYLE, addItem, uploaded, createFormBlock),
                     userPrompt(cmd, step, before, serverLayout != null, multiArea),
                     // ★ 항목을 하나 더하는 요청이면 검증기에 그렇게 알린다. 안 알리면
                     //   ITEM_ADDED 로 4회가 전부 터지고 관리자는 이유를 못 듣는다
@@ -901,6 +943,14 @@ public class EditService {
         if (before.isBlank()) {
             s.add("[현재 상태]");
             s.add("이 영역이 아직 없습니다. 새로 만드세요.");
+            if (step.op() == Op.ADD && step.block() == Block.BENEFITS) {
+                s.add("혜택 블록을 처음부터 복원합니다. 아래 관리자가 적은 내용으로 혜택 항목을 정확히 1개만 만드세요.");
+                s.add("<section data-block=\"benefits\" class=\"v-benefits-grid v-surface-tint\"> 안에 소제목과 <ul><li> 하나를 둡니다. <li> 안에 .benefit-icon 이모지와 .benefit-name 혜택명을 둡니다.");
+                s.add("요청에 없는 설명, 금액, 수량, 기간은 만들지 마세요. 근거가 없는 .benefit-desc 또는 .benefit-value 는 비워 둔 요소를 만들지 말고 생략하세요.");
+            } else if (step.op() == Op.ADD && step.block() == Block.PRIZE) {
+                s.add("경품 블록을 표준 서식으로 처음부터 만듭니다. <section data-block=\"prize\" class=\"v-prize-list\"> 안에 <div class=\"block-header\"><div class=\"sub-label\">Prize</div><h2 class=\"title\">경품 안내</h2></div> 와 <ul><li> 경품 항목 하나를 둡니다.");
+                s.add("관리자가 적은 경품 내용만 사용하세요. 등수, 당첨 인원, 추첨 조건 등 요청에 없는 내용을 추가하지 마세요.");
+            }
         } else {
             s.add("[현재 내용 — 이 영역을 수정한다]");
             s.add(before);
