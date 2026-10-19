@@ -29,7 +29,7 @@ public class RagReindexJob {
             zone = "Asia/Seoul"
     )
     public void run() {
-        if (!embeddingService.tryClaimReindexSlot()) {
+        if (!embeddingService.tryClaimReindexSlot(null)) {
             log.warn("야간 재색인 건너뜀 — 이전 실행이 아직 돌고 있다");
             return;
         }
@@ -42,8 +42,7 @@ public class RagReindexJob {
                 }
             });
         } catch (RuntimeException e) {
-            // 제출 거부 등으로 async 본문이 안 돌면 finally 가 안 돌아 플래그가 누수된다. 직접 해제.
-            embeddingService.releaseReindexSlot();
+            // 제출 거부 등으로 async 본문이 안 돌면 finally 가 안 돌아 플래그가 누수된다. 직접 해제.            embeddingService.releaseReindexSlot();
             throw e;
         }
     }
