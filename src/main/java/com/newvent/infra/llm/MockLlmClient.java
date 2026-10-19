@@ -134,6 +134,8 @@ public class MockLlmClient implements LlmClient {
 
         String body = (r.mode() != Mode.ROUTER) ? html(r)
                 // PromptBuilder.behaviorPlanner() 만 이 말을 쓴다
+                // PromptBuilder.requestJudge() · editJudge() — mock 은 판단하지 않고 항상 생성을 진행시킨다
+                : (r.system() != null && (r.system().contains("생성 요청을 검사한다") || r.system().contains("수정 요청을 검사한다"))) ? "{\"known\":true}"
                 : (r.system() != null && r.system().contains("동작 배치기")) ? plan(r.user())
                 : route(r.user());
 

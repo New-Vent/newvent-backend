@@ -209,6 +209,10 @@ public class GenerationService {
                 && RequestVagueness.isTooVague(cmd.title(), safeCommand.requestText())) {
             question = RequestVagueness.QUESTION;
         }
+        // ★ 글자 수로는 못 거르는 말("안녕", "ㅎㅇ", "asdf")은 모델이 판단한다 (#237). 위 두 되묻기 뒤에만 부른다
+        if (question == null && !cmd.hasTemplate() && isUnknownEvent(cmd, safeCommand.requestText())) {
+            question = RequestVagueness.QUESTION;
+        }
 
         // ⑤ 하루 상한 — 백지 경로만. 템플릿 경로는 모델을 아예 안 부른다
 
@@ -246,6 +250,37 @@ public class GenerationService {
             worker.submit(() -> runSafely(job, safeCommand));
         }
         return new StartResult.Started(job);
+    }
+
+    /**
+     * 요청에서 어떤 이벤트인지 알 수 없다고 모델이 판단했는가 (#237).
+     *
+     * ★ 알 수 없다고 **확실히 답했을 때만** true 다. 호출 실패 · 잘림 · 규격 밖 출력 · 게이트웨이 없음은 모두 false —
+     *   판정기 장애가 생성을 막으면 안 된다(동작 배치기와 같은 선택). 재시도는 없다.
+     * ★ 새 묶음이다 — jobId 묶음은 HTML 생성 재시도가 쓴다(plantBehaviors 와 같은 이유).
+     * ★ 하루 상한은 여기서 보지 않는다. 상한이 찼으면 바로 뒤 retry.reserve() 가 429 로 막는다.
+     */
+    private boolean isUnknownEvent(GenerateCommand cmd, String requestText) {
+        if (gateway == null) return false;
+        try {
+            LlmCallContext ctx = LlmCallContext.newGroup(cmd.eventId());
+            LlmClient.Response res = gateway.call(ctx, LlmClient.Request.router(
+                    PromptBuilder.requestJudge(),
+                    PromptBuilder.requestJudgeUser(cmd.title(), requestText)));
+            Boolean known = res.truncated() ? null : RequestVagueness.parseKnown(res.content());
+            recorder.recordSingle(ctx, res, known != null ? List.of() : List.of(
+                    Failure.of(res.truncated() ? FailureCode.TRUNCATED : FailureCode.ROUTER_PARSE,
+                            "요청 판정 출력이 규격에 맞지 않습니다.")));
+            if (known == null) {
+                log.info("요청 판정 출력을 읽지 못해 생성을 진행 (event={})", cmd.eventId());
+                return false;
+            }
+            if (!known) log.info("요청에서 이벤트를 알 수 없다고 판단해 되묻는다 (event={})", cmd.eventId());
+            return !known;
+        } catch (RuntimeException e) {
+            log.warn("요청 판정 실패 — 생성을 진행 (event={})", cmd.eventId(), e);
+            return false;
+        }
     }
 
     /** 중단 요청 — 즉시 멈추지 않는다. 단계 사이에서 멈춘다 (REQ-LLM-34) */

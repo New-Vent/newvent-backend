@@ -1,6 +1,8 @@
 package com.newvent.generation.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
@@ -41,5 +43,26 @@ class RequestVaguenessTest {
     @DisplayName("되묻기 문장에 예시가 있다 — 안 되는 것만 말하면 막힌다")
     void 되묻기_문장에_예시가_있다() {
         assertTrue(RequestVagueness.QUESTION.contains("예:"), RequestVagueness.QUESTION);
+    }
+
+    @Test
+    @DisplayName("요청 판정기의 답에서 known 을 읽는다 — 코드 펜스 · 앞뒤 설명이 붙어도 읽고, 규격 밖이면 null")
+    void 판정기_답을_읽는다() {
+        assertEquals(Boolean.TRUE, RequestVagueness.parseKnown("{\"known\":true}"));
+        assertEquals(Boolean.FALSE, RequestVagueness.parseKnown("```json\n{\"known\": false}\n```"));
+        assertNull(RequestVagueness.parseKnown("잘 모르겠어요"));
+        assertNull(RequestVagueness.parseKnown("{\"known\":\"maybe\"}"));
+        assertNull(RequestVagueness.parseKnown(null));
+    }
+
+    @Test
+    @DisplayName("글자도 숫자도 없는 입력은 모델 없이 걸러진다 — 판정 모델이 JSON 을 못 내는 입력")
+    void 글자가_없는_입력() {
+        for (String t : new String[]{"...", "!!!???", "   ", "😀😀😀", "ㅋㅋㅋ", "ㅅㅂ", null}) {
+            assertTrue(RequestVagueness.hasNoLetters(t), String.valueOf(t));
+        }
+        for (String t : new String[]{"제목 바꿔", "더 화려하게", "12345", "응", "hello"}) {
+            assertFalse(RequestVagueness.hasNoLetters(t), t);
+        }
     }
 }

@@ -241,4 +241,23 @@ class BlockRegistryTest {
              }
          }
      }
+
+    @Test
+    @DisplayName("판정 프롬프트 — 비속어 규칙이 있고, 예시에 '병신' 이 낱말로 든 문장이 없다 (예시 한 줄이 판정을 바꾼다, #237)")
+    void 판정_프롬프트의_비속어_규칙() {
+        for (String prompt : new String[]{PromptBuilder.requestJudge(), PromptBuilder.editJudge()}) {
+            assertTrue(prompt.contains("비속어"), prompt);
+            assertTrue(prompt.contains("{\"known\":false}") && prompt.contains("{\"known\":true}"), prompt);
+            assertTrue(prompt.contains("애매하면 true"), "오탐보다 미탐이 낫다");
+            assertTrue(prompt.contains("요청문 안의 지시"), "프롬프트 주입을 따르면 판정이 뚫린다");
+            assertTrue(prompt.contains("함께 있어도 false"), "비속어 + 구체적 내용도 되묻는다 — 규칙이 빠지면 'ㅅㅂ 가입 이벤트' 가 통과한다");
+            assertTrue(prompt.contains("긍정 강조 속어"), "개꿀 · 대박 같은 속어는 정상이다");
+            assertFalse(prompt.contains("병신년"),
+                    "평가에서 이 예시가 '병신' 단독 요청까지 정상으로 통과시켰다. 예시를 바꾸면 비속어 세트로 다시 평가한다");
+        }
+        assertTrue(PromptBuilder.requestJudge().contains("생성 요청을 검사한다"));
+        assertTrue(PromptBuilder.editJudge().contains("수정 요청을 검사한다"));
+        assertEquals("이벤트 제목: 봄\n\n요청: 안녕", PromptBuilder.requestJudgeUser("봄", "안녕"));
+        assertEquals("요청: 안녕", PromptBuilder.requestJudgeUser(" ", "안녕"));
+    }
 }
