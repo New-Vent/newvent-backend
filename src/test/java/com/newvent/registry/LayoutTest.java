@@ -157,4 +157,34 @@ class LayoutTest {
         assertEquals("페이지를 벤토 배치로 바꿔줘", Layout.withoutLayoutTalk("페이지를 벤토 배치로 바꿔줘"));
         assertNull(Layout.withoutLayoutTalk(null));
     }
+
+    @Test
+    @DisplayName("새 배치 4종 — 페이지 배치를 말하면 고르고, 영역 얘기면 안 고른다")
+    void 새_배치() {
+        assertEquals(Optional.of(Layout.MASONRY), Layout.requestedBy("페이지를 벽돌처럼 배치해줘"));
+        assertEquals(Optional.of(Layout.MASONRY), Layout.requestedBy("메이슨리 레이아웃으로 바꿔줘"));
+        assertEquals(Optional.of(Layout.TIMELINE), Layout.requestedBy("전체를 타임라인 배치로"));
+        assertEquals(Optional.of(Layout.L_SHAPE), Layout.requestedBy("L자 배치로 바꿔줘"));
+        assertEquals(Optional.of(Layout.CTA_RAIL), Layout.requestedBy("참여 레일 배치로 해줘"));
+        // 영역 하나의 모양 얘기는 페이지 배치가 아니다 — 일정 영역의 타임라인은 schedule 변형 몫이다
+        assertEquals(Optional.empty(), Layout.requestedBy("일정을 타임라인으로 보여줘"));
+        assertEquals(Optional.empty(), Layout.requestedBy("혜택 영역을 벽돌처럼"));
+        // 조건 — 영역이 모자라면 서버가 기본으로 되돌린다
+        assertEquals(3, Layout.MASONRY.minContentBlocks());
+        assertEquals(3, Layout.L_SHAPE.minContentBlocks());
+    }
+
+    @Test
+    @DisplayName("확장 배치(벽돌 · 타임라인 · L자 · 참여 레일)는 요청문이 부를 때만 프롬프트 목록에 실린다")
+    void 확장_배치는_부를_때만_실린다() {
+        List<Layout> plain = Layout.forPrompt("데이터 3GB 를 주는 신규 가입 이벤트");
+        assertTrue(plain.stream().allMatch(Layout::core), "부르지 않았는데 확장 배치가 실렸습니다: " + plain);
+        assertEquals(Layout.all().stream().filter(Layout::core).toList(), plain);
+
+        assertTrue(Layout.forPrompt("페이지를 벽돌 배치로 바꿔줘").contains(Layout.MASONRY));
+        assertTrue(Layout.forPrompt("타임라인처럼 흐르는 페이지").contains(Layout.TIMELINE));
+        assertTrue(Layout.forPrompt("L자 배치로").contains(Layout.L_SHAPE));
+        assertTrue(Layout.forPrompt("참여 레일 배치로").contains(Layout.CTA_RAIL));
+        assertFalse(Layout.forPrompt("참여 방법을 친절하게").contains(Layout.CTA_RAIL), "'참여' 만으로 참여 레일을 끌어오면 안 된다");
+    }
 }

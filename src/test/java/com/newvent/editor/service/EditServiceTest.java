@@ -299,20 +299,6 @@ class EditServiceTest {
     }
 
     @Test
-    @DisplayName("팔레트에 없는 색(노랑)을 페이지 전체로 말하면 되묻는다 — 엉뚱한 팔레트를 고르지 않는다")
-    void 팔레트에_없는_색은_되묻는다() {
-        router.willReturn(new RawRoute("STYLE", "hero", null));
-
-        GenerationJob job = run("바탕색은 노란색으로 바꿔줘");
-
-        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
-        assertTrue(job.message().contains("'노랑' 색감은 지원하지 않습니다"), job.message());
-        assertTrue(job.message().contains("고를 수 있는 색:"), job.message());
-        assertEquals(0, retry.calls(), "블록 수정 모델을 부르면 안 된다");
-        assertEquals(1, versionNo(), "행이 생기면 안 된다");
-    }
-
-    @Test
     @DisplayName("팔레트에 있는 색(파랑)은 되묻지 않고 그대로 진행한다")
     void 팔레트에_있는_색은_진행한다() {
         router.willReturn(new RawRoute("STYLE", "hero", null));
@@ -374,18 +360,6 @@ class EditServiceTest {
 
         assertEquals(1, retry.prompts().size());
         assertFalse(retry.prompts().getFirst().contains("[이번 호출은 한 영역만 고친다]"), retry.prompts().getFirst());
-    }
-
-    @Test
-    @DisplayName("섞인 요청이어도 제목 쪽에 건 없는 색은 되묻는다")
-    void 제목_쪽_없는_색은_섞여도_되묻는다() {
-        router.willReturn(new RawRoute("STYLE", "hero", null), new RawRoute("STYLE", "benefits", null));
-
-        GenerationJob job = run("제목은 노란색으로, 혜택 배경은 파란색으로 바꿔줘");
-
-        assertEquals(GenerationJob.Phase.ASK_BACK, job.phase());
-        assertTrue(job.message().contains("'노랑' 색감은 지원하지 않습니다"), job.message());
-        assertEquals(0, retry.calls());
     }
 
     @Test

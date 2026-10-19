@@ -3,6 +3,7 @@ package com.newvent.registry;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 페이지 분위기 — 템플릿이 쓰는 테마와, 백지에서 모델이 고르는 테마.
@@ -16,7 +17,7 @@ import java.util.Optional;
  * ★ 테마는 <b>구조</b>, 팔레트는 <b>색</b>이다
  *   테마가 배경 · 컨테이너 카드 · 타이포 단계 · 섹션 리듬을 정하고,
  *   팔레트({@link Palette})가 CSS 변수로 색을 덮는다. 층이 겹치지 않으므로
- *   테마 3 × 팔레트 19 가 그대로 조합이 된다. 계절 · 명절은 팔레트의 몫이다 —
+ *   백지 테마 5 × 팔레트 144 가 그대로 조합이 된다. 계절 · 명절은 팔레트의 몫이다 —
  *   테마를 계절별로 늘리면 팔레트와 역할이 겹쳐 둘 다 망가진다.
  *
  * ★ suffix 가 null 이면 백지 테마다
@@ -35,15 +36,6 @@ public enum Theme {
     VIP("member_appreciation",      "theme-vip",     Tone.DARK,  null),
     SALE("flash_sale",              "theme-sale",    Tone.LIGHT, null),
     LAUNCH("pre_registration",      "theme-launch",  Tone.DARK,  null),
-
-    // ── 백지 테마 (suffix 없음) ────────────────────────────────────
-    //
-    // ★ desc 는 프롬프트에 그대로 나간다. 색 이름이 아니라 **성격**을 적는다 —
-    //   색은 팔레트가 받는다.
-    // ★ BASIC 의 desc 가 "분위기가 분명하지 않으면 이것" 이라고 말하는 게 중요하다.
-    //   모델에게 **긍정형 출구**를 준다. 금지문("지어내지 마라")을 쓰면 안 된다 —
-    //   v-benefits-carousel 은 프롬프트 전체에서 금지 문장에만 나왔고,
-    //   모델이 거기서 이름을 배워 골랐다.
     BASIC(null, "theme-basic", Tone.LIGHT,
             "차분 · 일반 — 분위기가 분명하지 않거나 업무적인 이벤트. 장식 없이 읽기 좋게"),
     BLOOM(null, "theme-bloom", Tone.LIGHT,
@@ -55,7 +47,11 @@ public enum Theme {
     //   CSS 가 숨기거나 걷는다(20-themes/05-editorial.css).
     //   그래서 테마를 되돌리면 원래 모양이 그대로 돌아온다.
     EDITORIAL(null, "theme-editorial", Tone.LIGHT,
-            "여백 · 잡지 · 브랜드 지면 — 상자 없이 큰 제목과 여백으로 정리. 깔끔하게 · 정돈되게");
+            "여백 · 잡지 · 브랜드 지면 — 상자 없이 큰 제목과 여백으로 정리. 깔끔하게 · 정돈되게"),
+    BRUTALIST(null, "theme-brutalist", Tone.LIGHT,
+            "브루탈 · 개성 · 스트리트 · 힙 — 두꺼운 검정 테두리, 어긋난 그림자, 또렷한 원색 면"),
+    PAPERCRAFT(null, "theme-papercraft", Tone.LIGHT,
+            "종이 공예 · 아기자기 · 수공예 · 따뜻한 — 종이를 오려 겹친 카드, 부드러운 층 그림자");
 
     /**
      * 표면 밝기.
@@ -132,5 +128,19 @@ public enum Theme {
      */
     public static List<Theme> blankThemes() {
         return Arrays.stream(values()).filter(t -> t.suffix == null).toList();
+    }
+
+    /**
+     * 요청문과 이름(desc 의 — 앞)이 가장 많이 맞는 백지 테마 하나. 없으면 빈 값.
+     *
+     * ★ 목록에는 늘 다 실린다. 이건 **한 번 더 짚는 줄**이다 — 팔레트와 같은 이유(목록에만 있으면 못 고른다).
+     *   "종이 공예처럼 아기자기하게" 에 모델이 theme-bloom 을 골랐다 — 요청문의 "축제" 가 bloom 설명에 있어서다 (Bedrock 실측).
+     *   이름이 더 많이 맞는 쪽을 짚어 준다. 동점이면 선언 순서(기본 · 무난한 쪽이 앞)
+     */
+    public static Optional<Theme> matched(String requestText) {
+        record Pick(Theme theme, String cssClass, String desc, boolean core) implements Pickable { }
+        List<Pick> picks = blankThemes().stream().map(t -> new Pick(t, t.cssClass, t.desc, false)).toList();
+        return KeywordMatch.matched(picks, Layout.withoutLayoutTalk(requestText), 1, Set.of("기본", "일반"), false)
+                .stream().findFirst().map(Pick::theme);
     }
 }
