@@ -73,7 +73,7 @@ class RagControllerTest {
     @Test
     @DisplayName("POST /api/admin/rag/reindex — 돌리고 현황을 돌려준다")
     void 재색인() throws Exception {
-        given(embedding.reindex(3L, 5L)).willReturn(4);
+        given(embedding.reindex(3L, 5L, null)).willReturn(4);
         given(embedding.getStatus(3L)).willReturn(indexStatus());
 
         mockMvc.perform(post("/api/admin/rag/reindex")
@@ -82,7 +82,7 @@ class RagControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.eventId").value(3));
-        verify(embedding).reindex(3L, 5L);
+        verify(embedding).reindex(3L, 5L, null);
     }
 
     @Test
@@ -95,7 +95,7 @@ class RagControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"eventId\":3,\"versionId\":5}"))
                 .andExpect(status().isConflict());
-        verify(embedding, never()).reindex(3L, 5L);
+        verify(embedding, never()).reindex(3L, 5L, null);
     }
 
     @Test
@@ -161,7 +161,7 @@ class RagControllerTest {
     @Test
     @DisplayName("POST /api/admin/rag/reindex/all — 자리 잡으면 202 + 상태")
     void 전체_재색인_시작() throws Exception {
-        given(embedding.tryClaimReindexSlot()).willReturn(true);
+        given(embedding.tryClaimReindexSlot(null)).willReturn(true);
         given(embedding.getReindexAllStatus()).willReturn(
                 new ReindexAllStatus(true, Instant.parse("2026-10-07T03:00:00Z"), null, null));
 
@@ -174,7 +174,7 @@ class RagControllerTest {
     @Test
     @DisplayName("POST /api/admin/rag/reindex/all — 이미 돌고 있으면 409")
     void 전체_재색인_중복() throws Exception {
-        given(embedding.tryClaimReindexSlot()).willReturn(false);
+        given(embedding.tryClaimReindexSlot(null)).willReturn(false);
         given(embedding.getReindexAllStatus()).willReturn(
                 new ReindexAllStatus(true, Instant.parse("2026-10-07T03:00:00Z"), null, null));
 
@@ -260,7 +260,7 @@ class RagControllerTest {
     @DisplayName("품질 추이 · 전체 재색인은 이벤트에 묶이지 않아 소유자를 확인하지 않는다")
     void 전역_API는_소유자_확인_없음() throws Exception {
         given(embedding.getQualityTrend(anyInt())).willReturn(List.of());
-        given(embedding.tryClaimReindexSlot()).willReturn(false);
+        given(embedding.tryClaimReindexSlot(null)).willReturn(false);
         given(embedding.getReindexAllStatus()).willReturn(ReindexAllStatus.idle());
 
         mockMvc.perform(get("/api/admin/rag/quality-trend")).andExpect(status().isOk());

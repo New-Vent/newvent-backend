@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.newvent.auth.dto.AuthUser;
 import com.newvent.common.response.ApiResponse;
+import com.newvent.common.response.PageResponse;
 import com.newvent.event.exception.EventErrorCode;
 import com.newvent.event.exception.EventException;
 import com.newvent.event.service.EventOwnerCheck;
@@ -27,6 +28,7 @@ import com.newvent.rag.dto.response.IndexStatusResponse;
 import com.newvent.rag.dto.response.PromptCandidate;
 import com.newvent.rag.dto.response.QualityTrendResponse;
 import com.newvent.rag.dto.response.ReindexAllStatus;
+import com.newvent.rag.dto.response.ReindexLogSummaryResponse;
 import com.newvent.rag.dto.response.SearchPreviewResponse;
 import com.newvent.rag.dto.response.VersionSimilarityResponse;
 import com.newvent.rag.service.EmbeddingService;
@@ -81,7 +83,8 @@ public class RagController {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ApiResponse.success(embedding.getReindexAllStatus()));
         }
-        embedding.reindex(request.eventId(), request.versionId());
+        embedding.reindex(request.eventId(), request.versionId(),
+                admin == null ? null : admin.id());
         return ResponseEntity.ok(ApiResponse.success(embedding.getStatus(request.eventId())));
     }
 
@@ -95,6 +98,22 @@ public class RagController {
                                                         @AuthenticationPrincipal AuthUser admin) {
         ownerCheck.requireOwned(eventId, admin);
         return ApiResponse.success(embedding.getStatus(eventId));
+    }
+
+    /**
+     * 재색인 이력. 성공·실패와 범위(SINGLE/EVENT/ALL)를 실행 1회당 한 줄로 남긴다.
+     * 품질 추이에서 "이 주 청크가 왜 튀었나"가 여기로 설명되고, 이벤트 단위 이력 카드와 분리돼 전역으로 본다.
+     */
+    @Operation(
+            summary = "재색인 이력 목록",
+            description = "최신순. 버전·이벤트·전체 재색인의 실행 기록으로 언제 누가 재색인해 청크가 몇 개 (다시) 만들어졌는지 확인한다. "
+                    + "실패한 실행과 부분 실패(전체 재색인에서 일부 이벤트 실패)는 사유가 failureMessage 에 담긴다.")
+    @GetMapping("/reindex-logs")
+    public ApiResponse<PageResponse<ReindexLogSummaryResponse>> reindexLogs(
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(50) int size,
+            @AuthenticationPrincipal AuthUser admin) {
+        return ApiResponse.success(embedding.getReindexLogs(page, size));
     }
 
     /** 검색 미리보기. 쿼리를 던지면 상위 후보와 거리를 보여준다. */
@@ -182,7 +201,7 @@ public class RagController {
     @PostMapping("/reindex/all")
     public ResponseEntity<ApiResponse<ReindexAllStatus>> reindexAll(
             @AuthenticationPrincipal AuthUser admin) {
-        if (!embedding.tryClaimReindexSlot()) {
+        if (!embedding.tryClaimReindexSlot(admin == null ? null : admin.id())) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ApiResponse.success(embedding.getReindexAllStatus()));
         }

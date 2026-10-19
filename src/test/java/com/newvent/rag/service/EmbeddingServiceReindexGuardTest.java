@@ -26,7 +26,7 @@ class EmbeddingServiceReindexGuardTest {
     private EmbeddingService service(EventVersionRepository versions, RagChunkRepository chunks) {
         return new EmbeddingService(versions, chunks, new RagChunkingService(),
                 mock(EmbeddingClient.class), mock(EventRepository.class),
-                mock(LlmCallLogRepository.class), null);
+                mock(LlmCallLogRepository.class), null, null);
     }
 
     @Test
@@ -46,21 +46,21 @@ class EmbeddingServiceReindexGuardTest {
     @Test
     @DisplayName("잡힌 자리는 중복으로 못 잡는다")
     void 자리중복불가() {
-        EmbeddingService service = new EmbeddingService(null, null, null, null, null, null, null);
+        EmbeddingService service = new EmbeddingService(null, null, null, null, null, null, null, null);
 
-        assertTrue(service.tryClaimReindexSlot());
-        assertFalse(service.tryClaimReindexSlot());
+        assertTrue(service.tryClaimReindexSlot(null));
+        assertFalse(service.tryClaimReindexSlot(null));
     }
 
     @Test
     @DisplayName("해제하면 다시 잡힌다 — 제출 거부 시 플래그 누수 방지")
     void 해제후_재선점() {
-        EmbeddingService service = new EmbeddingService(null, null, null, null, null, null, null);
+        EmbeddingService service = new EmbeddingService(null, null, null, null, null, null, null, null);
 
-        assertTrue(service.tryClaimReindexSlot());
+        assertTrue(service.tryClaimReindexSlot(null));
         assertTrue(service.isReindexAllRunning());
         service.releaseReindexSlot();
         assertFalse(service.isReindexAllRunning());
-        assertTrue(service.tryClaimReindexSlot());
+        assertTrue(service.tryClaimReindexSlot(null));
     }
 }

@@ -21,10 +21,10 @@ class RagReindexJobTest {
         int claims;
         int asyncCalls;
         boolean slotFree = true;
-        FakeEmbedding() { super(null, null, null, null, null, null, null); }
+        FakeEmbedding() { super(null, null, null, null, null, null, null, null); }
 
         @Override
-        public boolean tryClaimReindexSlot() {
+        public boolean tryClaimReindexSlot(Long requestedBy) {
             claims++;
             return slotFree;
         }

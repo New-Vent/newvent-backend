@@ -117,7 +117,7 @@ public class RagSeedDataGenerator {
 				EventVersion version = versions.save(EventVersion.create(event, 1, def.html(), null,  null));
 				event.publish(version);
 				event = events.save(event);
-				totalChunks += embedding.reindex(event.getId(), version.getId());
+				totalChunks += embedding.reindexUnlogged(event.getId(), version.getId());
 				succeeded++;
 			} catch (RuntimeException e) {
 				log.error("RAG 시드 실패: title={}", def.title(), e);
