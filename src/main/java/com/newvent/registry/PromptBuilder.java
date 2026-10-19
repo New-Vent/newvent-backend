@@ -24,6 +24,10 @@ public final class PromptBuilder {
         return List.of(
                 "- 날짜를 임의로 만들지 마라. 기간은 주어진 값만 쓴다.",
                 "- 주어지지 않은 혜택이나 수치를 만들어내지 마라.",
+                // ★ "헬스장 등록권 추가" 만 시켰는데 benefit-tag(한정 · OFF) 까지 붙이던 사고 —
+                //   생성 volumeRules 는 이미 '요청문에 있을 때만' 인데, 수정 경로의 addInline 이
+                //   "benefit-tag 를 써라" 로 무조건 밀어 공통 금지가 필요했다.
+                "- 요청문에 없는 benefit-tag(한정 · 할인율 · 선착순 · 등수 꼬리말)를 만들지 마라.",
                 "- 실존하는 방송 프로그램, 브랜드, 연예인 이름을 쓰지 마라.");
     }
 
@@ -200,7 +204,10 @@ public final class PromptBuilder {
         s.add("- 받는 값은 짧게 쓴다. 요청문에 적힌 값만 쓰고, 문장을 넣지 마라.");
         s.add("- 요청문에 할인 전후 가격이 있으면 받는 값에 "
                 + "<span class=\"t-strike\">원래 가격</span> 과 <strong class=\"t-big\">할인가</strong> 를 같이 쓴다.");
-        s.add("- 할인율 · 수량 한정 · 등수 같은 짧은 꼬리말은 요청문에 있을 때만 benefit-tag 에 쓴다.");
+        // ★ 예시에 태그가 없어도 이 줄이 없으면 모델이 "있어 보이게" 꼬리말을 붙인다.
+        //   '요청문에 있을 때만' + '없으면 만들지 마라' 를 같이 써야 수정 경로와 말이 같다.
+        s.add("- 할인율 · 수량 한정 · 등수 같은 짧은 꼬리말은 요청문에 있을 때만 benefit-tag 에 쓴다. "
+                + "요청문에 그런 말이 없으면 benefit-tag 를 만들지 마라.");
         s.add("- 참여 방법은 3단계로 쓴다. 요청문에 절차가 없으면 '이벤트 확인 → 참여하기 → 완료' 처럼 "
                 + "추첨 · 당첨 · 발표 · 응모를 말하지 않는 단순한 절차로 쓴다.");
         s.add("- 요청문에 혜택이 없으면 혜택 영역에는 '이벤트 참여' 한 항목만 쓴다. "
@@ -446,6 +453,8 @@ public final class PromptBuilder {
             s.add("- 더한 항목은 기존 항목과 **같은 태그 · 같은 class** 로 만든다.");
             s.add("- 더한 항목에 금액 · 수량 · 기간 같은 수치를 지어내 넣지 마라. "
                     + "관리자가 적어 준 문구에 있는 것만 쓴다.");
+            // ★ "헬스장 등록권 추가해줘" → 카드만 더해야 하는데 benefit-tag 까지 생기던 경우
+            s.add("- 더한 항목에 benefit-tag 를 붙이지 마라. 요청문에 한정 · 할인율 · 선착순 · 등수가 있을 때만 쓴다.");
         }
         // 통째로 지운 혜택 · 경품을 다시 만들 때 — 표준 서식을 그대로 준다 (§3-5)
         if (createFormBlock && b == Block.BENEFITS) {
@@ -530,11 +539,18 @@ public final class PromptBuilder {
         }
     }
 
-    /** 문구 꾸밈 — 아껴 쓰라고 한다. 혜택 카드 꼬리말은 benefit-tag (§2-5) */
+    /**
+     * 문구 꾸밈 — 아껴 쓰라고 한다. 혜택 카드 꼬리말은 benefit-tag (§2-5)
+     *
+     * ★ "benefit-tag 를 써라" 로만 쓰면 요청에 없는 꼬리말까지 붙인다(실측: 등록권만 추가 → 한정도 생김).
+     *   생성 volumeRules · docs 와 같이 <b>요청문에 있을 때만</b> 으로 맞춘다.
+     */
     private static void addInline(StringJoiner s) {
         s.add("문구 꾸밈: (꼭 필요한 단어에만, 영역마다 1~2개까지)");
         s.add("- 배지(t-badge)는 " + Inline.BADGE_MAX + "글자 이하의 짧은 말에만 붙인다 (예: 한정, NEW, 무료). 문장에 붙이지 마라.");
-        s.add("- 단, 혜택 <li> 바로 안의 꼬리말은 benefit-tag 를 쓴다. t-badge 를 쓰지 마라.");
+        s.add("- 혜택 <li> 바로 안의 꼬리말은 t-badge 가 아니라 benefit-tag 다. "
+                + "할인율 · 수량 한정 · 선착순 · 등수가 요청문에 있을 때만 benefit-tag 를 쓰고, "
+                + "없으면 benefit-tag 를 만들지 마라.");
         s.add("- <span> · <mark> · <strong> 의 class 에 아래 이름을 붙인다. 목록에 없는 이름은 쓰지 마라.");
         s.add("  예) <span class=\"t-badge t-badge-red\">한정</span> · <strong class=\"t-accent\">핵심 단어</strong>");
         for (Inline i : Inline.values()) {

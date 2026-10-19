@@ -162,7 +162,8 @@ class BlankCardMarkupTest {
             assertTrue(p.contains("<h2 class=\"title\">"));
             assertTrue(p.contains("t-strike"), "원가 취소선 용례가 없습니다");
             assertTrue(p.contains("t-big"), "할인가 큰 숫자 용례가 없습니다");
-            assertTrue(p.contains("benefit-tag 에 쓴다"), "꼬리말 용례가 없습니다");
+            assertTrue(p.contains("요청문에 있을 때만 benefit-tag"), "꼬리말은 요청문에 있을 때만이어야 합니다");
+            assertTrue(p.contains("benefit-tag 를 만들지 마라"), "요청에 없으면 만들지 말라는 줄이 없습니다");
         }
 
         /**
@@ -221,11 +222,29 @@ class BlankCardMarkupTest {
         }
 
         @Test
-        @DisplayName("혜택 꼬리말은 benefit-tag 라고 못 박는다")
+        @DisplayName("혜택 꼬리말은 benefit-tag 이며 요청문에 있을 때만 쓴다")
         void 꼬리말은_benefit_tag_다() {
             String p = PromptBuilder.generate(REQ);
-            assertTrue(p.contains("benefit-tag 를 쓴다"));
-            assertTrue(p.contains("t-badge 를 쓰지 마라"));
+            assertTrue(p.contains("benefit-tag"));
+            assertTrue(p.contains("요청문에 있을 때만") || p.contains("요청문에 없는 benefit-tag"),
+                    "benefit-tag 를 무조건 쓰라고 하면 과생성된다");
+            assertTrue(p.contains("t-badge") && p.contains("benefit-tag"),
+                    "혜택 꼬리말 자리와 t-badge 자리를 구분해야 합니다");
+        }
+
+        @Test
+        @DisplayName("★ 혜택 추가 수정에서도 요청 없는 benefit-tag 를 막는다")
+        void 혜택_추가_수정은_꼬리말을_강제하지_않는다() {
+            // addItem=true — "헬스장 등록권 추가" 같은 경로
+            String p = PromptBuilder.edit(Block.BENEFITS, false, true, false, true);
+            assertTrue(p.contains("benefit-tag"), "꼬리말 class 이름은 알려줘야 한다");
+            assertTrue(p.contains("benefit-tag 를 붙이지 마라")
+                            || p.contains("benefit-tag 를 만들지 마라"),
+                    "항목 추가 시 꼬리말 과생성을 막는 줄이 없습니다");
+            assertTrue(p.contains("요청문에 있을 때만") || p.contains("요청문에 없는 benefit-tag"),
+                    "요청문 조건을 말해야 한다");
+            assertFalse(p.contains("benefit-tag 를 쓴다. t-badge"),
+                    "무조건 'benefit-tag 를 쓴다' 만 있으면 등록권 추가에도 한정이 붙는다");
         }
     }
 
