@@ -26,12 +26,14 @@ class RagSeedDefinitionsTest {
     private final RagChunkingService chunking = new RagChunkingService();
 
     @Test
-    @DisplayName("시드는 29건이다 (템플릿 변형 14 + 실제형 10 + 엣지 5)")
+    @DisplayName("시드는 40건이다 (스포츠 7 + 시즌 9 + 멤버십 10 + 특가 8 + 출시 6)")
     void count() {
-        assertEquals(14, RagSeedDataGenerator.templateVariants().size());
-        assertEquals(10, RagSeedDataGenerator.realistic().size());
-        assertEquals(5, RagSeedDataGenerator.edgeCases().size());
-        assertEquals(29, RagSeedDataGenerator.definitions().size());
+        assertEquals(7, RagSeedDataGenerator.sports().size());
+        assertEquals(9, RagSeedDataGenerator.season().size());
+        assertEquals(10, RagSeedDataGenerator.membership().size());
+        assertEquals(8, RagSeedDataGenerator.sale().size());
+        assertEquals(6, RagSeedDataGenerator.launch().size());
+        assertEquals(40, RagSeedDataGenerator.definitions().size());
     }
 
     @Test
@@ -56,33 +58,52 @@ class RagSeedDefinitionsTest {
     }
 
     @Test
-    @DisplayName("초긴 안내문은 2청크 이상으로 나뉜다")
-    void longHeroSplits() {
+    @DisplayName("장기가입 안내(intro)는 800자를 넘어 2청크 이상으로 나뉜다")
+    void longIntroSplits() {
         SeedDefinition def = RagSeedDataGenerator.definitions().stream()
-                .filter(d -> d.title().equals("초긴 안내문 이벤트")).findFirst().orElseThrow();
+                .filter(d -> d.title().equals("장기가입 감사 프로그램")).findFirst().orElseThrow();
         assertTrue(chunking.chunk(def.html()).size() >= 2);
     }
 
     @Test
-    @DisplayName("최소 구성은 hero + cta 2청크만 나온다")
-    void minimalTwoChunks() {
+    @DisplayName("친구 초대 FAQ는 질문 3개 이상을 담는다 (중첩 구조 검증)")
+    void nestedFaqPresent() {
         SeedDefinition def = RagSeedDataGenerator.definitions().stream()
-                .filter(d -> d.title().equals("최소 구성 이벤트")).findFirst().orElseThrow();
-        List<Chunk> chunks = chunking.chunk(def.html());
-        assertEquals(2, chunks.size());
-        assertEquals(Set.of("hero", "cta"),
-                Set.of(chunks.get(0).blockKey(), chunks.get(1).blockKey()));
+                .filter(d -> d.title().equals("친구 초대 리워드")).findFirst().orElseThrow();
+        long dtCount = def.html().split("<dt>", -1).length - 1;
+        assertTrue(dtCount >= 3, "dt 개수=" + dtCount);
     }
 
     @Test
-    @DisplayName("엣지 케이스 5종 제목이 빠짐없이 있다")
-    void edgeTitles() {
+    @DisplayName("카테고리별 테마 클래스가 들어 있다 (5종 구분)")
+    void themePerCategory() {
+        for (SeedDefinition def : RagSeedDataGenerator.sports()) {
+            assertTrue(def.html().contains("theme-sports"), def.title());
+        }
+        for (SeedDefinition def : RagSeedDataGenerator.season()) {
+            assertTrue(def.html().contains("theme-holiday"), def.title());
+        }
+        for (SeedDefinition def : RagSeedDataGenerator.membership()) {
+            assertTrue(def.html().contains("theme-vip"), def.title());
+        }
+        for (SeedDefinition def : RagSeedDataGenerator.sale()) {
+            assertTrue(def.html().contains("theme-sale"), def.title());
+        }
+        for (SeedDefinition def : RagSeedDataGenerator.launch()) {
+            assertTrue(def.html().contains("theme-launch"), def.title());
+        }
+    }
+
+    @Test
+    @DisplayName("주제 밖 5종이 없다 (영어·메타문장·기호나열·최소구성·중복비교표)")
+    void offTopicAbsent() {
         Set<String> titles = new HashSet<>();
         for (SeedDefinition d : RagSeedDataGenerator.definitions()) {
             titles.add(d.title());
         }
-        assertTrue(titles.containsAll(Set.of(
-                "초긴 안내문 이벤트", "특수문자 대잔치", "최소 구성 이벤트",
-                "Welcome Global Event", "요금제 비교표 이벤트")));
+        assertTrue(titles.stream().noneMatch(t -> t.contains("Welcome Global")
+                || t.contains("초긴 안내문") || t.contains("특수문자 대잔치")
+                || t.contains("최소 구성") || t.contains("요금제 비교표")),
+                "주제 밖 시드 잔재: " + titles);
     }
 }

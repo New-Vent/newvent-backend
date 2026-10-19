@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -73,6 +74,17 @@ class ParticipationServiceTest  {
         when(config.getConfig()).thenReturn(Map.of());
 
         when(eventGameConfigRepository.findAllByEventId(1L)).thenReturn(List.of(config));
+    }
+
+    @Test
+    void 시작전에는_공개조회가_가능해도_참여를_저장하지_않는다() {
+        Event event = event(EventStatus.PUBLISHED, MembershipGrade.NORMAL);
+        ReflectionTestUtils.setField(event, "startDate", OffsetDateTime.now().plusDays(3));
+        when(publicEventService.getPublicEvent(1L)).thenReturn(event);
+
+        assertThrows(EventException.class, () -> service.participate(1L, 7L, null));
+        verify(userService, never()).getById(any());
+        verify(participationRepository, never()).saveAndFlush(any());
     }
 
     @Test

@@ -131,7 +131,7 @@ class LlmSmokeTest {
         assertTrue(fails.isEmpty(),
                 "수정 결과가 검증에 걸렸습니다: " + fails + "\n─── 출력 ───\n" + out);
 
-        String 병합 = BlockValidator.merge(현재, Block.CTA, out);
+        String 병합 = BlockMerge.merge(현재, Block.CTA, out);
         assertTrue(병합.contains("여름 데이터 대방출"), "건드리면 안 되는 hero 가 사라졌습니다.");
         assertTrue(병합.contains("데이터 3GB"),        "건드리면 안 되는 benefits 가 사라졌습니다.");
         assertTrue(병합.contains("href=\"#\""),

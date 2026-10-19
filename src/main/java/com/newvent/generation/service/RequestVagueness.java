@@ -35,7 +35,7 @@ public final class RequestVagueness {
 
     private static final Pattern KNOWN = Pattern.compile("\"known\"\\s*:\\s*(true|false)");
 
-    // 요청 판정기(모델)의 답에서 "이벤트를 알 수 있는가" 를 읽는다 
+    // 요청 판정기(모델)의 답에서 "이벤트를 알 수 있는가" 를 읽는다
     public static Boolean parseKnown(String reply) {
         if (reply == null) return null;
         var m = KNOWN.matcher(reply);

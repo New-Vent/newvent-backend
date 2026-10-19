@@ -102,7 +102,7 @@ class BlockRegistryTest {
                 <section data-block="cta"><a href="#" class="btn">참여</a></section>""";
         String incoming = "<section data-block=\"hero\"><h1>새 제목</h1></section>";
 
-        String merged = BlockValidator.merge(doc, Block.HERO, incoming);
+        String merged = BlockMerge.merge(doc, Block.HERO, incoming);
 
         assertTrue(merged.contains("새 제목"),  "hero 가 안 바뀌었습니다.");
         assertFalse(merged.contains("옛 제목"), "옛 hero 가 남았습니다.");

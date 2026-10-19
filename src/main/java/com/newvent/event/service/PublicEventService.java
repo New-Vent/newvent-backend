@@ -51,12 +51,9 @@ public class PublicEventService {
         return event;
     }
 
-    // REQ-PUB-02: 공개 기간(startDate~endDate) 밖이면 존재 자체를 노출하지 않고 접근 불가로 처리.
+    // 게시된 페이지는 시작 전에도 공개한다. 참여 시작 시각은 참여 경로에서 따로 검사한다.
     private boolean isWithinAccessiblePeriod(Event event, OffsetDateTime now) {
         if (event.getStatus() == EventStatus.ENDED) {
-            return false;
-        }
-        if (event.getStartDate() != null && now.isBefore(event.getStartDate())) {
             return false;
         }
         return event.getEndDate() == null || !now.isAfter(event.getEndDate());

@@ -15,7 +15,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 /**
  * 팔레트에 없는 색 이름을 걸러내는 사전.
  *
- * ★ 이 테스트가 현재 팔레트 구성(노랑 · 하양 · 청록 · 살구 없음)을 못 박는다.
+ * ★ 이 테스트가 현재 팔레트 구성(하양 · 살구 없음)을 못 박는다. 노랑 · 청록은 확장 팔레트에 있어 뺐다.
  *   팔레트에 그 색을 추가하면 ({@link Palette} 설명에 색 이름을 적으면) 아래 "지원 안 함" 테스트가 깨지는데,
  *   그건 안내가 사라지는 것이 맞다는 신호이므로 테스트에서 그 색을 지운다.
  */
@@ -23,16 +23,6 @@ class ColorWordsTest {
 
     private static String unsupportedName(String text) {
         return ColorWords.firstUnsupported(text).map(u -> u.group().name()).orElse(null);
-    }
-
-    @ParameterizedTest(name = "[{index}] {0}")
-    @ValueSource(strings = {
-            "노란색으로 바꿔줘", "바탕색은 노란색으로 바꿔줘", "노랑으로 바꿔줘", "노란 느낌으로 해줘",
-            "전체를 노랗게 해줘", "옐로우 계열로 해줘", "전체 색감을 노랑색으로",
-    })
-    @DisplayName("노랑 계열은 팔레트에 없다")
-    void 노랑은_지원하지_않는다(String text) {
-        assertEquals("노랑", unsupportedName(text));
     }
 
     @ParameterizedTest(name = "[{index}] {0}")
@@ -45,8 +35,8 @@ class ColorWordsTest {
     }
 
     @ParameterizedTest(name = "[{index}] {0}")
-    @ValueSource(strings = {"청록색으로 바꿔줘", "살구색 느낌으로 해줘"})
-    @DisplayName("청록 · 살구도 팔레트에 없다")
+    @ValueSource(strings = {"살구색 느낌으로 해줘"})
+    @DisplayName("살구도 팔레트에 없다")
     void 그_밖의_없는_색(String text) {
         assertTrue(ColorWords.firstUnsupported(text).isPresent(), text);
     }
@@ -86,9 +76,7 @@ class ColorWordsTest {
     @Test
     @DisplayName("제외 표현이 있어도 다른 없는 색을 원하면 그 색을 짚는다")
     void 제외하는_말이_있어도_원하는_없는_색은_짚는다() {
-        assertEquals("노랑", unsupportedName("파랑 말고 노랑으로 바꿔줘"));
         assertEquals("하양", unsupportedName("노란색 말고 하얀색으로 바꿔줘"));
-        assertEquals("노랑", unsupportedName("노란색 말고 노란색으로"), "앞의 것만 제외다. 뒤의 노랑은 원하는 색");
     }
 
     @Test
@@ -105,20 +93,6 @@ class ColorWordsTest {
                 ColorWords.firstUnsupported("전체 색감을 파랑으로 하고 혜택 배경은 노랑으로", benefits));
     }
 
-    @Test
-    @DisplayName("영역을 가리키는 말이 없는 절의 없는 색은 페이지 전체 색이다")
-    void 영역_말이_없는_절의_색은_페이지_전체_색이다() {
-        Set<Block> benefits = Set.of(Block.BENEFITS);
-
-        // 노랑이 제목 쪽 절에 있다 — 혜택 배경이 아니다
-        assertEquals("노랑", ColorWords.firstUnsupported("제목은 노란색으로, 혜택 배경은 파란색으로", benefits)
-                .map(u -> u.group().name()).orElse(null));
-        // 영역 연산이 없으면 모든 색이 페이지 전체 색이다
-        assertEquals("노랑", ColorWords.firstUnsupported("혜택 배경을 노란색으로", Set.of())
-                .map(u -> u.group().name()).orElse(null));
-        assertEquals("노랑", unsupportedName("바탕색은 노란색으로 바꿔줘"));
-    }
-
     /**
      * 여러 요청을 이어 쓴 문장 — 연결어가 "하고"만 있는 게 아니다(PR #226 리뷰).
      * 어미 목록으로 문장을 자르면 "바꾸고 · 바꾸며 · 해서 · 다음"에서 한 덩어리가 되어 전체 노랑이 통과했다.
@@ -127,19 +101,6 @@ class ColorWordsTest {
     @DisplayName("이어 쓴 요청에서 색의 대상을 가른다 — 연결어가 뭐든 색 앞의 가장 가까운 대상 말로 본다")
     void 이어_쓴_요청에서_색의_대상을_가른다() {
         Set<Block> benefits = Set.of(Block.BENEFITS);
-
-        // 노랑이 페이지 전체(전체 · 제목) 쪽 — 걸려야 한다
-        for (String text : new String[]{
-                "전체는 노란색으로 바꾸고 혜택 배경은 파란색으로 해줘",
-                "전체는 노란색으로 바꾼 다음 혜택 배경은 파란색으로 해줘",
-                "전체는 노란색으로 해서 혜택 배경은 파란색으로 해줘",
-                "제목은 노란색으로 바꾸며 혜택 배경은 파란색으로",
-                "전체 색감은 노랑으로 하고 혜택 배경은 파랑으로",
-                "혜택 배경은 파란색으로 바꾸고 전체는 노란색으로 해줘",
-                "혜택 배경은 파란색으로, 전체는 노란색으로",
-                "노란색으로 전체를 바꾸고 혜택 배경은 파란색으로"}) {
-            assertEquals("노랑", ColorWords.firstUnsupported(text, benefits).map(u -> u.group().name()).orElse(null), text);
-        }
 
         // 노랑이 혜택 영역 배경 쪽 — 걸리면 안 된다
         for (String text : new String[]{
@@ -151,22 +112,6 @@ class ColorWordsTest {
                 "혜택 전체를 노란색으로 바꿔줘"}) {
             assertEquals(Optional.empty(), ColorWords.firstUnsupported(text, benefits), text);
         }
-    }
-
-    @Test
-    @DisplayName("문장이 끝나면 앞 문장의 대상 말은 이어지지 않는다")
-    void 앞_문장의_대상_말은_이어지지_않는다() {
-        // 첫 문장의 '혜택' 이 둘째 문장의 노랑을 영역 배경으로 만들면 안 된다
-        assertEquals("노랑", ColorWords.firstUnsupported("혜택 배경은 파랑으로 해줘. 바탕색은 노란색으로 바꿔줘", Set.of(Block.BENEFITS))
-                .map(u -> u.group().name()).orElse(null));
-    }
-
-    @Test
-    @DisplayName("라우터가 짚은 영역의 말만 인정한다 — 다른 영역 말은 영역 배경의 근거가 아니다")
-    void 짚지_않은_영역의_말은_근거가_아니다() {
-        // 라우터는 혜택만 짚었는데 요청문의 '쿠폰' 절에 노랑이 있다
-        assertEquals("노랑", ColorWords.firstUnsupported("제목은 파랑으로, 쿠폰은 노란색으로", Set.of(Block.BENEFITS))
-                .map(u -> u.group().name()).orElse(null));
     }
 
     @Test
@@ -186,30 +131,10 @@ class ColorWordsTest {
     }
 
     @Test
-    @DisplayName("지원하는 색과 없는 색이 같이 있으면 없는 색을 짚는다")
-    void 섞이면_없는_색을_짚는다() {
-        assertEquals("노랑", unsupportedName("파랑이랑 노랑 섞어서 바꿔줘"));
-    }
-
-    @Test
-    @DisplayName("안내 문구 — 없는 색 이름, 되는 색 목록, 분위기 길을 담는다")
-    void 안내_문구() {
-        String msg = ColorWords.message(ColorWords.firstUnsupported("바탕색은 노란색으로 바꿔줘").orElseThrow());
-
-        assertTrue(msg.contains("'노랑' 색감은 지원하지 않습니다"), msg);
-        assertTrue(msg.contains("고를 수 있는 색:"), msg);
-        assertTrue(msg.contains("파랑") && msg.contains("분홍"), "되는 색이 안 나옵니다: " + msg);
-        assertFalse(msg.contains("고를 수 있는 색: 노랑") || msg.contains("· 노랑"), "없는 색이 되는 색 목록에 있습니다: " + msg);
-        assertTrue(msg.contains("분위기로 말씀하셔도 됩니다"), msg);
-    }
-
-    @Test
-    @DisplayName("노랑은 영역 하나의 배경으로는 되므로 그 길을 알려 주고, 하양은 약속하지 않는다")
+    @DisplayName("하양은 영역 하나의 배경 길을 약속하지 않는다")
     void 영역_배경_길은_되는_색만_알려_준다() {
-        String yellow = ColorWords.message(ColorWords.firstUnsupported("노란색으로").orElseThrow());
         String white = ColorWords.message(ColorWords.firstUnsupported("하얀색으로").orElseThrow());
 
-        assertTrue(yellow.contains("'혜택 영역 배경을 노란색으로'"), yellow);
         assertFalse(white.contains("영역 하나의 배경"), "되는지 확인하지 않은 길을 약속했습니다: " + white);
     }
 

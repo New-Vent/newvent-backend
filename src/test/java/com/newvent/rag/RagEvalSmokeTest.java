@@ -134,7 +134,7 @@ class RagEvalSmokeTest {
     }
 
     /**
-     * 시드 29건도 평가용으로 색인한다. 모델마다 따로 임베딩해야
+     * 시드 40건도 평가용으로 색인한다. 모델마다 따로 임베딩해야
      * 시드 문항의 검색 대상이 그 모델 벡터로 존재한다.
      */
     private void indexSeeds(EmbeddingClient embedding, Event event) {
