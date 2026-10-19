@@ -94,8 +94,10 @@ class VariantPaletteTest {
         assertTrue(all.stream().filter(v -> !v.core() && v.group() == Variant.Group.LAYOUT)
                 .allMatch(v -> v.block() != null && !v.namedColor()));
         for (Block b : Block.llmBlocks()) {
-            List<Variant> core = Variant.of(b).stream().filter(Variant::core).toList();
-            assertEquals(core, Variant.forEdit(b, "신규 가입 이벤트 혜택을 다듬어줘"), b.key());
+            // ★ 색 지정 배경은 색을 안 말하면 빼다 — core 전부와 같지 않다
+            List<Variant> coreNoColor = Variant.of(b).stream()
+                    .filter(v -> v.core() && !v.namedColor()).toList();
+            assertEquals(coreNoColor, Variant.forEdit(b, "신규 가입 이벤트 혜택을 다듬어줘"), b.key());
             assertEquals(Variant.sample(b, "가을 이벤트", 4), Variant.forPrompt(b, "가을 이벤트", 4), b.key());
             assertTrue(Variant.sample(b, "영수증 메달 항공권", 4).stream().allMatch(Variant::core),
                     b.key() + " 표본에 확장이 섞였습니다");
@@ -734,6 +736,7 @@ class VariantPaletteTest {
      * ★ 생성에는 표본만 나간다. 표본에서 빠진 것은 수정 프롬프트에 나간다.
      *   어느 쪽에도 없으면 실패다.
      * ★ SURFACE 변형은 블록 전용이 아니므로 {@link Variant#of} 가 주는 블록 아무거나에서 찾는다.
+     * ★ 색 지정 배경(namedColor)은 그 색을 말한 수정에만 실린다 — 색 말로 불러 본다.
      */
     @Test
     @DisplayName("★ 모든 변형이 생성이든 수정이든 어딘가로는 나간다 — 죽은 이름이 없다")
@@ -750,6 +753,15 @@ class VariantPaletteTest {
                 assertTrue(called, v.cssClass() + " 는 이름(" + name + ")을 불러도 수정 프롬프트에 안 나갑니다");
                 continue;
             }
+            // ★ 색 지정 배경 — 생성엔 없고, 그 색을 말한 수정에만 있다
+            if (v.namedColor()) {
+                String ask = colorAsk(v);
+                boolean called = Block.llmBlocks().stream()
+                        .filter(b -> Variant.of(b).contains(v))
+                        .anyMatch(b -> Variant.forEdit(b, ask).contains(v));
+                assertTrue(called, v.cssClass() + " 는 색(" + ask + ")을 말해도 수정 목록에 안 나갑니다");
+                continue;
+            }
             if (gen.contains(v.cssClass())) continue;
             boolean inEdit = Block.llmBlocks().stream()
                     .filter(b -> Variant.of(b).contains(v))
@@ -758,6 +770,16 @@ class VariantPaletteTest {
                     v.cssClass() + " 가 생성에도 수정에도 안 나갑니다. "
                     + "레지스트리에만 있는 이름은 모델이 영영 못 고릅니다");
         }
+    }
+
+    /** 색 지정 배경을 부르려면 ColorWords 에 적힌 그 색 말을 쓴다 */
+    private static String colorAsk(Variant v) {
+        for (ColorWords.Group g : ColorWords.GROUPS) {
+            if (v.desc().contains(g.name()) || g.stems().stream().anyMatch(v.desc()::contains)) {
+                return g.words().get(0) + "으로 바꿔줘";
+            }
+        }
+        throw new AssertionError(v + " 에 맞는 ColorWords 가 없습니다");
     }
 
     /**
@@ -812,7 +834,7 @@ class VariantPaletteTest {
     }
 
     @Test
-    @DisplayName("색 지정 배경 — 수정 프롬프트에만 실리고, 생성 표본에는 안 실리며, 다른 배경과 하나만 남는다")
+    @DisplayName("색 지정 배경 — 그 색을 말한 수정에만 실리고, 생성 표본에는 안 실리며, 다른 배경과 하나만 남는다")
     void 색_지정_배경() {
         List<Variant> colors = List.of(Variant.values()).stream().filter(Variant::namedColor).toList();
         assertFalse(colors.isEmpty());
@@ -820,12 +842,22 @@ class VariantPaletteTest {
             assertEquals(Variant.Group.SURFACE, v.group(), v + " 는 배경 묶음이어야 다른 배경을 대신한다");
         }
 
-        // 수정 — 배경을 쓰는 블록에는 색 배경과 "색 이름으로 고르라" 는 안내가 실린다
-        String intro = PromptBuilder.edit(Block.INTRO, false);
+        // ★ 색·배경 말 없는 수정 — 색 지정 배경을 싣지 않는다 (임의 변경 구멍)
+        assertFalse(Variant.forEdit(Block.INTRO, "더 화려하게 바꿔줘").stream().anyMatch(Variant::namedColor));
+        assertFalse(Variant.forEdit(Block.INTRO, "소개글 다듬어줘").stream().anyMatch(Variant::namedColor));
+        assertFalse(PromptBuilder.edit(Block.INTRO, false, true, true, false, List.of(), "더 화려하게")
+                .contains("v-surface-blue"));
+
+        // 수정 — 그 색을 말하면 색 배경과 "색 이름으로 고르라" 안내가 실린다
+        assertTrue(Variant.forEdit(Block.INTRO, "배경을 파란색으로").contains(Variant.SURFACE_BLUE));
+        assertFalse(Variant.forEdit(Block.INTRO, "배경을 파란색으로").contains(Variant.SURFACE_GREEN),
+                "말한 색만 실어야 한다");
+        String intro = PromptBuilder.edit(Block.INTRO, false, true, true, false, List.of(), "파란색으로 바꿔줘");
         assertTrue(intro.contains("v-surface-blue") && intro.contains("파란색"), intro);
         assertTrue(intro.contains("그 색 이름이 적힌 것을 고른다"));
         // 배경이 없는 블록에는 안내도 없다 — 목록 없이 말만 하면 모델이 이름을 지어낸다
-        assertFalse(PromptBuilder.edit(Block.CTA, false).contains("그 색 이름이"));
+        assertFalse(PromptBuilder.edit(Block.CTA, false, true, true, false, List.of(), "파란색으로")
+                .contains("그 색 이름이"));
 
         // 생성 — 팔레트와 따로 노는 색은 섞지 않는다
         for (int i = 0; i < 300; i++) {
