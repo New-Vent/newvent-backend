@@ -136,4 +136,46 @@ class ImageProbeTest {
     private static double linear(double c) {
         return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
     }
+    
+
+    /**
+     * ★★ 제보: "2번 이미지 배경으로 깔아달라고 하니까 전체적으로 까매졌어".
+     *   getRGB 는 완전 투명 픽셀에 0x00000000 을 준다 — 알파를 안 보면 r=g=b=0,
+     *   휘도 0, 즉 **칠흑**으로 세어진다. 그래서 배경이 비어 있는 일러스트가
+     *   "가장 어두운 곳이 검정" 으로 측정돼 MIXED 로 떨어지고,
+     *   화면 전체에 55% 검은 덮개가 깔렸다.
+     *
+     * ★ 사진은 투명한 자리가 없다. 투명 배경 PNG 는 "뒤에 깔 그림" 이 아니라
+     *   "위에 얹을 그림" 이라는 뜻이므로 덮지 않는다.
+     */
+    @Test
+    @DisplayName("★ 투명 배경 PNG 는 장식이다 — 화면 전체에 덮개를 씌우지 않는다")
+    void 투명_배경은_덮지_않는다() throws IOException {
+        // 흰 네모 하나만 있고 나머지는 전부 투명 — 오려 낸 장식
+        BufferedImage im = new BufferedImage(80, 80, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = im.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(24, 24, 32, 32);
+        g.dispose();
+
+        ImageProbe.Probed p = ImageProbe.probe(bytes(im)).orElseThrow();
+        assertEquals(Asset.Tone.LIGHT, p.tone(), "투명 배경인데 섞인 사진으로 봤습니다");
+        assertEquals(0, p.scrim(), "장식에 덮개가 깔렸습니다");
+    }
+
+    /** ★ 불투명 사진의 판정은 하나도 달라지면 안 된다 — 알파만 건너뛴 것이다 */
+    @Test
+    @DisplayName("불투명 사진은 전과 똑같이 판정한다")
+    void 불투명_사진은_그대로() throws IOException {
+        assertEquals(Asset.Tone.LIGHT, tone(Color.WHITE));
+        assertEquals(Asset.Tone.DARK, tone(new Color(24, 22, 30)));
+        assertEquals(Asset.Tone.MIXED, tone(new Color(120, 120, 120)));
+    }
+
+    /** 위 두 테스트가 쓰는 보조 — 이미 같은 게 있으면 지울 것 */
+    private static byte[] bytes(BufferedImage im) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(im, "png", out);
+        return out.toByteArray();
+    }
 }
