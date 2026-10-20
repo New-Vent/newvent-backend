@@ -663,6 +663,12 @@ public final class PromptBuilder {
             "혜택 하나 더 추가해줘"
             {"ops":[{"op":"ADD","target":"benefits","content":null}]}
 
+            "FAQ 영역 추가해줘"
+            {"ops":[{"op":"ADD","target":"faq","content":null}]}
+
+            "일정 영역 넣어줘. 1차 10월 1일 응모"
+            {"ops":[{"op":"ADD","target":"schedule","content":"1차 10월 1일 응모"}]}
+
             "전체 색감을 가을 느낌으로 바꿔줘"
             {"ops":[{"op":"STYLE","target":"hero","content":null}]}
 
