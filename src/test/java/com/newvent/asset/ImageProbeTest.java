@@ -136,7 +136,7 @@ class ImageProbeTest {
     private static double linear(double c) {
         return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
     }
-    
+
 
     /**
      * ★★ 제보: "2번 이미지 배경으로 깔아달라고 하니까 전체적으로 까매졌어".
