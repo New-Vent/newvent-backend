@@ -149,6 +149,35 @@ class VariantPaletteTest {
                 .contains("이름이 맞는 테마: theme-papercraft"));
     }
 
+    /**
+     * ★★ 제보: "LLM 으로 만든 페이지에 알 수 없는 구름들이 자꾸 생긴다".
+     *   구름은 BLOOM 의 배경 장식이다(20-themes/03-bloom.css ②). 그런데 BLOOM 의
+     *   **이름**(desc 의 — 앞)에 "축제" 가 있었고, matched() 는 그 이름으로 짚는다.
+     *   이벤트 요청문에는 "축제" 가 거의 늘 들어가서 백지 생성이 BLOOM 으로 끌려갔다.
+     *
+     * ★ PageShellTest 가 같은 걱정을 미리 적어 뒀다 — "BLOOM 처럼 센 테마를 기본으로
+     *   두면 '법인 요금제 비교' 에 구름이 뜬다. 시끄러운 기본값은 그냥 틀린다."
+     *   기본값은 BASIC 이었지만, 이름 매칭이 뒷문으로 같은 일을 하고 있었다.
+     */
+    @Test
+    @DisplayName("★ '축제' 만으로 구름 테마를 끌어오지 않는다 — 분위기를 직접 말할 때만")
+    void 축제는_구름을_부르지_않는다() {
+        assertEquals(java.util.Optional.empty(), Theme.matched("가을 축제 이벤트 만들어줘"));
+        assertEquals(java.util.Optional.empty(), Theme.matched("법인 요금제 비교 이벤트"));
+        assertEquals(java.util.Optional.empty(),
+                Theme.matched("신규 가입 고객 대상 가을 데이터 페스타입니다"));
+
+        // ★ 제대로 걸려야 하는 자리는 그대로다 — 좁혔지 없앤 게 아니다
+        assertEquals(java.util.Optional.of(Theme.BLOOM), Theme.matched("어린이날 가족 이벤트"));
+        assertEquals(java.util.Optional.of(Theme.AURORA), Theme.matched("밤에 어울리는 프리미엄 게임 이벤트"));
+
+        // ★ 프롬프트에도 안 실려야 한다 — matched() 가 짚으면 addMatchedTheme 이 "★ 이름이
+        //   맞는 테마" 로 강조해서 올린다. 거기 올라가면 모델이 거의 그걸 고른다.
+        assertFalse(PromptBuilder.generate("가을 축제 이벤트 만들어줘")
+                .contains("이름이 맞는 테마: " + Theme.BLOOM.cssClass()),
+                "'축제' 만으로 구름 테마를 프롬프트가 강조했습니다");
+    }
+
     @Test
     @DisplayName("배경 확장: 계절 · 질감 말이 나오면 생성 배경 목록에 붙고, 배경을 쓰는 블록의 수정 목록에도 붙는다")
     void 배경_확장() {
