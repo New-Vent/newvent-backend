@@ -1,6 +1,7 @@
 package com.newvent.registry;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -228,7 +229,70 @@ public enum Palette implements Pickable {
         return Stream.concat(basics().stream(), matched(requestText).stream()).toList();
     }
 
+    /**
+     * 요청문이 부른 확장 팔레트.
+     *
+     * ★★ 관리자가 <b>직접 말한 색</b>은 열쇠말로 쓴다 — 그 색만 {@link #NOT_KEYWORDS} 에서 푼다.
+     *   NOT_KEYWORDS 에 색 이름을 다 넣어 둔 건 "빨강" 같은 흔한 말이 아무 팔레트나 끌어오는 걸
+     *   막으려던 것이다. 그런데 그 바람에 <b>색으로 고르는 길 자체가 막혔다.</b>
+     *   게다가 목록에는 "노랑 · 분홍" 만 있고 "노란 · 핑크" 는 없어서, 설명에 변형 표기를 쓴
+     *   팔레트만 새어 나갔다 — 정확히 거꾸로다.
+     *
+     *   실측(144개 팔레트 · 프롬프트에는 core 19 + 최대 6):
+     *     "전체색을 노란색으로" → 실린 20개 중 노란 팔레트 <b>0개</b>. 레모네이드(레몬 노랑)는
+     *       "노랑" 이 막혀 점수 0, 앰버(호박색, <b>노란</b> 주황)만 새어 나갔다.
+     *       모델은 노랑이 없는 목록에서 골라 축제(<b>빨강</b> · 금색)를 집었다 → 붉은 페이지.
+     *     "전체색을 핑크색으로" → Y2K(은빛, <b>핑크</b>, 하늘)가 강조돼 보라색 페이지.
+     *       봄(벚꽃 <b>분홍</b>) · 발렌타인(<b>분홍</b>)은 "분홍" 이 막혀 밀렸다.
+     *
+     * ★ 말하지 않은 색은 그대로 막아 둔다. "숲 느낌으로" 에 빨강 팔레트가 딸려 오면 안 된다.
+     */
     static List<Palette> matched(String requestText) {
-        return KeywordMatch.matched(all(), requestText, MAX_MATCHED, NOT_KEYWORDS, true);
+        return KeywordMatch.matched(all(), withColorNames(requestText), MAX_MATCHED,
+                notKeywordsFor(requestText), true);
+    }
+
+    /**
+     * 색 이름은 <b>표기까지 전부</b> 막는다. 단, 기본 19개가 못 내는 색만 푼다.
+     *
+     * ★ 막는 쪽이 원래 규칙이다 — "흔한 색 이름은 확장을 끌어오지 않는다"(팔레트_확장_흔한말).
+     *   보라색을 말했다고 보라 팔레트 15개를 다 올리면 기본 목록이 밀린다.
+     *   기본에 노을 · 파스텔 · 라벤더가 있으니 모델이 설명을 보고 고르면 된다.
+     *
+     * ★ 다만 NOT_KEYWORDS 에는 대표 이름만 적혀 있었다. "핑크" · "노란" 같은 표기가 새어 나가
+     *   Y2K(은빛, 핑크, 하늘) · 앰버(호박색, 노란 주황)가 1순위로 올라갔다 — 막으려던 것의 반대다.
+     *   {@link ColorWords#allWords()} 로 표기까지 덮는다.
+     *
+     * ★★ 구멍은 하나다 — <b>기본 19개가 아예 못 내는 색</b>. 노랑이 그렇다(확장에 18개, 기본에 0개).
+     *   그 색만 열쇠말로 풀어 확장에서 끌어온다. 안 그러면 모델이 노랑 없는 목록에서 골라야 한다.
+     */
+    private static Set<String> notKeywordsFor(String requestText) {
+        Set<String> out = new HashSet<>(NOT_KEYWORDS);
+        out.addAll(ColorWords.allWords());
+        for (ColorWords.Group g : ColorWords.mentionedGroups(requestText)) {
+            if (g.servedBy(basics())) continue;      // 기본이 낼 수 있으면 막은 채로 둔다
+            out.remove(g.name());
+            out.removeAll(g.stems());
+            // ★ hits() 는 끝의 "색" 을 떼고도 본다 — "하늘색" 을 풀려면 "하늘" 도 같이 풀어야 한다
+            for (String stem : g.stems()) {
+                if (stem.endsWith("색") && stem.length() > 2) out.remove(stem.substring(0, stem.length() - 1));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 요청문 뒤에 거기 나온 색의 <b>대표 이름</b>을 덧붙인다 — "핑크색으로" → "핑크색으로 분홍".
+     *
+     * ★ 설명은 "벚꽃 분홍" 이라 적는데 관리자는 "핑크" 라고 쓴다. 글자가 달라 못 만났다.
+     *   {@link ColorWords} 가 이미 같은 동의어 표로 "낼 수 있는 색인가" 를 판정한다.
+     *   거름망과 프롬프트가 <b>같은 표를 보게</b> 맞추는 것이 이 두 함수의 전부다 —
+     *   색을 늘릴 때 손볼 곳이 ColorWords.GROUPS 한 곳으로 남는다.
+     *
+     * ★ Theme · Variant 는 건드리지 않는다. 색 이름으로 고르는 건 팔레트뿐이다.
+     */
+    private static String withColorNames(String requestText) {
+        List<String> names = ColorWords.mentionedNames(requestText);
+        return names.isEmpty() ? requestText : requestText + " " + String.join(" ", names);
     }
 }

@@ -777,8 +777,16 @@ public class EditService {
                     // ★★ addItem 을 넘긴다. 안 넘기면 "항목을 새로 만들거나 지우지 마라" 가
                     //   그대로 나가서, 사용자 프롬프트의 "하나만 더한다" 와 정면으로 어긋난다
                     // ★★ 올라온 이미지 목록을 같이 넘긴다. 비면 안내가 한 줄도 안 나간다
+                    // ★★★ 요청문을 넘긴다. 전에는 createFormBlock 을 받는 오버로드를 부르고 있었는데
+                    //   그 안에서 requestText 가 **null 로 박혀** 있었다(PromptBuilder:326).
+                    //   javadoc 그대로 "null 이면 기본만" 이라, 요청문이 무엇이든 팔레트는 core 19개,
+                    //   변형 · 테마도 기본 표본만 실렸다. 확장 144개 팔레트가 모델 앞에 한 번도 안 갔다.
+                    //   실측 — "전체색을 노란색으로" 에 노란 팔레트가 0개라, 모델이 매번 다른 색을
+                    //   찍었다(제보: "계속 노란색으로 하면 다른 색으로 바뀜"). 붉은색은 축제(빨강·금색)다.
+                    //   라우터 · userPrompt 와 같은 정화를 거친 글자를 준다 — 셋이 다른 글자를 보면 안 된다.
                     PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks(),
-                            step.op() == Op.STYLE, addItem, uploaded, createFormBlock),
+                            step.op() == Op.STYLE, addItem, uploaded,
+                            RequestFilter.clean(cmd.requestText()), false, createFormBlock),
                     userPrompt(cmd, step, before, serverLayout != null, multiArea),
                     // ★ 항목을 하나 더하는 요청이면 검증기에 그렇게 알린다. 안 알리면
                     //   ITEM_ADDED 로 4회가 전부 터지고 관리자는 이유를 못 듣는다
