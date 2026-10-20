@@ -137,6 +137,33 @@ class BlockRegistryTest {
                 "되돌리기 예시가 라우터 프롬프트에서 빠졌습니다.");
     }
 
+    @Test
+    @DisplayName("라우터 프롬프트 — 없는 영역(FAQ·일정) 추가 예시가 있다")
+    void 라우터가_없는_영역_추가_예시를_갖는다() {
+        String router = PromptBuilder.router();
+        // ADD 예시가 혜택 항목만이면 "FAQ 영역 추가해줘" 가 ADD benefits 로 샌다
+        assertTrue(router.contains("\"FAQ 영역 추가해줘\""),
+                "FAQ 영역 추가 예시가 라우터 프롬프트에서 빠졌습니다.");
+        assertTrue(router.contains("\"op\":\"ADD\",\"target\":\"faq\""),
+                "FAQ ADD 예시 JSON 이 빠졌습니다.");
+        assertTrue(router.contains("\"op\":\"ADD\",\"target\":\"schedule\""),
+                "일정 ADD 예시 JSON 이 빠졌습니다.");
+    }
+
+    @Test
+    @DisplayName("수정 프롬프트 — 새 영역(creating)에만 형태(shape)를 싣는다")
+    void 새_영역에만_형태를_싣는다() {
+        String creating = PromptBuilder.edit(Block.SCHEDULE, false, true, false, false,
+                List.of(), null, true, false);
+        assertTrue(creating.contains("이 영역은 페이지에 아직 없다"));
+        assertTrue(creating.contains("형태:"));
+
+        String editing = PromptBuilder.edit(Block.SCHEDULE, false, true, false, false,
+                List.of(), null, false, false);
+        assertFalse(editing.contains("이 영역은 페이지에 아직 없다"));
+        assertFalse(editing.contains("형태:"));
+    }
+
     /**
      * #230 — 생성 프롬프트가 지어내기를 시키던 규칙과 예시 값.
      * 혜택 "2개 이상" · "받는 값을 모두 채운다" 는 금지 규칙과 정면으로 충돌했고(뒤엣것이 이긴다),

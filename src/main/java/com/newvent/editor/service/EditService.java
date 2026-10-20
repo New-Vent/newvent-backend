@@ -760,8 +760,12 @@ public class EditService {
         // ★ 항목 하나를 더하는 요청인가. 시스템 프롬프트 · 사용자 프롬프트 · 검증기
         //   **세 곳이 같은 답**을 써야 한다. 한 곳이라도 빠지면 지시가 어긋나고,
         //   어긋난 지시를 받은 모델은 그대로 두거나 지어낸다 — 둘 다 실패다
-        boolean createFormBlock = step.op() == Op.ADD && before.isBlank() && block.itemsAreFormValues();
-        boolean addItem = step.op() == Op.ADD && (!before.isBlank() || createFormBlock);
+        // ★★ creating — 페이지에 아직 없는 영역을 새로 만드나. true 면 shape 를 준다 (§3-3).
+        //   안 넘기면 "일정 · FAQ 영역 추가해줘" 가 empty_schedule · slot_invented 로 4회 전부 터졌다.
+        //   createFormBlock 만 넘기는 오버로드는 creating 을 false 로 고정한다 — 여기선 풀 시그니처를 쓴다.
+        boolean creating = before.isBlank();
+        boolean createFormBlock = step.op() == Op.ADD && creating && block.itemsAreFormValues();
+        boolean addItem = step.op() == Op.ADD && (!creating || createFormBlock);
 
         // ★ 한 번만 읽는다. 프롬프트에 주는 목록과 검증기가 대조하는 목록이
         //   **같아야** 한다 — 두 번 읽으면 그 사이에 삭제된 이미지를 안내하게 된다
@@ -777,8 +781,9 @@ public class EditService {
                     // ★★ addItem 을 넘긴다. 안 넘기면 "항목을 새로 만들거나 지우지 마라" 가
                     //   그대로 나가서, 사용자 프롬프트의 "하나만 더한다" 와 정면으로 어긋난다
                     // ★★ 올라온 이미지 목록을 같이 넘긴다. 비면 안내가 한 줄도 안 나간다
+                    // ★★ creating 을 넘긴다. 없는 영역에 shape 를 안 주면 일정·FAQ 추가가 검증에서 전부 실패한다
                     PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks(),
-                            step.op() == Op.STYLE, addItem, uploaded, createFormBlock),
+                            step.op() == Op.STYLE, addItem, uploaded, null, creating, createFormBlock),
                     userPrompt(cmd, step, before, serverLayout != null, multiArea),
                     // ★ 항목을 하나 더하는 요청이면 검증기에 그렇게 알린다. 안 알리면
                     //   ITEM_ADDED 로 4회가 전부 터지고 관리자는 이유를 못 듣는다

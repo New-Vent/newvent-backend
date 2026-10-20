@@ -69,6 +69,7 @@ class EditServiceTest {
 
         private final Deque<RetryService.Result> queue = new ArrayDeque<>();
         private final List<String> prompts = new ArrayList<>();
+        private final List<String> systems = new ArrayList<>();
         private IntConsumer onCall = n -> { };
 
         FakeRetry() {
@@ -87,10 +88,12 @@ class EditServiceTest {
 
         int calls()            { return prompts.size(); }
         List<String> prompts() { return prompts; }
+        List<String> systems() { return systems; }
 
         @Override
         public RetryService.Result runEdit(LlmCallContext ctx, String system,
                                        String user, HtmlPolicy policy) {
+            systems.add(system);
             prompts.add(user);
             onCall.accept(prompts.size());
             RetryService.Result r = queue.poll();
@@ -784,6 +787,47 @@ class EditServiceTest {
         // benefits < steps < notices 순서여야 한다
         assertTrue(saved.indexOf("data-block=\"benefits\"") < saved.indexOf("data-block=\"steps\""));
         assertTrue(saved.indexOf("data-block=\"steps\"") < saved.indexOf("data-block=\"notices\""));
+    }
+
+    // ★★ creating=false 로 고정되면 shape 가 안 나가 일정·FAQ 추가가 검증 4회 전부 실패했다
+    @Test
+    @DisplayName("없던 영역 추가 시스템 프롬프트에 형태(shape)를 싣는다")
+    void 없던_영역_추가에_형태를_싣는다() {
+        setUpWith(NO_STEPS); // schedule · faq 없음
+        router.willReturn(new RawRoute("ADD", "schedule", "1차 10월 1일 응모"));
+        String newSchedule = """
+                <section data-block="schedule">
+                  <h2>일정</h2>
+                  <ol><li><strong>1차 · 10월 1일</strong> 응모</li>
+                      <li><strong>2차 · 10월 15일</strong> 발표</li></ol>
+                </section>""";
+        retry.willReturn(ok(newSchedule));
+
+        run("일정 영역 추가해줘. 1차 10월 1일 응모");
+
+        assertEquals(1, retry.systems().size());
+        String system = retry.systems().get(0);
+        assertTrue(system.contains("이 영역은 페이지에 아직 없다"),
+                "creating 이 안 넘어 shape 안내가 빠졌습니다:\n" + system);
+        assertTrue(system.contains("형태:"),
+                "새 영역인데 형태(shape)가 없습니다:\n" + system);
+        assertTrue(system.contains("ol") || system.contains("<ol>"),
+                "일정 shape(ol) 가 없습니다:\n" + system);
+    }
+
+    @Test
+    @DisplayName("이미 있는 영역 수정에는 형태(shape)를 싣지 않는다")
+    void 있는_영역_수정에는_형태를_안_싣는다() {
+        router.willReturn(new RawRoute("EDIT", "steps", null));
+        retry.willReturn(ok(NEW_STEPS));
+
+        run("참여방법을 더 친절하게 다듬어줘");
+
+        String system = retry.systems().get(0);
+        assertFalse(system.contains("이 영역은 페이지에 아직 없다"),
+                "있는 영역 수정에 creating 안내가 나갔습니다");
+        assertFalse(system.contains("형태:"),
+                "있는 영역 수정에 shape 가 나가면 템플릿 구조를 갈아엎습니다");
     }
 
     @Test
