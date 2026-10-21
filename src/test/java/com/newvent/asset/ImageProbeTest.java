@@ -8,8 +8,12 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.util.zip.CRC32;
+import java.util.zip.DeflaterOutputStream;
 
 import javax.imageio.ImageIO;
 
@@ -133,11 +137,6 @@ class ImageProbeTest {
         assertEquals("gif", p.orElseThrow().format());
     }
 
-    private static double linear(double c) {
-        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-    }
-
-
     /**
      * ★★ 제보: "2번 이미지 배경으로 깔아달라고 하니까 전체적으로 까매졌어".
      *   getRGB 는 완전 투명 픽셀에 0x00000000 을 준다 — 알파를 안 보면 r=g=b=0,
@@ -145,11 +144,11 @@ class ImageProbeTest {
      *   "가장 어두운 곳이 검정" 으로 측정돼 MIXED 로 떨어지고,
      *   화면 전체에 55% 검은 덮개가 깔렸다.
      *
-     * ★ 사진은 투명한 자리가 없다. 투명 배경 PNG 는 "뒤에 깔 그림" 이 아니라
+     * ★ 사진에는 투명한 자리가 없다. 투명 배경 PNG 는 "뒤에 깔 그림" 이 아니라
      *   "위에 얹을 그림" 이라는 뜻이므로 덮지 않는다.
      */
     @Test
-    @DisplayName("★ 투명 배경 PNG 는 장식이다 — 화면 전체에 덮개를 씌우지 않는다")
+    @DisplayName("★ 투명 배경 PNG 는 장식이다 - 화면 전체에 덮개를 씌우지 않는다")
     void 투명_배경은_덮지_않는다() throws IOException {
         // 흰 네모 하나만 있고 나머지는 전부 투명 — 오려 낸 장식
         BufferedImage im = new BufferedImage(80, 80, BufferedImage.TYPE_INT_ARGB);
@@ -157,8 +156,10 @@ class ImageProbeTest {
         g.setColor(Color.WHITE);
         g.fillRect(24, 24, 32, 32);
         g.dispose();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(im, "png", out);
 
-        ImageProbe.Probed p = ImageProbe.probe(bytes(im)).orElseThrow();
+        ImageProbe.Probed p = ImageProbe.probe(out.toByteArray()).orElseThrow();
         assertEquals(Asset.Tone.LIGHT, p.tone(), "투명 배경인데 섞인 사진으로 봤습니다");
         assertEquals(0, p.scrim(), "장식에 덮개가 깔렸습니다");
     }
@@ -172,10 +173,62 @@ class ImageProbeTest {
         assertEquals(Asset.Tone.MIXED, tone(new Color(120, 120, 120)));
     }
 
-    /** 위 두 테스트가 쓰는 보조 — 이미 같은 게 있으면 지울 것 */
-    private static byte[] bytes(BufferedImage im) throws IOException {
+    /**
+     * ★★ 파일 크기만 재면 **압축 폭탄**을 못 막는다.
+     *   단색 PNG 는 6000×6000(3600만 화소)이 수십 KB 로 압축된다. 업로드 상한 3MB 를
+     *   가볍게 통과하고, 풀리는 순간 화소당 4바이트라 140MB 를 먹는다.
+     *   30000×30000 이면 3.6GB — 파일 한 장으로 서버가 멈춘다.
+     *
+     * ★ 그래서 ImageProbe 는 read(0) 보다 **먼저** getWidth · getHeight 로 크기를 본다.
+     *   둘은 헤더만 읽어서 화소를 풀지 않는다.
+     */
+    @Test
+    @DisplayName("★ 압축 폭탄은 풀기 전에 거절한다 - 파일이 작아도 화소가 많으면 안 받는다")
+    void 압축_폭탄은_풀기_전에_거절한다() throws IOException {
+        // ★ 같은 방법으로 만든 작은 PNG 는 통과한다 — 아래 거절이 "형식이 깨져서" 가 아니라는 증거
+        assertEquals(40, ImageProbe.probe(flatPng(40, 40)).orElseThrow().width());
+
+        byte[] bomb = flatPng(6000, 6000);
+        assertTrue(bomb.length < 3 * 1024 * 1024, "업로드 상한 3MB 를 통과하는 크기여야 시험이 성립합니다");
+        assertTrue(ImageProbe.probe(bomb).isEmpty(), "풀면 140MB 인데 받아들였습니다");
+    }
+
+    /** 단색 PNG 를 줄 단위로 흘려 쓴다 — 거대한 크기도 메모리에 안 펼쳐 놓고 만들 수 있다 */
+    private static byte[] flatPng(int w, int h) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        ImageIO.write(im, "png", out);
+        out.write(new byte[] { (byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' });
+
+        ByteArrayOutputStream ihdr = new ByteArrayOutputStream();
+        DataOutputStream head = new DataOutputStream(ihdr);
+        head.writeInt(w);
+        head.writeInt(h);
+        head.write(new byte[] { 8, 2, 0, 0, 0 });   // 8비트 · 트루컬러 · 기본 압축 · 기본 필터 · 비인터레이스
+        chunk(out, "IHDR", ihdr.toByteArray());
+
+        ByteArrayOutputStream idat = new ByteArrayOutputStream();
+        try (DeflaterOutputStream zip = new DeflaterOutputStream(idat)) {
+            byte[] row = new byte[1 + w * 3];       // 필터 바이트 + RGB, 전부 0 = 검정
+            for (int y = 0; y < h; y++) zip.write(row);
+        }
+        chunk(out, "IDAT", idat.toByteArray());
+        chunk(out, "IEND", new byte[0]);
         return out.toByteArray();
+    }
+
+    private static void chunk(ByteArrayOutputStream out, String type, byte[] body) throws IOException {
+        byte[] name = type.getBytes(StandardCharsets.US_ASCII);
+        CRC32 crc = new CRC32();
+        crc.update(name);
+        crc.update(body);
+
+        DataOutputStream d = new DataOutputStream(out);
+        d.writeInt(body.length);
+        d.write(name);
+        d.write(body);
+        d.writeInt((int) crc.getValue());
+    }
+
+    private static double linear(double c) {
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
     }
 }

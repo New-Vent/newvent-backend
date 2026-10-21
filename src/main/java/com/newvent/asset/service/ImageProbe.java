@@ -39,6 +39,23 @@ public final class ImageProbe {
     /** MIXED 일 때 쓸 덮개 농도. CSS 의 ev-asset-dim-* 와 짝이다 */
     private static final double[] SCRIMS = { 0.35, 0.55, 0.68 };
 
+    /**
+     * 풀었을 때의 화소 수 상한 (2500만 = 5000×5000).
+     *
+     * ★★ 파일 크기(3MB)만으로는 못 막는다 — **압축 폭탄**이다.
+     *   한 가지 색으로 채운 PNG 는 30000×30000(9억 화소)이 수백 KB 로 압축된다.
+     *   풀면 화소당 4바이트라 3.6GB 다. 업로드 상한을 통과한 작은 파일 하나가
+     *   힙을 통째로 먹고 서버를 멈춘다.
+     *
+     * ★ 그래서 **읽기 전에** 크기를 본다. getWidth · getHeight 는 헤더만 읽어서
+     *   화소를 풀지 않는다 — 폭탄이어도 여기서 되돌아간다.
+     *
+     * ★ 2500만인 이유 — 이벤트 페이지에 쓰는 가장 큰 그림(페이지 전체 배경)도
+     *   2000×1400 = 280만이다. 10배 가까이 여유를 두고도 최악 100MB 에서 끊긴다.
+     *   올릴 수 있는 사람이 관리자뿐이라 더 조일 이유는 없다.
+     */
+    private static final long MAX_PIXELS = 25_000_000L;
+
     /** WCAG AA 본문 */
     private static final double TARGET = 4.5;
 
@@ -72,6 +89,12 @@ public final class ImageProbe {
             try {
                 reader.setInput(in);
                 String format = reader.getFormatName().toLowerCase();
+
+                // ★★ **푸는 것보다 먼저** 크기를 본다 (MAX_PIXELS 주석 참고).
+                //   read(0) 을 부르는 순간 화소가 메모리에 풀리므로, 그 뒤에 재면 늦다.
+                long pixels = (long) reader.getWidth(0) * reader.getHeight(0);
+                if (pixels > MAX_PIXELS) return Optional.empty();
+
                 // ★ GIF 는 첫 장만 본다. 밝기를 재는 용도라 그걸로 충분하고,
                 //   장마다 디코딩하면 큰 GIF 에서 박스가 흔들린다 (1.9GB 다).
                 BufferedImage img = reader.read(0);
