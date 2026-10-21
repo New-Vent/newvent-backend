@@ -35,6 +35,7 @@ import com.newvent.event.dto.response.PublicEventSummaryResponse;
 import com.newvent.event.exception.EventNotAccessibleException;
 import com.newvent.event.exception.EventNotFoundException;
 import com.newvent.event.repository.EventRepository;
+import com.newvent.user.domain.MembershipGrade;
 
 class PublicEventServiceTest {
 
@@ -164,6 +165,7 @@ class PublicEventServiceTest {
         OffsetDateTime now = OffsetDateTime.now();
         EventTemplate template = EventTemplate.seed("signup", "가입 이벤트", null, "<html/>", true);
         Event event1 = newEvent(1L, EventStatus.PUBLISHED, now.minusDays(1), now.plusDays(2), template);
+        ReflectionTestUtils.setField(event1, "grade", MembershipGrade.EXCELLENT);
         Event event2 = newEvent(2L, EventStatus.PUBLISHED, now.minusDays(1), now.plusDays(30), null);
         Page<Event> page = new PageImpl<>(List.of(event1, event2), PageRequest.of(0, 2), 5);
         when(eventRepository.findPublicEvents(any(), any(), any(), any(), any())).thenReturn(page);
@@ -174,6 +176,7 @@ class PublicEventServiceTest {
         assertEquals(5, result.totalElements());
         assertEquals(2, result.content().size());
         assertEquals("signup", result.content().get(0).category());
+        assertEquals(MembershipGrade.EXCELLENT, result.content().get(0).grade());
         assertTrue(result.content().get(0).closingSoon());
         assertFalse(result.content().get(1).closingSoon());
     }
