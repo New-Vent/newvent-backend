@@ -4,6 +4,7 @@ import java.time.OffsetDateTime;
 
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventStatus;
+import com.newvent.user.domain.MembershipGrade;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -13,6 +14,8 @@ public record PublicEventSummaryResponse(
         OffsetDateTime startDate,
         OffsetDateTime endDate,
         EventStatus status,
+        @Schema(description = "참여할 수 있는 최소 멤버십 등급. 이 등급 이상만 참여할 수 있다.")
+        MembershipGrade grade,
         @Schema(description = "템플릿 코드. 목록의 category 필터에 쓰는 값")
         String category,
         @Schema(description = "마감임박. 이미 시작했고 종료 3일 전부터 종료 시각까지면 true")
@@ -24,6 +27,6 @@ public record PublicEventSummaryResponse(
     public static PublicEventSummaryResponse from(Event event, boolean closingSoon, String thumbnailHtml) {
         return new PublicEventSummaryResponse(
                 event.getId(), event.getTitle(), event.getStartDate(), event.getEndDate(),
-                event.getStatus(), event.templateCode(), closingSoon, thumbnailHtml);
+                event.getStatus(), event.getGrade(), event.templateCode(), closingSoon, thumbnailHtml);
     }
 }
