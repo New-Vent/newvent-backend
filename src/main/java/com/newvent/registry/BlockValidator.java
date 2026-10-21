@@ -731,7 +731,10 @@ public class BlockValidator {
 
             String prop = decl.substring(0, i).trim().toLowerCase();
             String val  = decl.substring(i + 1).trim();
-            if (val.isEmpty() || !ALLOWED_CSS.contains(prop)) continue;
+            // ★ background-image 는 none 만 받는다 — 그라데이션 버튼을 단색으로 칠할 때 필요하다(ButtonPaint).
+            //   다른 값은 url(...) 로 바깥 이미지를 끌어올 수 있어 막는다
+            boolean noImage = prop.equals("background-image") && val.equalsIgnoreCase("none");
+            if (val.isEmpty() || (!ALLOWED_CSS.contains(prop) && !noImage)) continue;
 
             // 허용 속성이어도 값 안에 숨을 수 있는 것들
             String low = val.toLowerCase();

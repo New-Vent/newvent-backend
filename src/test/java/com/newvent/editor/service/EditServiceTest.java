@@ -1008,6 +1008,35 @@ class EditServiceTest {
     }
 
     @Test
+    @DisplayName("★ 참여 버튼 색만 시키면 모델 없이 서버가 버튼을 칠한다 — 모델은 상자(v-cta-dark)를 칠했다")
+    void 버튼_색은_서버가_칠한다() {
+        router.willReturn(new RawRoute("STYLE", "cta", null));
+
+        GenerationJob job = runOn("참여버튼 배경이 아니라, 참여버튼 자체를 검정색으로 바꿔줘", "cta");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(0, retry.calls(), "색만 칠하는 데 모델을 부르면 안 된다");
+        String cta = blockOf(savedHtml(), Block.CTA);
+        assertTrue(cta.contains("background-color:#111111") && cta.contains("background-image:none"), cta);
+    }
+
+    @Test
+    @DisplayName("색 말고 시킨 게 더 있으면 모델이 나머지를 고치고, 버튼 색은 그 위에 서버가 칠한다")
+    void 버튼_색과_다른_요청이_섞이면_둘_다() {
+        router.willReturn(new RawRoute("STYLE", "cta", null));
+        retry.willReturn(ok("<section data-block=\"cta\" class=\"v-cta-pill\"><button class=\"btn\">참여하기</button></section>"));
+
+        GenerationJob job = runOn("참여 버튼을 검정 알약 모양으로", "cta");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls());
+        assertTrue(retry.prompts().get(0).contains("참여 버튼 색은 서버가 따로 칠한다"),
+                "모델에게 색을 맡기지 말라고 해야 또 상자를 칠하지 않는다");
+        String cta = blockOf(savedHtml(), Block.CTA);
+        assertTrue(cta.contains("v-cta-pill") && cta.contains("background-color:#111111"), cta);
+    }
+
+    @Test
     @DisplayName("같은 고른 영역에 연산이 여러 개여도 거절하지 않고 첫 연산만 쓴다")
     void 같은_영역_연산이_여럿이어도_하나만() {
         router.willReturn(new RawRoute("EDIT", "steps", "앱 열기"), new RawRoute("EDIT", "steps", "버튼 누르기"));
