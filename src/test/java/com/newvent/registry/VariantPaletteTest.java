@@ -94,8 +94,10 @@ class VariantPaletteTest {
         assertTrue(all.stream().filter(v -> !v.core() && v.group() == Variant.Group.LAYOUT)
                 .allMatch(v -> v.block() != null && !v.namedColor()));
         for (Block b : Block.llmBlocks()) {
-            List<Variant> core = Variant.of(b).stream().filter(Variant::core).toList();
-            assertEquals(core, Variant.forEdit(b, "신규 가입 이벤트 혜택을 다듬어줘"), b.key());
+            // ★ 색 지정 배경은 색을 안 말하면 빼다 — core 전부와 같지 않다
+            List<Variant> coreNoColor = Variant.of(b).stream()
+                    .filter(v -> v.core() && !v.namedColor()).toList();
+            assertEquals(coreNoColor, Variant.forEdit(b, "신규 가입 이벤트 혜택을 다듬어줘"), b.key());
             assertEquals(Variant.sample(b, "가을 이벤트", 4), Variant.forPrompt(b, "가을 이벤트", 4), b.key());
             assertTrue(Variant.sample(b, "영수증 메달 항공권", 4).stream().allMatch(Variant::core),
                     b.key() + " 표본에 확장이 섞였습니다");
@@ -147,6 +149,35 @@ class VariantPaletteTest {
         assertTrue(PromptBuilder.generate(text).contains("이름이 맞는 테마: theme-papercraft"));
         assertTrue(PromptBuilder.edit(Block.HERO, false, true, true, false, List.of(), "종이 공예 느낌으로 바꿔줘")
                 .contains("이름이 맞는 테마: theme-papercraft"));
+    }
+
+    /**
+     * ★★ 제보: "LLM 으로 만든 페이지에 알 수 없는 구름들이 자꾸 생긴다".
+     *   구름은 BLOOM 의 배경 장식이다(20-themes/03-bloom.css ②). 그런데 BLOOM 의
+     *   **이름**(desc 의 — 앞)에 "축제" 가 있었고, matched() 는 그 이름으로 짚는다.
+     *   이벤트 요청문에는 "축제" 가 거의 늘 들어가서 백지 생성이 BLOOM 으로 끌려갔다.
+     *
+     * ★ PageShellTest 가 같은 걱정을 미리 적어 뒀다 — "BLOOM 처럼 센 테마를 기본으로
+     *   두면 '법인 요금제 비교' 에 구름이 뜬다. 시끄러운 기본값은 그냥 틀린다."
+     *   기본값은 BASIC 이었지만, 이름 매칭이 뒷문으로 같은 일을 하고 있었다.
+     */
+    @Test
+    @DisplayName("★ '축제' 만으로 구름 테마를 끌어오지 않는다 — 분위기를 직접 말할 때만")
+    void 축제는_구름을_부르지_않는다() {
+        assertEquals(java.util.Optional.empty(), Theme.matched("가을 축제 이벤트 만들어줘"));
+        assertEquals(java.util.Optional.empty(), Theme.matched("법인 요금제 비교 이벤트"));
+        assertEquals(java.util.Optional.empty(),
+                Theme.matched("신규 가입 고객 대상 가을 데이터 페스타입니다"));
+
+        // ★ 제대로 걸려야 하는 자리는 그대로다 — 좁혔지 없앤 게 아니다
+        assertEquals(java.util.Optional.of(Theme.BLOOM), Theme.matched("어린이날 가족 이벤트"));
+        assertEquals(java.util.Optional.of(Theme.AURORA), Theme.matched("밤에 어울리는 프리미엄 게임 이벤트"));
+
+        // ★ 프롬프트에도 안 실려야 한다 — matched() 가 짚으면 addMatchedTheme 이 "★ 이름이
+        //   맞는 테마" 로 강조해서 올린다. 거기 올라가면 모델이 거의 그걸 고른다.
+        assertFalse(PromptBuilder.generate("가을 축제 이벤트 만들어줘")
+                .contains("이름이 맞는 테마: " + Theme.BLOOM.cssClass()),
+                "'축제' 만으로 구름 테마를 프롬프트가 강조했습니다");
     }
 
     @Test
@@ -734,6 +765,7 @@ class VariantPaletteTest {
      * ★ 생성에는 표본만 나간다. 표본에서 빠진 것은 수정 프롬프트에 나간다.
      *   어느 쪽에도 없으면 실패다.
      * ★ SURFACE 변형은 블록 전용이 아니므로 {@link Variant#of} 가 주는 블록 아무거나에서 찾는다.
+     * ★ 색 지정 배경(namedColor)은 그 색을 말한 수정에만 실린다 — 색 말로 불러 본다.
      */
     @Test
     @DisplayName("★ 모든 변형이 생성이든 수정이든 어딘가로는 나간다 — 죽은 이름이 없다")
@@ -750,6 +782,15 @@ class VariantPaletteTest {
                 assertTrue(called, v.cssClass() + " 는 이름(" + name + ")을 불러도 수정 프롬프트에 안 나갑니다");
                 continue;
             }
+            // ★ 색 지정 배경 — 생성엔 없고, 그 색을 말한 수정에만 있다
+            if (v.namedColor()) {
+                String ask = colorAsk(v);
+                boolean called = Block.llmBlocks().stream()
+                        .filter(b -> Variant.of(b).contains(v))
+                        .anyMatch(b -> Variant.forEdit(b, ask).contains(v));
+                assertTrue(called, v.cssClass() + " 는 색(" + ask + ")을 말해도 수정 목록에 안 나갑니다");
+                continue;
+            }
             if (gen.contains(v.cssClass())) continue;
             boolean inEdit = Block.llmBlocks().stream()
                     .filter(b -> Variant.of(b).contains(v))
@@ -758,6 +799,16 @@ class VariantPaletteTest {
                     v.cssClass() + " 가 생성에도 수정에도 안 나갑니다. "
                     + "레지스트리에만 있는 이름은 모델이 영영 못 고릅니다");
         }
+    }
+
+    /** 색 지정 배경을 부르려면 ColorWords 에 적힌 그 색 말을 쓴다 */
+    private static String colorAsk(Variant v) {
+        for (ColorWords.Group g : ColorWords.GROUPS) {
+            if (v.desc().contains(g.name()) || g.stems().stream().anyMatch(v.desc()::contains)) {
+                return g.words().get(0) + "으로 바꿔줘";
+            }
+        }
+        throw new AssertionError(v + " 에 맞는 ColorWords 가 없습니다");
     }
 
     /**
@@ -770,7 +821,7 @@ class VariantPaletteTest {
      *   열쇠말이 다 걸린 요청이 제일 길다. <b>한쪽만 재면 늘어난 걸 놓친다.</b>
      *
      *   {@code generate(null)} 은 거르지 않으므로 그 자체가 최악이다(테스트 · 내부용).
-     *   오늘 기준 보통 7,355자 · 최악 9,268자다.
+     *   오늘 기준 보통 8,989자 · 최악 11,022자다.
      */
     @Test
     @DisplayName("생성 프롬프트가 너무 길어지지 않는다 — 비용 상한")
@@ -785,6 +836,106 @@ class VariantPaletteTest {
         assertTrue(worst < 13000,
                 "모든 블록이 걸린 생성 프롬프트가 " + worst + "자입니다. 13,000자를 넘으면 "
                 + "블록을 늘리기 전에 블록당 표본 수를 먼저 줄이세요");
+    }
+
+    /**
+     * ★★ 제보: "전체색을 핑크색으로" → 보라색, "전체색을 노란색으로" → 붉은색.
+     *   팔레트는 144개인데 프롬프트에는 core 19개 + 요청문이 부른 최대 6개만 실린다.
+     *   그 6개를 고르는 {@link KeywordMatch} 가 NOT_KEYWORDS 로 색 이름을 전부 막고 있었다 —
+     *   "빨강" 같은 흔한 말이 아무 팔레트나 끌어오는 걸 막으려던 것인데,
+     *   그 바람에 <b>색으로 고르는 길 자체가</b> 막혔다.
+     *
+     *   게다가 목록에는 "노랑 · 분홍" 만 있고 "노란 · 핑크" 는 없어서, 설명에 변형 표기를 쓴
+     *   팔레트만 새어 나갔다 — 앰버(호박색, <b>노란</b> 주황) · Y2K(은빛, <b>핑크</b>, 하늘).
+     *   정확히 거꾸로다. 실측: 노란색 요청에 실린 20개 중 노란 팔레트가 <b>0개</b>였다.
+     */
+    @Test
+    @DisplayName("★ 관리자가 말한 색이 설명에 적힌 팔레트가 프롬프트에 실린다")
+    void 말한_색이_프롬프트에_실린다() {
+        assertTrue(Palette.forPrompt("전체색을 노란색으로").stream().anyMatch(p -> p.desc().contains("노랑")),
+                "노란색 요청인데 노란 팔레트가 하나도 안 실렸습니다");
+
+        // ★ "핑크" 라고 써도 설명의 "분홍" 과 만나야 한다 — ColorWords 가 같은 색으로 묶는다
+        assertTrue(Palette.forPrompt("전체색을 핑크색으로").stream().anyMatch(p -> p.desc().contains("분홍")),
+                "핑크 요청인데 분홍 팔레트가 안 실렸습니다 — 동의어가 안 이어졌습니다");
+
+        // ★ 말하지 않은 색은 그대로 막아 둔다. "숲 느낌" 에 빨강이 딸려 오면 안 된다
+        assertTrue(Palette.matched("전체 색감을 숲 느낌으로").stream().noneMatch(p -> p.desc().contains("빨강")),
+                "색을 말하지 않은 요청에 빨강 팔레트가 딸려 왔습니다");
+
+        // ★ ColorWords 와 같은 표를 본다 — 거름망이 "있다" 고 한 색은 프롬프트에도 있어야 한다
+        assertEquals(java.util.List.of("분홍"), ColorWords.mentionedNames("전체색을 핑크색으로"));
+        assertEquals(java.util.List.of("노랑"), ColorWords.mentionedNames("전체 색감을 노랗게"));
+
+        // ★★ 그리고 **실제 프롬프트 글자**에 들어가야 한다. 여기까지 봐야 하는 이유 —
+        //   EditService 가 requestText 를 null 로 박는 오버로드를 부르고 있어서,
+        //   Palette.forPrompt 가 아무리 옳아도 모델은 core 19개만 봤다(실측).
+        String yellow = PromptBuilder.edit(Block.HERO, false, true, true, false, List.of(), "전체색을 노란색으로");
+        assertTrue(Palette.all().stream()
+                        .anyMatch(p -> p.desc().contains("노랑") && yellow.contains(p.cssClass())),
+                "노란색 요청인데 수정 프롬프트에 노란 팔레트가 한 줄도 없습니다");
+    }
+
+    /**
+     * ★★ 제보 둘 — "전체색을 파란색으로" 에 <b>분위기(테마)까지</b> 바뀌고,
+     *   "전체색을 더 진하게" 는 색 이름이 없는데 <b>파란 팔레트</b>가 붙었다.
+     *
+     *   뿌리가 같다. 모양 고르기 단정문("반드시 하나를 골라 바꾼다")이 <b>무엇을</b> 바꿀지
+     *   말하지 않는다. 그 단정문은 모델이 문구만 고치고 끝내는 걸 막으려고 센 말로 써 둔 것인데,
+     *   축이 없으니 모델이 손에 잡히는 걸 바꾼다.
+     *   배치에는 같은 줄이 있었다("배치만 바꿔 달라면 layout-* 하나만"). 색에는 짝이 없었다.
+     *
+     * ★ 팔레트 절에도 "색만 바꿔 달라면 분위기는 그대로" 가 있지만 목록에 파묻혀 단정문에 밀린다.
+     *   단정문 바로 뒤에 둬야 이긴다 — 이 테스트가 그 자리를 지킨다.
+     */
+    @Test
+    @DisplayName("★ 색을 말한 요청에는 '색만 바꾼다' 가, 안 말한 요청에는 '그대로 둔다' 가 붙는다")
+    void 바꿀_축을_못_박는다() {
+        String color = PromptBuilder.edit(Block.HERO, false, true, true, false, List.of(), "전체색을 파란색으로");
+        assertTrue(color.contains("이번 요청은 **색**이다"), "색 요청인데 바꿀 축을 안 정해 줬습니다");
+        assertTrue(color.contains("분위기(theme-*)"), "색 요청인데 분위기를 그대로 두라는 말이 없습니다");
+
+        // ★ 색도 분위기도 안 말한 요청 — 팔레트를 바꿀 근거가 없다
+        String vague = PromptBuilder.edit(Block.HERO, false, true, true, false, List.of(), "전체색을 더 진하게");
+        assertTrue(vague.contains("요청에 색 이름이 없다"), "색 이름이 없는 요청인데 그대로 두라는 말이 없습니다");
+
+        // ★ 분위기 이름으로 색을 바꾸는 정상 요청의 길은 막지 않는다
+        assertTrue(PromptBuilder.edit(Block.HERO, false, true, true, false, List.of(), "전체 색감을 숲 느낌으로")
+                        .contains("**분위기 이름**을 말했으면"),
+                "\"숲 느낌으로\" 가 색을 못 바꾸게 막혔습니다");
+
+        // ★ 영역을 골라 고칠 때는 팔레트를 못 고르므로 이 줄이 나오면 안 된다
+        String area = PromptBuilder.edit(Block.BENEFITS, false, false, true, false, List.of(), "혜택을 파란색으로");
+        assertFalse(area.contains("이번 요청은 **색**이다"), "팔레트를 못 고르는 자리에 색 축 안내가 붙었습니다");
+    }
+
+    /**
+     * ★★ 제보: "전체색을 분홍색으로" → 보라색.
+     *   분홍은 봄(벚꽃 분홍) · 발렌타인(분홍)이고 둘 다 기본 목록에 있다. 그런데 <b>이름이
+     *   "봄" · "발렌타인"</b> 이라 색이 안 드러난다. 라벤더 · 파스텔은 이름만 봐도 보라라서
+     *   모델이 그쪽을 집었다. "설명을 보고 고르라" 는 한 줄로는 모자랐다.
+     *
+     * ★ 보라색이 잘 되던 건 <b>운</b>이었다 — 보라 팔레트의 이름이 마침 색이었다.
+     *   이름이 계기(봄 · 발렌타인 · 설날)인 팔레트는 전부 같은 함정에 빠진다.
+     *
+     * ★ 확장을 끌어오는 것이 아니다. <b>이미 실린 목록 안에서</b> 짚어 줄 뿐이라
+     *   "흔한 색 이름은 확장을 끌어오지 않는다" 규칙과 부딪히지 않는다.
+     */
+    @Test
+    @DisplayName("★ 말한 색이 설명에 적힌 팔레트를 목록 안에서 짚어 준다")
+    void 말한_색을_짚어_준다() {
+        String pink = PromptBuilder.edit(Block.HERO, false, true, true, false, List.of(), "전체색을 분홍색으로");
+        assertTrue(pink.contains("요청이 말한 색은 \"분홍\" 이다"), "분홍 요청인데 짚어 주는 줄이 없습니다");
+        assertTrue(pink.contains(Palette.SPRING.cssClass()) && pink.contains(Palette.VALENTINE.cssClass()),
+                "분홍이 적힌 팔레트를 짚지 않았습니다");
+
+        // ★ "핑크" 라고 써도 같은 줄이 나와야 한다 — ColorWords 가 같은 색으로 묶는다
+        assertTrue(PromptBuilder.edit(Block.HERO, false, true, true, false, List.of(), "전체색을 핑크색으로")
+                .contains("요청이 말한 색은 \"분홍\" 이다"));
+
+        // ★ 색을 말하지 않은 요청에는 안 붙는다
+        assertFalse(PromptBuilder.edit(Block.HERO, false, true, true, false, List.of(), "전체 색감을 숲 느낌으로")
+                .contains("요청이 말한 색은"));
     }
 
     @Test
@@ -812,7 +963,7 @@ class VariantPaletteTest {
     }
 
     @Test
-    @DisplayName("색 지정 배경 — 수정 프롬프트에만 실리고, 생성 표본에는 안 실리며, 다른 배경과 하나만 남는다")
+    @DisplayName("색 지정 배경 — 그 색을 말한 수정에만 실리고, 생성 표본에는 안 실리며, 다른 배경과 하나만 남는다")
     void 색_지정_배경() {
         List<Variant> colors = List.of(Variant.values()).stream().filter(Variant::namedColor).toList();
         assertFalse(colors.isEmpty());
@@ -820,12 +971,22 @@ class VariantPaletteTest {
             assertEquals(Variant.Group.SURFACE, v.group(), v + " 는 배경 묶음이어야 다른 배경을 대신한다");
         }
 
-        // 수정 — 배경을 쓰는 블록에는 색 배경과 "색 이름으로 고르라" 는 안내가 실린다
-        String intro = PromptBuilder.edit(Block.INTRO, false);
+        // ★ 색·배경 말 없는 수정 — 색 지정 배경을 싣지 않는다 (임의 변경 구멍)
+        assertFalse(Variant.forEdit(Block.INTRO, "더 화려하게 바꿔줘").stream().anyMatch(Variant::namedColor));
+        assertFalse(Variant.forEdit(Block.INTRO, "소개글 다듬어줘").stream().anyMatch(Variant::namedColor));
+        assertFalse(PromptBuilder.edit(Block.INTRO, false, true, true, false, List.of(), "더 화려하게")
+                .contains("v-surface-blue"));
+
+        // 수정 — 그 색을 말하면 색 배경과 "색 이름으로 고르라" 안내가 실린다
+        assertTrue(Variant.forEdit(Block.INTRO, "배경을 파란색으로").contains(Variant.SURFACE_BLUE));
+        assertFalse(Variant.forEdit(Block.INTRO, "배경을 파란색으로").contains(Variant.SURFACE_GREEN),
+                "말한 색만 실어야 한다");
+        String intro = PromptBuilder.edit(Block.INTRO, false, true, true, false, List.of(), "파란색으로 바꿔줘");
         assertTrue(intro.contains("v-surface-blue") && intro.contains("파란색"), intro);
         assertTrue(intro.contains("그 색 이름이 적힌 것을 고른다"));
         // 배경이 없는 블록에는 안내도 없다 — 목록 없이 말만 하면 모델이 이름을 지어낸다
-        assertFalse(PromptBuilder.edit(Block.CTA, false).contains("그 색 이름이"));
+        assertFalse(PromptBuilder.edit(Block.CTA, false, true, true, false, List.of(), "파란색으로")
+                .contains("그 색 이름이"));
 
         // 생성 — 팔레트와 따로 노는 색은 섞지 않는다
         for (int i = 0; i < 300; i++) {

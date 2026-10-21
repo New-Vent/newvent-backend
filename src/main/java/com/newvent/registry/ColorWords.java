@@ -3,6 +3,7 @@ package com.newvent.registry;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -49,7 +50,19 @@ public final class ColorWords {
 
         /** 팔레트(BASE 제외) 설명에 이 색이 적혀 있는가 */
         public boolean supported() {
-            for (Palette p : Palette.all()) {
+            return servedBy(Palette.all());
+        }
+
+        /**
+         * 준 팔레트들 중 하나라도 설명에 이 색을 적고 있는가.
+         *
+         * ★ {@link #supported()} 는 144개 전부를 본다("낼 수 있는 색인가" — 거절 판정).
+         *   이건 <b>일부만</b> 본다 — 기본 19개가 이 색을 낼 수 있는지 묻는 자리가 있다.
+         *   둘이 갈리는 색이 구멍이다. 노랑이 그랬다: 확장에는 18개나 있는데 기본에는 없어서,
+         *   "노란색으로" 요청에 모델이 보는 목록에는 노란 팔레트가 <b>한 개도 없었다</b>.
+         */
+        public boolean servedBy(Collection<Palette> palettes) {
+            for (Palette p : palettes) {
                 if (p == Palette.BASE) continue;
                 for (String stem : stems) {
                     if (p.desc().contains(stem)) return true;
@@ -224,6 +237,51 @@ public final class ColorWords {
         int[] last = null;
         while (m.find()) last = new int[]{m.start(), m.end()};
         return last;
+    }
+
+    /**
+     * 요청문에 나온 색의 <b>대표 이름</b>. 같은 색을 가리키는 말을 한 이름으로 모은다 — "핑크" → "분홍".
+     *
+     * ★★ 왜 필요한가 — 팔레트 설명은 "벚꽃 분홍" 이라 적는데 관리자는 "핑크" 라고 쓴다.
+     *   {@link Palette#matched} 는 요청문 글자를 그대로 설명에서 찾으므로 둘이 못 만난다.
+     *   실측 — "전체색을 핑크색으로" 가 Y2K(은빛 · 핑크 · 하늘)를 짚어 보라색이 됐고,
+     *   "전체색을 노란색으로" 는 레모네이드(레몬 **노랑**)를 못 찾아("노란" 과 글자가 다르다)
+     *   축제(빨강 · 금색)로 갔다. 이 표(GROUPS)가 이미 동의어를 아는데 한쪽만 쓰고 있었다.
+     *
+     * ★ 피하려고 말한 색("노란색 말고 파란색으로")도 그냥 담는다 — 여기서 정하는 건
+     *   "어느 팔레트를 **보여줄까**" 뿐이다. 거절은 {@link #firstUnsupported} 가 따로 본다.
+     *   피한 색이 목록에 더 실려도 모델이 고를 뿐 손해가 아니다.
+     */
+    static List<String> mentionedNames(String requestText) {
+        return mentionedGroups(requestText).stream().map(Group::name).toList();
+    }
+
+    /** 요청문에 나온 색 묶음. {@link #mentionedNames} 가 이름만 뽑아 쓴다 */
+    static List<Group> mentionedGroups(String requestText) {
+        if (requestText == null || requestText.isBlank()) return List.of();
+        List<Group> out = new ArrayList<>();
+        for (int i = 0; i < GROUPS.size(); i++) {
+            if (PATTERNS.get(i).matcher(requestText).find()) out.add(GROUPS.get(i));
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * 색을 가리키는 말 <b>전부</b> — 대표 이름과 표기(분홍 · 핑크, 노랑 · 노란 · 옐로우 …).
+     *
+     * ★★ {@link Palette#matched} 의 금지 목록이 쓴다. 거기에는 "노랑 · 분홍" 같은 <b>대표 이름만</b>
+     *   적혀 있어서, 설명에 "핑크" · "노란" 이라고 쓴 팔레트만 새어 나갔다 —
+     *   Y2K(은빛, <b>핑크</b>, 하늘)가 분홍 요청에 1순위로 올라가고,
+     *   앰버(호박색, <b>노란</b> 주황)가 노랑 요청에 걸렸다. 막으려면 표기까지 다 막아야 한다.
+     */
+    static Set<String> allWords() {
+        Set<String> out = new HashSet<>();
+        for (Group g : GROUPS) {
+            out.add(g.name());
+            out.addAll(g.words());
+            out.addAll(g.stems());
+        }
+        return Set.copyOf(out);
     }
 
     /** 지금 팔레트로 낼 수 있는 색 이름들 */

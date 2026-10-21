@@ -507,11 +507,33 @@ public enum Variant implements Pickable {
     /**
      * 수정 프롬프트에 실을 변형 — 그 블록의 기본 전부 + 요청문이 부른 확장.
      * ★ 기본은 지금처럼 전부 싣는다 (블록 하나라 짧다). 확장만 요청문으로 거른다.
+     * ★ 색 지정 배경({@link #namedColor})은 예외 — 관리자가 <b>그 색을 말했을 때만</b> 싣는다.
+     *   안 그러면 "더 화려하게" · "심플하게" 에도 v-surface-blue 가 목록에 있어
+     *   모델이 배경색을 임의로 바꿨다(멘토링 제보: 배경·색 말 없이 색이 바뀜).
      */
     public static List<Variant> forEdit(Block b, String requestText) {
         List<Variant> all = of(b);
-        return Stream.concat(all.stream().filter(v -> v.core),
+        return Stream.concat(
+                all.stream().filter(v -> v.core && (!v.namedColor || namedColorAsked(v, requestText))),
                 KeywordMatch.matched(all, lookText(requestText), MAX_MATCHED, NOT_KEYWORDS, false).stream()).toList();
+    }
+
+    /**
+     * 이 색 지정 배경의 색을 요청문이 말했는가.
+     * ★ {@link ColorWords} 어간과 맞춰 본다 — "파란색으로" 는 SURFACE_BLUE, "그린으로" 는 SURFACE_GREEN.
+     *   "배경" 만 말한 요청에는 아무 색도 안 싣는다(임의 선택 구멍이 된다).
+     */
+    static boolean namedColorAsked(Variant v, String requestText) {
+        if (!v.namedColor || requestText == null || requestText.isBlank()) return false;
+        for (ColorWords.Group g : ColorWords.GROUPS) {
+            boolean inVariant = v.desc.contains(g.name())
+                    || g.stems().stream().anyMatch(v.desc::contains);
+            if (!inVariant) continue;
+            for (String word : g.words()) {
+                if (requestText.contains(word)) return true;
+            }
+        }
+        return false;
     }
 
     /**

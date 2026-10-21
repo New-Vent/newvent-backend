@@ -78,7 +78,8 @@ public final class ImageProbe {
                 if (img == null) return Optional.empty();
 
                 double[] ends = ends(img);
-                Tone tone = toneOf(ends[0], ends[1]);
+                // null = 거의 다 비치는 장식. 덮지 않고 글자색도 테마에 맡긴다
+                Tone tone = ends == null ? Tone.LIGHT : toneOf(ends[0], ends[1]);
                 double scrim = tone == Tone.MIXED ? scrimFor(ends[1]) : 0;
                 return Optional.of(new Probed(format, img.getWidth(), img.getHeight(), scrim, tone));
             } finally {
@@ -130,6 +131,20 @@ public final class ImageProbe {
      *   그건 흰 글씨 쪽만 보수적으로 보려던 어림이었다. 이제 양쪽을 다 보므로
      *   어느 한쪽으로 치우치지 않는 진짜 휘도가 필요하다.
      */
+    /** 이 알파 아래는 "비치는 자리" 로 본다. 절반이 기준이다 */
+    private static final int OPAQUE_ALPHA = 128;
+
+    /**
+     * 비치는 자리가 이보다 많으면 **오려 낸 장식**으로 본다.
+     *
+     * ★★ 사진은 투명한 자리가 없다(0%). 투명 배경 PNG 는 바탕을 비우려고 만든 것이고,
+     *   그건 "뒤에 깔 그림" 이 아니라 "위에 얹을 그림" 이라는 뜻이다.
+     *   그런 그림에 화면 전체 덮개를 씌우면, 비치라고 만든 자리까지 같이 어두워진다.
+     *   실측 — 수료생 일러스트는 불투명한 점만 보면 머리카락(검정)과 수료증(흰색)이
+     *   같이 있어 MIXED 가 맞게 나오지만, 그 판정으로 덮개를 깔면 페이지가 통째로 까매진다.
+     */
+    private static final double DECOR_TRANSPARENT_RATIO = 0.25;
+
     private static double[] ends(BufferedImage img) {
         int w = Math.max(1, Math.min(img.getWidth(), 64));
         int h = Math.max(1, Math.min(img.getHeight(), 64));
@@ -138,9 +153,18 @@ public final class ImageProbe {
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int px = img.getRGB(x * img.getWidth() / w, y * img.getHeight() / h);
+                // ★★ 알파를 건너뛰면 **투명한 자리가 검정으로 세어진다.**
+                //   getRGB 는 완전 투명 픽셀에 0x00000000 을 준다 — r=g=b=0, 휘도 0 이다.
+                //   그래서 배경이 거의 다 비치는 장식 PNG 가 "가장 어두운 곳이 칠흑" 으로
+                //   측정돼 MIXED 로 떨어지고, 화면 전체에 55% 검은 덮개가 깔렸다(제보:
+                //   "2번 배경으로 깔아달라고 하니까 전체적으로 까매졌어").
+                //   비치는 자리는 사진이 아니다. 그 뒤에 있는 건 페이지 바탕이다 — 세지 않는다.
+                if (((px >>> 24) & 0xff) < OPAQUE_ALPHA) continue;
                 vals[n++] = luminance((px >> 16) & 0xff, (px >> 8) & 0xff, px & 0xff);
             }
         }
+        // ★ 비치는 자리가 많으면 장식이다 — 덮개도 흰 글씨도 강요하지 않는다
+        if (n <= w * h * (1 - DECOR_TRANSPARENT_RATIO)) return null;
         Arrays.sort(vals, 0, n);
         return new double[] {
             vals[Math.min(n - 1, (int) (n * DARK_PERCENTILE))],

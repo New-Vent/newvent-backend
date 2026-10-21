@@ -168,7 +168,6 @@ public final class PromptBuilder {
                 <li>
                   <div class="benefit-icon">🎁</div>
                   <div class="benefit-name">혜택 이름</div>
-                  <div class="benefit-desc">요청문에 적힌 조건을 한 문장으로 설명합니다.</div>
                 </li>
               </ul>
             </section>
@@ -192,15 +191,14 @@ public final class PromptBuilder {
         s.add("- 이벤트 소개는 한두 문장으로 쓴다.");
         // 혜택 범위는 '꼭 넣을 영역' 과 맞춘다 — 어긋나면 뒤에 있는 이 줄이 이긴다
         if (triggered.isEmpty()) {
-            s.add("- 혜택은 요청문에 있는 것을 빠짐없이 담고, 항목마다 한 문장으로 설명을 붙인다. "
-                    + "요청문에 없는 혜택 항목을 더하지 마라. 혜택이 하나뿐이면 하나만 쓴다.");
+            s.add("- 혜택은 요청문에 있는 것만 담고, 요청문에 없는 혜택 항목을 더하지 마라. "
+                    + "혜택이 하나뿐이면 하나만 쓴다.");
         } else {
-            s.add("- 혜택은 " + keysOf(triggered) + " 로 보낸 것을 뺀 나머지만 담고, 항목마다 한 문장으로 설명을 붙인다. "
+            s.add("- 혜택은 " + keysOf(triggered) + " 로 보낸 것을 뺀 나머지만 담고, "
                     + "요청문에 없는 혜택 항목을 더하지 마라.");
         }
-        // 받는 값은 값이 있을 때만 — "모두 채워라" 가 "수치를 만들지 마라" 를 이겼다 (#230)
-        s.add("- 이모지 · 이름 · 설명은 항상 채운다. 받는 값은 요청문에 값이 있을 때만 쓰고, "
-                + "없으면 <div class=\"benefit-value\"> 를 만들지 마라.");
+        // 설명 · 받는 값은 요청에 있을 때만 — "항상 채워라" 가 없는 조건 문장을 지어냈다
+        s.add("- 이모지 · 이름은 채운다. 설명 · 받는 값 · 조건 · 다른 혜택은 요청문에 있을 때만 쓴다.");
         s.add("- 받는 값은 짧게 쓴다. 요청문에 적힌 값만 쓰고, 문장을 넣지 마라.");
         s.add("- 요청문에 할인 전후 가격이 있으면 받는 값에 "
                 + "<span class=\"t-strike\">원래 가격</span> 과 <strong class=\"t-big\">할인가</strong> 를 같이 쓴다.");
@@ -320,11 +318,12 @@ public final class PromptBuilder {
         return edit(b, templateBlock, allowPalette, looksRequest, addItem, assets, requestText, false);
     }
 
-    public static String edit(Block b, boolean templateBlock, boolean allowPalette,
-                              boolean looksRequest, boolean addItem, List<Asset.Ref> assets,
-                              boolean createFormBlock) {
-        return edit(b, templateBlock, allowPalette, looksRequest, addItem, assets, null, false, createFormBlock);
-    }
+    // ★★ createFormBlock 만 받던 오버로드를 지웠다 — 안에서 requestText 를 **null 로 박고** 있었다.
+    //   운영 경로(EditService)가 하필 이걸 부르고 있어서, 요청문이 무엇이든 팔레트는 core 19개,
+    //   변형 · 테마도 기본 표본만 실렸다. 확장 144개 팔레트가 모델 앞에 한 번도 가지 못했다.
+    //   "전체색을 노란색으로" 에 노란 팔레트가 0개라 모델이 매번 다른 색을 찍었다(실측).
+    //   인자 자리만 다르고 생김새가 같은 오버로드라 눈으로는 안 보였다. **지우는 게 유일한 방어다** —
+    //   요청문을 빼먹으면 컴파일이 안 되게 둔다. 새 인자가 필요하면 아래 9개짜리에 붙인다.
 
     public static String edit(Block b, boolean templateBlock, boolean allowPalette,
                               boolean looksRequest, boolean addItem, List<Asset.Ref> assets, String requestText,
@@ -450,11 +449,15 @@ public final class PromptBuilder {
         }
         if (addItem && !createFormBlock) {
             s.add("- 이 목록에 항목을 **하나만** 더한다. 기존 항목은 손대지 마라.");
-            s.add("- 더한 항목은 기존 항목과 **같은 태그 · 같은 class** 로 만든다.");
-            s.add("- 더한 항목에 금액 · 수량 · 기간 같은 수치를 지어내 넣지 마라. "
-                    + "관리자가 적어 준 문구에 있는 것만 쓴다.");
-            // ★ "헬스장 등록권 추가해줘" → 카드만 더해야 하는데 benefit-tag 까지 생기던 경우
-            s.add("- 더한 항목에 benefit-tag 를 붙이지 마라. 요청문에 한정 · 할인율 · 선착순 · 등수가 있을 때만 쓴다.");
+            s.add("- 더한 항목은 기존 항목과 **같은 태그** 로 만든다. 아이콘 · 이름 구조만 맞추고, "
+                    + "기존 카드의 설명 · 값 · 꼬리말은 베끼지 마라.");
+            s.add("- 더한 항목에는 관리자가 적어 준 문구만 쓴다. 금액 · 수량 · 기간 같은 수치를 지어내지 마라.");
+            if (b == Block.BENEFITS) {
+                // ★ 혜택만. "등록권 추가"에 다른 혜택 · 설명 · 꼬리말이 붙던 경우
+                s.add("- 요청문에 없는 혜택 항목을 더하지 마라. 설명(benefit-desc) · 받는 값(benefit-value)도 "
+                        + "요청문에 있을 때만 쓴다.");
+                s.add("- 더한 항목에 benefit-tag 를 붙이지 마라. 요청문에 한정 · 할인율 · 선착순 · 등수가 있을 때만 쓴다.");
+            }
         }
         // 통째로 지운 혜택 · 경품을 다시 만들 때 — 표준 서식을 그대로 준다 (§3-5)
         if (createFormBlock && b == Block.BENEFITS) {
@@ -478,6 +481,34 @@ public final class PromptBuilder {
     }
 
     /** 수정용 모양 안내 — 변형 → (영역 선택이면 색 금지) → 테마 · 배치 → 색감 (§3-7) */
+    /**
+     * 바꿀 <b>축</b>을 못 박는다 — 모양(v-*) · 분위기(theme-*) · 배치(layout-*) · 색감(palette-*).
+     *
+     * ★★ 왜 필요한가 — 바로 위 단정문("반드시 하나를 골라 바꾼다")이 <b>무엇을</b> 바꿀지 말하지 않는다.
+     *   그 단정문은 모델이 아무것도 안 바꾸고 문구만 고치는 걸 막으려고 센 말로 써 둔 것인데,
+     *   축이 없으니 모델이 손에 잡히는 걸 바꾼다. 실측 —
+     *     "전체색을 파란색으로" → 색과 함께 <b>분위기(테마)까지</b> 바뀌었다.
+     *     "전체색을 더 진하게"  → 색 이름이 없는데 <b>파란 팔레트</b>를 골랐다.
+     *   배치에는 이미 같은 줄이 있다("배치만 바꿔 달라면 layout-* 하나만"). 색에는 짝이 없었다.
+     *
+     * ★ 아래 팔레트 절의 "색만 바꿔 달라면 분위기는 그대로" 와 뜻이 같지만, 그 줄은 목록에 파묻혀
+     *   단정문에 밀렸다. 단정문 **바로 뒤**에 둬야 이긴다.
+     *
+     * ★ 색을 안 말했어도 "숲 느낌 · 밤 느낌" 같은 <b>분위기 이름</b>은 팔레트를 고르는 정상 요청이다.
+     *   그 길을 같이 열어 둔다 — 안 그러면 "숲 느낌으로" 가 색을 못 바꾼다.
+     */
+    private static void addAxisRule(StringJoiner s, Looks looks, String requestText) {
+        if (!looks.palette()) return;          // 팔레트를 못 고르는 자리(영역 선택 수정)는 할 말이 없다
+        if (!ColorWords.mentionedNames(requestText).isEmpty()) {
+            s.add("- ★★ 이번 요청은 **색**이다. palette-* **하나만** 바꾼다. "
+                    + "영역 모양(v-*) · 분위기(theme-*) · 배치(layout-*) 는 지금 붙어 있는 것을 **그대로 둔다**.");
+        } else {
+            s.add("- ★★ 요청에 색 이름이 없다. \"숲 느낌\" · \"밤 느낌\" 처럼 **분위기 이름**을 말했으면 "
+                    + "그 분위기의 palette-* 를 고르고, 그것도 없으면 palette-* 는 **지금 것을 그대로 둔다**. "
+                    + "색도 분위기도 말하지 않았는데 색감을 바꾸면 관리자가 말한 적 없는 색이 게시된다.");
+        }
+    }
+
     private static void editLooks(StringJoiner s, Looks looks, boolean looksRequest, String requestText) {
         if (looksRequest) {
             // 단정문 — "…일 때만" 이면 모델이 스스로 판단하다 문구 고치기로 샌다
@@ -486,6 +517,7 @@ public final class PromptBuilder {
             s.add("- 지금 <section> 에 붙어 있는 이름과 **다른** 이름을 고른다.");
             s.add("- 문장의 뜻과 숫자는 그대로 둔다. 바꾸는 것은 겉모습이다.");
             s.add("- 위 '문구 꾸밈' 의 이름도 같이 더 붙여 강약을 준다.");
+            addAxisRule(s, looks, requestText);
         } else {
             s.add("모양 고르기: (모양·색·분위기를 바꿔 달라는 요청일 때만. 문구는 그대로 둔다)");
         }
@@ -525,6 +557,38 @@ public final class PromptBuilder {
                     + "다른 팔레트를 새로 고르지 않는다.");
             for (Palette p : Palette.forPrompt(requestText)) s.add("    " + p.cssClass() + " : " + p.desc());
             addMatchedPalettes(s, requestText);
+            addColorPick(s, requestText);
+        }
+    }
+
+    /**
+     * 말한 색이 설명에 적힌 팔레트를 <b>위 목록 안에서</b> 짚어 준다.
+     *
+     * ★★ 왜 필요한가 — "설명을 보고 고르라" 는 한 줄로는 모자랐다. 팔레트 이름이 <b>색이 아니라
+     *   계기</b>일 때 모델이 못 찾는다. 실측 —
+     *     "전체색을 분홍색으로" → 보라색이 됐다. 분홍은 봄(벚꽃 분홍) · 발렌타인(분홍)인데
+     *     <b>이름이 "봄"·"발렌타인"</b> 이라 색이 안 드러난다. 반대로 라벤더 · 파스텔은
+     *     이름만 봐도 보라라서 모델이 그쪽을 집었다.
+     *   보라색이 잘 되던 건 운이었다 — 보라 팔레트의 이름이 마침 색이었다.
+     *
+     * ★ {@link #addMatchedPalettes} 와 다르다. 저쪽은 <b>확장</b>을 끌어와 짚는다(단청 · 제주).
+     *   이건 이미 실린 목록에서 고르게만 한다 — 목록이 길어지지 않고,
+     *   "흔한 색 이름은 확장을 끌어오지 않는다" 는 규칙도 그대로다.
+     */
+    private static void addColorPick(StringJoiner s, String requestText) {
+        List<Palette> shown = Palette.forPrompt(requestText);
+        for (ColorWords.Group g : ColorWords.mentionedGroups(requestText)) {
+            StringJoiner names = new StringJoiner(" · ");
+            for (Palette p : shown) {
+                if (p == Palette.BASE) continue;
+                for (String stem : g.stems()) {
+                    if (p.desc().contains(stem)) { names.add(p.cssClass()); break; }
+                }
+            }
+            if (names.length() > 0) {
+                s.add("  ★ 요청이 말한 색은 \"" + g.name() + "\" 이다. 설명에 그 색이 적힌 것은 "
+                        + names + ". **이 중에서 고른다.**");
+            }
         }
     }
 
@@ -662,6 +726,12 @@ public final class PromptBuilder {
 
             "혜택 하나 더 추가해줘"
             {"ops":[{"op":"ADD","target":"benefits","content":null}]}
+
+            "FAQ 영역 추가해줘"
+            {"ops":[{"op":"ADD","target":"faq","content":null}]}
+
+            "일정 영역 넣어줘. 1차 10월 1일 응모"
+            {"ops":[{"op":"ADD","target":"schedule","content":"1차 10월 1일 응모"}]}
 
             "전체 색감을 가을 느낌으로 바꿔줘"
             {"ops":[{"op":"STYLE","target":"hero","content":null}]}
