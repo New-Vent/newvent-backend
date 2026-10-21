@@ -124,6 +124,23 @@ class ValueCheckGeneratedTest {
         }
     }
 
+    @ParameterizedTest(name = "[{index}] 페이지 \"{0}\"")
+    @CsvSource({"커피 쿠폰 500분께 드립니다", "커피 쿠폰을 500분에게 드립니다"})
+    @DisplayName("'500분께' 는 시간이 아니라 사람 수다 — 요청의 '500명' 과 같은 수치로 본다")
+    void 높임말_분은_요청의_명과_같다(String written) {
+        assertEquals(List.of(), inventedTokens("<p>" + written + "</p>", "VIP 감사\n커피 쿠폰 500명"));
+    }
+
+    @Test
+    @DisplayName("요청에 없는 '100분께' 는 지어낸 수량이라 막는다 — 기간 경고로 빠져나가면 안 된다")
+    void 높임말_분으로_지어낸_수량은_막는다() {
+        List<Failure> f = ValueCheck.inventedInGenerated("<p>추첨으로 100분께 드립니다</p>", "이벤트\n쿠폰을 줘");
+
+        assertEquals(1, f.size(), f.toString());
+        assertEquals(FailureCode.VALUE_ADDED, f.get(0).kind());
+        assertTrue(f.get(0).isBlocking());
+    }
+
     @Test
     @DisplayName("경고에는 관리자에게 보일 원문이 담긴다 — detail 은 로그 코드라 공백이 _ 로 바뀐다")
     void 경고에_원문이_담긴다() {
