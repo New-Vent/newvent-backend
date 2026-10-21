@@ -245,6 +245,23 @@ class BlankCardMarkupTest {
                     "요청문 조건을 말해야 한다");
             assertFalse(p.contains("benefit-tag 를 쓴다. t-badge"),
                     "무조건 'benefit-tag 를 쓴다' 만 있으면 등록권 추가에도 한정이 붙는다");
+            assertTrue(p.contains("요청문에 없는 혜택 항목을 만들지 마라")
+                            || p.contains("요청문에 없는 혜택 항목을 더하지 마라"),
+                    "요청하지 않은 혜택 항목을 막지 않습니다");
+            assertTrue(p.contains("benefit-desc") && p.contains("benefit-value"),
+                    "설명 · 받는 값 과생성을 막지 않습니다");
+        }
+
+        @Test
+        @DisplayName("요청하지 않은 혜택 항목은 만들지 말라고 한다")
+        void 요청하지_않은_혜택은_만들지_않는다() {
+            String gen = PromptBuilder.generate("헬스장 등록권");
+            assertTrue(gen.contains("요청문에 없는 혜택 항목을 만들지 마라")
+                            || gen.contains("요청문에 없는 혜택 항목을 더하지 마라"));
+            assertFalse(gen.contains("설명은 항상 채운다"));
+            assertFalse(gen.contains("요청문에 적힌 조건을 한 문장으로"));
+            assertFalse(gen.contains("어느 영역이든"),
+                    "혜택 외 영역까지 막는 문장이 있으면 안 됩니다");
         }
     }
 
