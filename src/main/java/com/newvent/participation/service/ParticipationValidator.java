@@ -108,6 +108,15 @@ public class ParticipationValidator {
             case "IMMEDIATE" -> {
                 validateProbability(config.get("winProbability"));
                 requirePrizeName(config.get("prizeName"));
+
+                if (config.containsKey("maxWinnerCount")) {
+                    ParticipationConfigReader.readInteger(
+                        config.get("maxWinnerCount"),
+                        1,
+                        Integer.MAX_VALUE,
+                        this::invalidConfig
+                    );
+                }
             }
             case "GUARANTEED" -> requirePrizeName(config.get("prizeName"));
             default -> throw invalidConfig();
