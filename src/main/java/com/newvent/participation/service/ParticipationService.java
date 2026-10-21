@@ -77,7 +77,10 @@ public class ParticipationService {
         EventGameConfig config = configs.getFirst();
 
         Map<String, Object> submittedData = participationValidator.validate(config, request);
-        Map<String, Object> resultData = participationResultProcessor.process(config, submittedData);
+        Map<String, Object> resultData = isImmediateDrawLimitReached(eventId, config)
+            ? Map.of("status", "LOST")
+            : participationResultProcessor.process(config, submittedData);
+
         try {
             EventParticipation participation = participationRepository.saveAndFlush(EventParticipation.create(event, user, submittedData, resultData));
             return ParticipationCreateResponse.builder()
@@ -92,6 +95,29 @@ public class ParticipationService {
             }
             throw exception;
         }
+    }
+
+    private boolean isImmediateDrawLimitReached(Long eventId, EventGameConfig gameConfig) {
+        if (!"BASIC".equals(gameConfig.getGame().getCode())) {
+            return false;
+        }
+
+        Map<String, Object> config = gameConfig.getConfig();
+
+        if (!"IMMEDIATE".equals(config.get("resultMode")) || !config.containsKey("maxWinnerCount")) {
+            return false;
+        }
+
+        int maxWinnerCount = ParticipationConfigReader.readInteger(
+            config.get("maxWinnerCount"),
+            1,
+            Integer.MAX_VALUE,
+            () -> new ParticipationException(
+                ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED
+            )
+        );
+
+        return participationRepository.countWinnersByEventId(eventId) >= maxWinnerCount;
     }
 
     private int gradeRank(MembershipGrade grade) {

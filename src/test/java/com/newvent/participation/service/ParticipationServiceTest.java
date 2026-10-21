@@ -413,6 +413,139 @@ class ParticipationServiceTest  {
                 .saveAndFlush(any(EventParticipation.class));
     }
 
+    @Test
+    void 즉시추첨은_상한에_도달하면_확률이_100이어도_미당첨이다() {
+        prepareImmediateDraw(Map.of(
+            "resultMode", "IMMEDIATE",
+            "winProbability", 100,
+            "prizeName", "커피 쿠폰",
+            "maxWinnerCount", 2
+        ));
+
+        when(participationRepository.countWinnersByEventId(1L))
+            .thenReturn(2L);
+
+        ParticipationCreateResponse response = service.participate(1L, 7L, null);
+
+        assertEquals(Map.of("status", "LOST"), response.resultData());
+
+        ArgumentCaptor<EventParticipation> captor = ArgumentCaptor.forClass(EventParticipation.class);
+
+        verify(participationRepository).saveAndFlush(captor.capture());
+
+        assertEquals(
+            Map.of("status", "LOST"),
+            captor.getValue().getResultData()
+        );
+    }
+
+    @Test
+    void 즉시추첨은_기존_당첨자가_상한보다_많아도_미당첨이다() {
+        prepareImmediateDraw(Map.of(
+            "resultMode", "IMMEDIATE",
+            "winProbability", 100,
+            "prizeName", "커피 쿠폰",
+            "maxWinnerCount", 2
+        ));
+
+        when(participationRepository.countWinnersByEventId(1L))
+            .thenReturn(3L);
+
+        ParticipationCreateResponse response = service.participate(1L, 7L, null);
+
+        assertEquals(Map.of("status", "LOST"), response.resultData());
+    }
+
+    @Test
+    void 즉시추첨은_상한_직전까지_당첨될_수_있다() {
+        prepareImmediateDraw(Map.of(
+            "resultMode", "IMMEDIATE",
+            "winProbability", 100,
+            "prizeName", "커피 쿠폰",
+            "maxWinnerCount", 2
+        ));
+
+        when(participationRepository.countWinnersByEventId(1L))
+            .thenReturn(1L);
+
+        ParticipationCreateResponse response = service.participate(1L, 7L, null);
+
+        assertEquals(
+            Map.of("status", "WON", "prizeName", "커피 쿠폰"),
+            response.resultData()
+        );
+
+        ArgumentCaptor<EventParticipation> captor = ArgumentCaptor.forClass(EventParticipation.class);
+
+        verify(participationRepository).saveAndFlush(captor.capture());
+
+        assertEquals(
+            response.resultData(),
+            captor.getValue().getResultData()
+        );
+    }
+
+    @Test
+    void 즉시추첨은_수량이_남아도_확률이_0이면_미당첨이다() {
+        prepareImmediateDraw(Map.of(
+            "resultMode", "IMMEDIATE",
+            "winProbability", 0,
+            "prizeName", "커피 쿠폰",
+            "maxWinnerCount", 2
+        ));
+
+        when(participationRepository.countWinnersByEventId(1L))
+            .thenReturn(0L);
+
+        ParticipationCreateResponse response = service.participate(1L, 7L, null);
+
+        assertEquals(Map.of("status", "LOST"), response.resultData());
+    }
+
+    @Test
+    void 최대_당첨_인원이_없으면_기존_확률_추첨을_유지한다() {
+        prepareImmediateDraw(Map.of(
+            "resultMode", "IMMEDIATE",
+            "winProbability", 100,
+            "prizeName", "커피 쿠폰"
+        ));
+
+        ParticipationCreateResponse response = service.participate(1L, 7L, null);
+
+        assertEquals(
+            Map.of("status", "WON", "prizeName", "커피 쿠폰"),
+            response.resultData()
+        );
+
+        verify(participationRepository, never()).countWinnersByEventId(any());
+    }
+
+    private void prepareImmediateDraw(Map<String, Object> values) {
+        when(publicEventService.getPublicEvent(1L))
+            .thenReturn(event(EventStatus.PUBLISHED, MembershipGrade.NORMAL));
+
+        when(userService.getById(7L))
+            .thenReturn(user(MembershipGrade.NORMAL));
+
+        Game game = mock(Game.class);
+        when(game.getCode()).thenReturn("BASIC");
+        when(game.isActive()).thenReturn(true);
+
+        EventGameConfig config = mock(EventGameConfig.class);
+        when(config.getGame()).thenReturn(game);
+        when(config.getConfig()).thenReturn(values);
+
+        when(eventGameConfigRepository.findAllByEventId(1L))
+            .thenReturn(List.of(config));
+
+        when(participationRepository.saveAndFlush(any(EventParticipation.class)))
+            .thenAnswer(invocation -> {
+                EventParticipation participation = invocation.getArgument(0);
+                ReflectionTestUtils.setField(participation, "id", 30L);
+                return participation;
+            });
+    }
+
     private Event event(EventStatus status, MembershipGrade grade) {
         Event event = BeanUtils.instantiateClass(Event.class);
         ReflectionTestUtils.setField(event, "status", status);

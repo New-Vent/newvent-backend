@@ -24,6 +24,8 @@ public record ParticipationConfigRequest(
         @Schema(
                 description = "방식별 설정. BASIC 은 resultMode(DELAYED·IMMEDIATE·GUARANTEED)와 "
                         + "그에 필요한 winProbability(0~100)·prizeName. "
+                        + "IMMEDIATE는 maxWinnerCount(선택, 1 이상의 정수)로 최대 당첨 인원을 제한할 수 있다. "
+                        + "미설정 시 인원 제한 없이 확률을 적용하며, 상한 도달 후에는 미당첨 처리한다. "
                         + "SPORTS_PREDICTION 은 predictionOptions 배열, announcementAt(종료 이후 발표 시각), "
                         + "rewards 배열이 필요하다. 각 혜택은 rewardId, target(ALL_PARTICIPANTS·CORRECT_PREDICTIONS), "
                         + "selection(ALL·DRAW), prizeName을 포함하며, DRAW는 winnerCount도 필요하다. "
