@@ -34,7 +34,28 @@ public final class ButtonPaint {
 
     /** 버튼이 아니라 영역 배경을 말하는 말. "버튼" 이 같이 있으면 버튼으로 본다("배경 말고 버튼 자체를") */
     private static final Pattern BACKGROUND_TALK = Pattern.compile("배경|바탕|상자|박스|영역|전체");
-    private static final Pattern TEXT_TALK = Pattern.compile("글자|글씨|텍스트");
+
+    /**
+     * 구절을 자르는 자리 — 쉼표 · 마침표 · "그리고" · "~하고 / ~바꾸고".
+     *
+     * ★ 문장 전체에서 마지막 색을 고르면 "참여 버튼은 검정으로, 혜택 배경은 노랑으로" 에서
+     *   버튼이 노랑이 된다(PR #265 리뷰). 색은 버튼을 말한 구절에서만 고른다.
+     */
+    private static final Pattern CLAUSE_BREAK = Pattern.compile(
+            "[,.!?\\n]|\\s(?:그리고|그런데|또)\\s|(?:하고|바꾸고|해주고|변경하고|칠하고|만들고)(?=\\s|$)");
+
+    /** 버튼 말고 다른 영역을 가리키는 말. 이 말만 있는 구절의 색은 버튼 몫이 아니다 */
+    private static final Pattern OTHER_TARGET = Pattern.compile(
+            "혜택|배경|바탕|제목|소개|유의사항|참여 ?방법|일정|경품|쿠폰|자주 ?묻는|FAQ|페이지|전체|영역|상자|박스|배너");
+
+    /**
+     * 색 바로 앞에 "글자 · 글씨 · 텍스트 · 문구" 가 붙어 있는가 — "버튼 글자를 노란색으로", "글씨 색은 흰색".
+     *
+     * ★ 그 말이 문장 어딘가에 있다는 것만으로 글자색이라 보면 "버튼을 검정으로 바꾸고 텍스트는
+     *   지금 참여로 변경해줘" 가 배경색 대신 글자색만 바꾼다(PR #265 리뷰). 색과 붙어 있을 때만 글자색이다.
+     */
+    private static final Pattern TEXT_BEFORE_COLOR = Pattern.compile(
+            "(글자|글씨|텍스트|문구)\\s*(색깔|색상|컬러|색)?\\s*(을|를|은|는|이|가|도)?\\s*$");
 
     /** 색칠 요청에 흔히 붙는 말. 이것과 색 이름을 다 빼고도 남는 말이 있으면 모델이 할 일이 더 있다 */
     private static final Pattern PAINT_TALK = Pattern.compile(
@@ -46,14 +67,14 @@ public final class ButtonPaint {
 
     private static final String DARK_BOX = "v-cta-dark";
 
-    private final String colorName;
-    private final String hex;
-    private final boolean textOnly;
+    /** 버튼 배경색 이름. null 이면 배경은 건드리지 않는다 */
+    private final String background;
+    /** 버튼 글자색 이름. null 이면 배경을 칠할 때 밝기에 맞춰 정한다 */
+    private final String text;
 
-    private ButtonPaint(String colorName, String hex, boolean textOnly) {
-        this.colorName = colorName;
-        this.hex = hex;
-        this.textOnly = textOnly;
+    private ButtonPaint(String background, String text) {
+        this.background = background;
+        this.text = text;
     }
 
     /** 참여 버튼 색을 칠하라는 요청이면 칠할 색. 영역 배경 · 페이지 전체 색 이야기면 빈 값 */
@@ -61,21 +82,50 @@ public final class ButtonPaint {
         if (requestText == null || requestText.isBlank()) return Optional.empty();
         if (!requestText.contains("버튼") && BACKGROUND_TALK.matcher(requestText).find()) return Optional.empty();
 
-        // 여러 색이 나오면 마지막 것 — "파란 버튼을 빨간색으로" 의 목표는 뒤에 온다
-        ColorWords.Group picked = null;
-        int at = -1;
+        String background = null;
+        String text = null;
+        // 대상이 없는 첫 구절은 버튼이다 — 참여 버튼 영역을 고치는 호출이다
+        boolean onButton = true;
+        for (String clause : CLAUSE_BREAK.split(requestText)) {
+            if (clause.contains("버튼")) onButton = true;
+            else if (OTHER_TARGET.matcher(clause).find()) onButton = false;
+            // 대상이 없는 구절은 앞 구절을 잇는다 — "참여 버튼은 검정, 글자는 흰색으로"
+            if (!onButton) continue;
+            Color c = lastColor(clause);
+            if (c == null) continue;
+            if (TEXT_BEFORE_COLOR.matcher(clause.substring(0, c.at())).find()) text = c.name();
+            else background = c.name();
+        }
+        if (background == null && text == null) return Optional.empty();
+        return Optional.of(new ButtonPaint(background, text));
+    }
+
+    /**
+     * "참여 버튼도 그렇게 바꿔줘" — 직전 요청에서 색만 빌려 온다. 대상은 이번 요청(버튼)이다.
+     *
+     * ★ {@link #requestedBy} 로 읽으면 안 된다. 직전 요청 "제목을 빨간색으로" 는 제목 구절이라
+     *   버튼 몫이 아니라고 걸러진다. 여기서 빌리는 건 영역이 아니라 방식(색)이다 — PR #269 와 같은 원칙
+     */
+    public static Optional<ButtonPaint> carriedFrom(String previousRequest) {
+        if (previousRequest == null || previousRequest.isBlank()) return Optional.empty();
+        Color c = lastColor(previousRequest);
+        if (c == null) return Optional.empty();
+        boolean text = TEXT_BEFORE_COLOR.matcher(previousRequest.substring(0, c.at())).find();
+        return Optional.of(text ? new ButtonPaint(null, c.name()) : new ButtonPaint(c.name(), null));
+    }
+
+    private record Color(String name, int at) {}
+
+    /** 구절에서 마지막에 나온 색 — "파란 버튼을 빨간색으로" 의 목표는 뒤에 온다 */
+    private static Color lastColor(String clause) {
+        Color last = null;
         for (ColorWords.Group g : ColorWords.GROUPS) {
             for (String w : g.words()) {
-                int i = requestText.lastIndexOf(w);
-                if (i > at) {
-                    at = i;
-                    picked = g;
-                }
+                int i = clause.lastIndexOf(w);
+                if (i >= 0 && (last == null || i > last.at())) last = new Color(g.name(), i);
             }
         }
-        if (picked == null) return Optional.empty();
-        return Optional.of(new ButtonPaint(picked.name(), HEX.get(picked.name()),
-                TEXT_TALK.matcher(requestText).find()));
+        return last;
     }
 
     /** 색칠 말고는 시킨 게 없는가 — 그렇다면 모델을 부르지 않는다 */
@@ -100,30 +150,43 @@ public final class ButtonPaint {
         if (button == null) return html;
 
         Map<String, String> style = parseStyle(button.attr("style"));
-        if (textOnly) {
-            style.put("color", hex);
-        } else {
-            style.put("background-color", hex);
+        if (background != null) {
+            String bg = HEX.get(background);
+            style.put("background-color", bg);
             style.put("background-image", "none");
-            style.put("color", luminance(hex) > 0.5 ? "#111111" : "#ffffff");
+            style.put("color", text != null ? HEX.get(text) : (luminance(bg) > 0.5 ? "#111111" : "#ffffff"));
             // ★ 어두운 버튼을 어두운 상자에 두면 버튼이 사라진다. 그 상자는 "밝은 버튼" 을 위한 변형이다
             Element section = doc.body().selectFirst(Block.CTA.selector());
-            if (section != null && luminance(hex) < 0.06) section.removeClass(DARK_BOX);
+            if (section != null && luminance(bg) < 0.06) section.removeClass(DARK_BOX);
+        } else {
+            style.put("color", HEX.get(text));
         }
         button.attr("style", serializeStyle(style));
         return doc.body().html();
     }
 
     public String summary() {
-        return "참여 버튼 " + (textOnly ? "글자색" : "색") + "을 " + colorName + "으로 변경";
+        if (background != null && text != null) {
+            return "참여 버튼 색을 " + background + ", 글자색을 " + text + "으로 변경";
+        }
+        return background != null
+                ? "참여 버튼 색을 " + background + "으로 변경"
+                : "참여 버튼 글자색을 " + text + "으로 변경";
     }
 
+    /** 칠할 대표 색 — 배경이 있으면 배경, 없으면 글자 */
     String hex() {
-        return hex;
+        return HEX.get(background != null ? background : text);
     }
 
+    /** 글자색만 바꾸는가 */
     boolean textOnly() {
-        return textOnly;
+        return background == null;
+    }
+
+    /** 따로 정한 글자색. 없으면 null */
+    String textHex() {
+        return text == null ? null : HEX.get(text);
     }
 
     private static Element button(Document doc) {

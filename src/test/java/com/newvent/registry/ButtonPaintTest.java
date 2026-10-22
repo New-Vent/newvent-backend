@@ -43,6 +43,49 @@ class ButtonPaintTest {
         assertEquals("#e03131", ButtonPaint.requestedBy("파란 버튼을 빨간색으로 바꿔줘").orElseThrow().hex());
     }
 
+    @ParameterizedTest(name = "[{index}] {0}")
+    @ValueSource(strings = {"참여 버튼은 검정으로, 혜택 배경은 노랑으로", "혜택 배경은 노랑으로, 참여 버튼은 검정으로",
+            "제목은 빨강으로 바꾸고 버튼은 검정으로 해줘"})
+    @DisplayName("★ 리뷰 — 다른 영역의 색은 버튼 몫이 아니다. 버튼을 말한 구절의 색만 고른다")
+    void 버튼을_말한_구절의_색만_고른다(String request) {
+        assertEquals("#111111", ButtonPaint.requestedBy(request).orElseThrow().hex(), request);
+    }
+
+    @Test
+    @DisplayName("★ 리뷰 — '텍스트는 지금 참여로' 는 문구 변경이다. 배경색 요청을 글자색으로 바꾸지 않는다")
+    void 문구_변경은_글자색이_아니다() {
+        ButtonPaint p = ButtonPaint.requestedBy("버튼을 검정으로 바꾸고 텍스트는 지금 참여로 변경해줘").orElseThrow();
+
+        assertFalse(p.textOnly(), "배경색 요청이다");
+        assertEquals("#111111", p.hex());
+        assertEquals(null, p.textHex());
+    }
+
+    @Test
+    @DisplayName("배경색과 글자색을 같이 말하면 둘 다 칠한다 — '버튼은 검정, 글자는 흰색으로'")
+    void 배경과_글자를_같이_칠한다() {
+        ButtonPaint p = ButtonPaint.requestedBy("참여 버튼은 검정, 글자는 노란색으로").orElseThrow();
+
+        String style = button(p.apply(DARK_CTA)).attr("style");
+        assertTrue(style.contains("background-color:#111111"), style);
+        assertTrue(style.contains("color:#fcc419"), "정한 글자색이 밝기 자동값보다 먼저다: " + style);
+    }
+
+    @Test
+    @DisplayName("후속 요청은 직전 요청에서 색만 빌린다 — '제목을 빨간색으로' 의 빨강이 버튼 색이 된다")
+    void 직전_요청에서_색만_빌린다() {
+        assertTrue(ButtonPaint.requestedBy("제목을 빨간색으로 바꿔줘").isEmpty(), "제목 구절은 버튼 몫이 아니다");
+        assertEquals("#e03131", ButtonPaint.carriedFrom("제목을 빨간색으로 바꿔줘").orElseThrow().hex());
+        assertTrue(ButtonPaint.carriedFrom("제목 글자를 노란색으로").orElseThrow().textOnly());
+        assertTrue(ButtonPaint.carriedFrom("제목을 크게 바꿔줘").isEmpty(), "색이 없으면 빌릴 게 없다");
+    }
+
+    @Test
+    @DisplayName("대상이 없는 뒤 구절은 앞 구절(버튼)을 잇는다 — '참여 버튼 크게, 노란색으로'")
+    void 대상_없는_구절은_앞을_잇는다() {
+        assertEquals("#fcc419", ButtonPaint.requestedBy("참여 버튼 크게, 노란색으로").orElseThrow().hex());
+    }
+
     @Test
     @DisplayName("버튼 색 — 배경색 · 그라데이션 끄기 · 읽히는 글자색을 같이 칠하고 어두운 상자는 걷는다")
     void 버튼을_칠한다() {

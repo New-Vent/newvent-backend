@@ -781,7 +781,7 @@ public class EditService {
         ButtonPaint paint = block == Block.CTA && step.op() != Op.ADD
                 ? ButtonPaint.requestedBy(clean)
                         .or(() -> previousRequest == null ? Optional.empty()
-                                : ButtonPaint.requestedBy(RequestFilter.clean(previousRequest)))
+                                : ButtonPaint.carriedFrom(RequestFilter.clean(previousRequest)))
                         .filter(p -> p.fits(doc)).orElse(null)
                 : null;
         if (paint != null && (step.content() == null || step.content().isBlank()) && ButtonPaint.onlyPaint(clean)) {
