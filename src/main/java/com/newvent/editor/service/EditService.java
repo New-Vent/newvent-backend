@@ -40,6 +40,7 @@ import com.newvent.registry.AssetEdit;
 import com.newvent.registry.Block;
 import com.newvent.registry.BlockMerge;
 import com.newvent.registry.BlockValidator;
+import com.newvent.registry.ButtonPaint;
 import com.newvent.registry.ColorWords;
 import com.newvent.registry.Layout;
 import com.newvent.registry.PageShell;
@@ -772,6 +773,22 @@ public class EditService {
             }
         }
 
+        // 참여 버튼 색 — 배치처럼 서버가 칠한다. 모델에게는 버튼 색을 바꿀 수단이 없어서
+        //   v-cta-dark 를 골라 상자를 검게 칠했다 (ButtonPaint 주석)
+        // ★ "참여 버튼도 그렇게 바꿔줘" 는 이번 요청에 색이 없다 — 그 색은 직전 요청에 있다.
+        //   안 읽으면 모델로 넘어가 상자를 또 칠한다. previousRequest 는 생략된 후속 요청일 때만 온다
+        String clean = RequestFilter.clean(cmd.requestText());
+        ButtonPaint paint = block == Block.CTA && step.op() != Op.ADD
+                ? ButtonPaint.requestedBy(clean)
+                        .or(() -> previousRequest == null ? Optional.empty()
+                                : ButtonPaint.carriedFrom(RequestFilter.clean(previousRequest)))
+                        .filter(p -> p.fits(doc)).orElse(null)
+                : null;
+        if (paint != null && (step.content() == null || step.content().isBlank()) && ButtonPaint.onlyPaint(clean)) {
+            log.info("수정 — {} (event={}). 모델을 부르지 않는다", paint.summary(), cmd.eventId());
+            return new Applied(paint.apply(doc), paint.summary());
+        }
+
         job.to(GenerationJob.Phase.CALLING);
 
         // ★ 연산마다 새 묶음이다. 아래 로그가 jobId 와 묶음을 잇는 유일한 끈이다 —
@@ -815,7 +832,7 @@ public class EditService {
                     PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks(),
                             step.op() == Op.STYLE, addItem, uploaded,
                             RequestFilter.clean(cmd.requestText()), creating, createFormBlock),
-                    userPrompt(cmd, step, before, serverLayout != null, multiArea, previousRequest),
+                    userPrompt(cmd, step, before, serverLayout != null, multiArea, previousRequest, paint != null),
                     // ★ 항목을 하나 더하는 요청이면 검증기에 그렇게 알린다. 안 알리면
                     //   ITEM_ADDED 로 4회가 전부 터지고 관리자는 이유를 못 듣는다
                     // ★★ **같은 목록**을 검증기에도 준다. 여기 없는 src 는 <img> 째로 떨어진다 —
@@ -863,6 +880,12 @@ public class EditService {
                     PageShell.pickLayout(html, serverLayout));
             merged = PageShell.pickLayout(merged, serverLayout);
             summary = heroChanged ? summary + "; " + LAYOUT_SUMMARY : LAYOUT_SUMMARY;
+        }
+
+        // ★ 색 말고 시킨 게 더 있어서 모델을 불렀다 — 버튼 색은 모델 결과 위에 서버가 칠한다
+        if (paint != null) {
+            merged = paint.apply(merged);
+            summary = summary + "; " + paint.summary();
         }
 
         return new Applied(merged, summary);
@@ -938,7 +961,7 @@ public class EditService {
     }
 
     private static String userPrompt(EditCommand cmd, Decision.Run step, String before, boolean serverSetsLayout,
-                                     boolean multiArea, String previousRequest) {
+                                     boolean multiArea, String previousRequest, boolean serverPaintsButton) {
         StringJoiner s = new StringJoiner("\n");
         if (cmd.title() != null && !cmd.title().isBlank()) {
             s.add("이벤트 제목: " + cmd.title().strip());
@@ -969,6 +992,14 @@ public class EditService {
             s.add("[이번 호출은 한 영역만 고친다]");
             s.add("- 위 요청에는 다른 영역 이야기도 섞여 있다. **" + areaName(step.block()) + "** 영역에 해당하는 부분만 따른다.");
             s.add("- 다른 영역에 대한 말(색 · 문구 · 모양)은 이 영역에 적용하지 않는다.");
+            s.add("");
+        }
+
+        // ★ 버튼 색은 서버가 칠한다. 말해 두지 않으면 색 이야기를 읽고 상자를 칠하는 변형(v-cta-dark)을 또 고른다
+        if (serverPaintsButton) {
+            s.add("[참여 버튼 색은 서버가 따로 칠한다]");
+            s.add("- 요청의 색 이야기는 따르지 마라. 상자 배경을 칠하거나 색을 흉내 내는 모양(v-cta-dark 등)을 고르지 마라.");
+            s.add("- 색 말고 요청한 나머지만 고친다.");
             s.add("");
         }
 

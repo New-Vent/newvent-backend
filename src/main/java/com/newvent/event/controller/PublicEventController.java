@@ -51,7 +51,9 @@ public class PublicEventController {
 
     @Operation(
             summary = "공개 이벤트 상세",
-            description = "게시 HTML 에 이벤트 기간을 채워 준다. 없거나 게시 전이거나 휴지통에 있으면 404 (EVENT404-0), "
+            description = "publishedHtml 은 기간 · 참여 링크를 채운 완전한 HTML 문서다 (/e/{id} 와 같다 — head · event.css · "
+                    + "body 의 data-event-id · data-game · event-runtime.js 포함). iframe 문서로 띄운다. "
+                    + "없거나 게시 전이거나 휴지통에 있으면 404 (EVENT404-0), "
                     + "시작 전에도 조회할 수 있다. 종료일이 지났거나 종료됐으면 404 (EVENT404-2)")
     @GetMapping("/{eventId}")
     public ApiResponse<PublicEventResponse> getEvent(@PathVariable Long eventId) {
