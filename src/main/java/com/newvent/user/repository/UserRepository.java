@@ -12,13 +12,14 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import com.newvent.common.util.LikePattern;
 import com.newvent.user.domain.MembershipGrade;
 import com.newvent.user.domain.User;
 
 public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificationExecutor<User> {
 
-    // LIKE 의 이스케이프 문자. 검색어 안의 % _ 와 이 문자 자체에는 UserService 가 앞에 이 문자를 붙여서 넘긴다.
-    char LIKE_ESCAPE = '!';
+    // LIKE 의 이스케이프 문자. 검색어 안의 % _ 와 이 문자 자체에는 LikePattern 이 앞에 이 문자를 붙여서 넘긴다.
+    char LIKE_ESCAPE = LikePattern.ESCAPE;
 
     Optional<User> findByLoginId(String loginId);
 

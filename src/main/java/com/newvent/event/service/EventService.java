@@ -5,7 +5,6 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -20,6 +19,7 @@ import com.newvent.admin.domain.Admin;
 import com.newvent.admin.repository.AdminRepository;
 import com.newvent.asset.service.AssetCleanup;
 import com.newvent.common.response.PageResponse;
+import com.newvent.common.util.LikePattern;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventProgress;
 import com.newvent.event.domain.EventStatus;
@@ -97,7 +97,8 @@ public class EventService {
         }
 
         String keyword = name == null || name.isBlank() ? null : name.trim();
-        String namePattern = keyword == null ? null : "%" + keyword.toLowerCase(Locale.ROOT) + "%";
+        // % _ 는 글자 그대로 찾는다 — 쿼리의 ESCAPE '!' 와 짝이다
+        String namePattern = LikePattern.contains(keyword);
         Long idMatch = keyword != null && ID_KEYWORD.matcher(keyword).matches() ? Long.valueOf(keyword) : null;
 
         Page<Event> result = eventRepository.findAdminEvents(

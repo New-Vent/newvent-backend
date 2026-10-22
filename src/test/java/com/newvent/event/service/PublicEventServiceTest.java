@@ -194,6 +194,24 @@ class PublicEventServiceTest {
     }
 
     @Test
+    @DisplayName("keyword 안의 % _ 는 글자 그대로 찾도록 이스케이프해서 전달, 공백뿐이면 조건 없음")
+    void 목록조회_키워드_와일드카드_이스케이프() {
+        when(eventRepository.findPublicEvents(any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        publicEventService.getPublicEvents(null, "100%", null, 0, 10);
+        publicEventService.getPublicEvents(null, "a_b", null, 0, 10);
+        publicEventService.getPublicEvents(null, "   ", null, 0, 10);
+
+        verify(eventRepository).findPublicEvents(
+                isNull(), eq("%100!%%"), isNull(), any(OffsetDateTime.class), eq(PageRequest.of(0, 10)));
+        verify(eventRepository).findPublicEvents(
+                isNull(), eq("%a!_b%"), isNull(), any(OffsetDateTime.class), eq(PageRequest.of(0, 10)));
+        verify(eventRepository).findPublicEvents(
+                isNull(), isNull(), isNull(), any(OffsetDateTime.class), eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
     @DisplayName("progress를 지정하지 않으면 리포지토리에 null을 전달")
     void 목록조회_progress_없으면_null전달() {
         when(eventRepository.findPublicEvents(any(), any(), any(), any(), any()))
