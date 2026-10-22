@@ -111,7 +111,8 @@ public class AdminEventController {
             summary = "이벤트 정보·기간 수정",
             description = "보낸 필드만 바꾸고 생략하거나 null 인 필드는 그대로 둔다. templateKey 를 빈 문자열로 보내면 템플릿을 해제한다. "
                     + "상태는 바꾸지 않는다. 종료됐거나 게시 중인데 종료일시가 지났으면 409 (EVENT409-1), "
-                    + "게시 중에 템플릿을 바꾸거나 해제하면 409 (EVENT409-4), 바뀐 기간의 종료일시가 시작일시보다 늦지 않으면 400 (EVENT400-0)")
+                    + "게시 중에 템플릿을 바꾸거나 해제하면 409 (EVENT409-4), 바뀐 기간의 종료일시가 시작일시보다 늦지 않으면 400 (EVENT400-0), "
+                    + "바꾼 종료일시가 참여 설정의 발표 시각과 같거나 늦으면 409 (EVENT409-10)")
     @PatchMapping("/{id}")
     public ApiResponse<EventDetailResponse> update(
             @AuthenticationPrincipal AuthUser principal,

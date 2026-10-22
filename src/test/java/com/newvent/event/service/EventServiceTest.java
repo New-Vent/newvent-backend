@@ -137,6 +137,8 @@ class EventServiceTest {
     private final AdminRepository adminRepository = mock(AdminRepository.class);
     private final GenerationJobStore generationJobStore = mock(GenerationJobStore.class);
     private final AssetCleanup assetCleanup = mock(AssetCleanup.class);
+    /** 참여 설정의 발표 시각. 기본은 빈 값 — 발표 시각이 있는 설정이 없다 */
+    private final AnnouncementSchedule announcements = mock(AnnouncementSchedule.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-09-16T01:00:00+09:00"), SEOUL);
     private final OffsetDateTime now = OffsetDateTime.now(clock);
     /**
@@ -148,7 +150,7 @@ class EventServiceTest {
 
     private final EventService eventService =
             new EventService(eventRepository, eventTemplateRepository, eventVersionRepository,
-                    adminRepository, generationJobStore, assetCleanup, clock, publicEventService);
+                    adminRepository, generationJobStore, assetCleanup, clock, publicEventService, announcements);
 
     @Test
     @DisplayName("목록 조회는 리포지토리 결과를 마감임박과 함께 매핑한다")
@@ -1067,6 +1069,55 @@ class EventServiceTest {
         assertThat(updated.template()).isEqualTo("sports_cheer");
         assertThat(updated.grade()).isEqualTo(MembershipGrade.BEST);
         assertThat(updated.name()).isEqualTo("월드컵 스코어 맞추기");
+    }
+
+    @Test
+    @DisplayName("★ 종료일을 발표 시각 이후로 미루면 EVENT409-10 — 그대로 두면 추첨이 조용히 멈춘다")
+    void 종료일을_발표_시각_이후로_미루면_거절한다() {
+        Event event = draftWorldCupEvent();
+        when(announcements.mustFollowEnd(2L))
+                .thenReturn(Optional.of(OffsetDateTime.parse("2026-08-01T12:00:00+09:00")));
+
+        assertThatThrownBy(() -> eventService.update(1L, 2L, new EventUpdateRequest(
+                null, null, OffsetDateTime.parse("2026-08-05T23:59:59+09:00"), null, null)))
+                .isInstanceOf(EventException.class)
+                .extracting(ex -> ((EventException) ex).getErrorCode().getCode())
+                .isEqualTo(EventErrorCode.END_AFTER_ANNOUNCEMENT.getCode());
+        assertThat(event.getEndDate()).isEqualTo(OffsetDateTime.parse("2026-07-31T23:59:59+09:00"));
+    }
+
+    @Test
+    @DisplayName("종료일이 발표 시각과 같아도 거절한다 — 발표 시각은 종료 '이후' 여야 한다")
+    void 종료일이_발표_시각과_같으면_거절한다() {
+        draftWorldCupEvent();
+        OffsetDateTime at = OffsetDateTime.parse("2026-08-01T12:00:00+09:00");
+        when(announcements.mustFollowEnd(2L)).thenReturn(Optional.of(at));
+
+        assertThatThrownBy(() -> eventService.update(1L, 2L, new EventUpdateRequest(null, null, at, null, null)))
+                .isInstanceOf(EventException.class);
+    }
+
+    @Test
+    @DisplayName("발표 시각보다 앞인 종료일로 바꾸는 건 통과한다")
+    void 발표_시각보다_앞인_종료일은_통과한다() {
+        draftWorldCupEvent();
+        when(announcements.mustFollowEnd(2L))
+                .thenReturn(Optional.of(OffsetDateTime.parse("2026-08-10T12:00:00+09:00")));
+
+        EventDetailResponse updated = eventService.update(1L, 2L, new EventUpdateRequest(
+                null, null, OffsetDateTime.parse("2026-08-05T23:59:59+09:00"), null, null));
+
+        assertThat(updated.endAt()).isEqualTo(OffsetDateTime.parse("2026-08-05T23:59:59+09:00"));
+    }
+
+    @Test
+    @DisplayName("종료일을 안 바꾸면 발표 시각을 보지 않는다 — 이미 어긋난 이벤트도 이름은 고칠 수 있어야 한다")
+    void 종료일을_안_바꾸면_발표_시각을_보지_않는다() {
+        draftWorldCupEvent();
+
+        eventService.update(1L, 2L, new EventUpdateRequest("이름만 변경", null, null, null, null));
+
+        verifyNoInteractions(announcements);
     }
 
     @Test

@@ -143,9 +143,7 @@ public class ParticipationConfigService {
     private void requireAnnouncementAfterEnd(Event event, Game game, Map<String, Object> config) {
         boolean sports = "SPORTS_PREDICTION".equals(game.getCode());
 
-        boolean delayedBasic = "BASIC".equals(game.getCode()) && "DELAYED".equals(config.get("resultMode"));
-
-        if (!sports && !delayedBasic) {
+        if (!AnnouncementRule.mustFollowEnd(game.getCode(), config)) {
             return;
         }
 
