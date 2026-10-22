@@ -323,6 +323,81 @@ class ParticipationValidatorTest {
         assertEquals(ParticipationErrorCode.UNSUPPORTED_PARTICIPATION_TYPE, exception.getErrorCode());
     }
 
+    @Test
+    void 즉시추첨_최대_당첨_인원은_양의_정수를_허용한다() {
+        EventGameConfig config = config("BASIC", Map.of(
+            "resultMode", "IMMEDIATE",
+            "winProbability", 30,
+            "prizeName", "커피 쿠폰",
+            "maxWinnerCount", 10
+        ));
+
+        validator.validateConfig(config.getGame(), config.getConfig());
+
+        assertEquals(Map.of(), validator.validate(config, null));
+    }
+
+    @Test
+    void 즉시추첨_최대_당첨_인원이_없어도_허용한다() {
+        EventGameConfig config = config("BASIC", Map.of(
+            "resultMode", "IMMEDIATE",
+            "winProbability", 30,
+            "prizeName", "커피 쿠폰"
+        ));
+
+        validator.validateConfig(config.getGame(), config.getConfig());
+
+        assertEquals(Map.of(), validator.validate(config, null));
+    }
+
+    @Test
+    void 즉시추첨_최대_당첨_인원이_잘못되면_거부한다() {
+        Object[] invalidValues = {
+            0,
+            -1,
+            1.5,
+            "10",
+            true,
+            2_147_483_648L,
+            null
+        };
+
+        for (Object value : invalidValues) {
+            Map<String, Object> values = new java.util.HashMap<>();
+            values.put("resultMode", "IMMEDIATE");
+            values.put("winProbability", 30);
+            values.put("prizeName", "커피 쿠폰");
+            values.put("maxWinnerCount", value);
+
+            EventGameConfig config = config("BASIC", values);
+
+            ParticipationException exception = assertThrows(
+                ParticipationException.class,
+                () -> validator.validateConfig(
+                    config.getGame(),
+                    config.getConfig()
+                ),
+                "잘못된 최대 당첨 인원: " + value
+            );
+
+            assertEquals(
+                ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED,
+                exception.getErrorCode()
+            );
+
+            // 참여 API에서도 같은 잘못된 설정을 거부해야 한다.
+            ParticipationException participationException = assertThrows(
+                ParticipationException.class,
+                () -> validator.validate(config, null)
+            );
+
+            assertEquals(
+                ParticipationErrorCode.PARTICIPATION_NOT_CONFIGURED,
+                participationException.getErrorCode()
+            );
+        }
+    }
+
     private Game game(String code) {
         Game game = mock(Game.class);
         when(game.getCode()).thenReturn(code);

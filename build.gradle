@@ -25,6 +25,9 @@ repositories {
 }
 
 dependencies {
+    // Sentry 오류 모니터링
+    implementation 'io.sentry:sentry-spring-boot-4-starter:8.61.0'
+
 	// JPA 및 Hibernate
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 

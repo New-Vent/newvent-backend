@@ -77,7 +77,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             LEFT JOIN FETCH e.template t
             LEFT JOIN FETCH e.publishedVersion
             WHERE e.deletedAt IS NULL
-              AND (:namePattern IS NULL OR LOWER(e.title) LIKE :namePattern
+              AND (:namePattern IS NULL OR LOWER(e.title) LIKE :namePattern ESCAPE '!'
                     OR (:noId = false AND e.id = :idMatch))
               AND (:status IS NULL OR e.status = :status)
               AND (:progress IS NULL
@@ -92,7 +92,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             countQuery = """
             SELECT COUNT(e) FROM Event e
             WHERE e.deletedAt IS NULL
-              AND (:namePattern IS NULL OR LOWER(e.title) LIKE :namePattern
+              AND (:namePattern IS NULL OR LOWER(e.title) LIKE :namePattern ESCAPE '!'
                     OR (:noId = false AND e.id = :idMatch))
               AND (:status IS NULL OR e.status = :status)
               AND (:progress IS NULL
@@ -139,7 +139,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             WHERE e.deletedAt IS NULL
               AND e.status = com.newvent.event.domain.EventStatus.PUBLISHED
               AND (:templateCode IS NULL OR t.code = :templateCode)
-              AND (:keywordPattern IS NULL OR LOWER(e.title) LIKE :keywordPattern)
+              AND (:keywordPattern IS NULL OR LOWER(e.title) LIKE :keywordPattern ESCAPE '!')
               AND (:progress IS NULL
                     OR (:progress = 'UPCOMING' AND e.startDate > :now)
                     OR (:progress = 'ONGOING' AND (e.startDate IS NULL OR e.startDate <= :now)
@@ -153,7 +153,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             WHERE e.deletedAt IS NULL
               AND e.status = com.newvent.event.domain.EventStatus.PUBLISHED
               AND (:templateCode IS NULL OR t.code = :templateCode)
-              AND (:keywordPattern IS NULL OR LOWER(e.title) LIKE :keywordPattern)
+              AND (:keywordPattern IS NULL OR LOWER(e.title) LIKE :keywordPattern ESCAPE '!')
               AND (:progress IS NULL
                     OR (:progress = 'UPCOMING' AND e.startDate > :now)
                     OR (:progress = 'ONGOING' AND (e.startDate IS NULL OR e.startDate <= :now)

@@ -126,3 +126,10 @@ asset:
   public-base-url: ${ASSET_PUBLIC_BASE_URL:http://localhost:8080}
   max-bytes: 3145728        # 3MB. 배경 한 장에 넉넉하고, 1.9GB 박스가 버틴다
   max-per-event: 20
+
+# Sentry 오류 모니터링
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENVIRONMENT:local}
+  send-default-pii: false
+  traces-sample-rate: 0.0

@@ -293,6 +293,33 @@ class ParticipationConfigLockTest {
         assertFalse(allows(before, with(before, "winProbability", 10)));
     }
 
+    @Test
+    void 참여_후_최대_당첨_인원_변경과_삭제를_거부한다() {
+        Map<String, Object> before = with(IMMEDIATE, "maxWinnerCount", 10);
+
+        assertFalse(allows(before, with(before, "maxWinnerCount", 20)));
+
+        Map<String, Object> removed = new HashMap<>(before);
+        removed.remove("maxWinnerCount");
+
+        assertFalse(allows(before, removed));
+    }
+
+    @Test
+    void 참여_후_최대_당첨_인원을_추가할_수_없다() {
+        assertFalse(allows(
+            IMMEDIATE,
+            with(IMMEDIATE, "maxWinnerCount", 10)
+        ));
+    }
+
+    @Test
+    void 최대_당첨_인원이_같으면_통과한다() {
+        Map<String, Object> before = with(IMMEDIATE, "maxWinnerCount", 10);
+
+        assertTrue(allows(before, new HashMap<>(before)));
+    }
+
     // ── 거푸집 ────────────────────────────────────────────────────
 
     private boolean allows(Map<String, Object> before, Map<String, Object> after) {

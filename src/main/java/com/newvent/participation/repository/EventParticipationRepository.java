@@ -451,4 +451,16 @@ public interface EventParticipationRepository extends JpaRepository<EventPartici
         @Param("eventId") Long eventId,
         @Param("batchSize") int batchSize
     );
+
+    // 해당 이벤트에서 이미 당첨된 참여자 수
+    @Query(
+        value = """
+        SELECT COUNT(*)
+        FROM event_participations
+        WHERE event_id = :eventId
+          AND result_data ->> 'status' = 'WON'
+        """,
+        nativeQuery = true
+    )
+    long countWinnersByEventId(@Param("eventId") Long eventId);
 }

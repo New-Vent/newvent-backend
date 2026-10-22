@@ -24,6 +24,7 @@ import com.newvent.common.exception.code.CommonErrorCode;
 import com.newvent.common.exception.code.ErrorCode;
 import com.newvent.common.response.ErrorResponse;
 
+import io.sentry.Sentry;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -91,6 +92,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BaseException.class)
     public ResponseEntity<ErrorResponse> handleBaseException(BaseException e) {
         ErrorCode errorCode = e.getErrorCode();
+
+        if (errorCode.getHttpStatus().is5xxServerError()) {
+            Sentry.captureException(e);
+        }
 
         return ResponseEntity
                 .status(errorCode.getHttpStatus())
@@ -175,6 +180,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleException(Exception e) {
         log.error("exception : ", e);
+        Sentry.captureException(e);
 
         return ResponseEntity
                 .status(CommonErrorCode.INTERNAL_SERVER_ERROR.getHttpStatus())

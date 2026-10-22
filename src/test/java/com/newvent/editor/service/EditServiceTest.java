@@ -62,6 +62,12 @@ class EditServiceTest {
             lastRequest = requestText;
             return next;
         }
+
+        /** 직전 요청이 붙는 후속 요청도 가짜가 받는다 — 안 덮으면 진짜 라우터가 모델을 부르러 간다 */
+        @Override
+        public Optional<List<RawRoute>> route(LlmCallContext ctx, String requestText, String previousRequest) {
+            return route(ctx, requestText);
+        }
     }
 
     /** 재시도 루프. 결과를 줄 세워 놓고 하나씩 꺼낸다 */
@@ -1005,6 +1011,57 @@ class EditServiceTest {
         assertEquals(2, retry.calls());
         assertTrue(retry.prompts().get(0).contains("data-block=\"hero\""), "hero 가 먼저다 (Block 선언 순서)");
         assertTrue(savedHtml().contains("가을 대축제") && savedHtml().contains("지금 참여"));
+    }
+
+    @Test
+    @DisplayName("★ 참여 버튼 색만 시키면 모델 없이 서버가 버튼을 칠한다 — 모델은 상자(v-cta-dark)를 칠했다")
+    void 버튼_색은_서버가_칠한다() {
+        router.willReturn(new RawRoute("STYLE", "cta", null));
+
+        GenerationJob job = runOn("참여버튼 배경이 아니라, 참여버튼 자체를 검정색으로 바꿔줘", "cta");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(0, retry.calls(), "색만 칠하는 데 모델을 부르면 안 된다");
+        String cta = blockOf(savedHtml(), Block.CTA);
+        assertTrue(cta.contains("background-color:#111111") && cta.contains("background-image:none"), cta);
+    }
+
+    @Test
+    @DisplayName("★ '참여 버튼도 그렇게 바꿔줘' — 색은 직전 요청에서 읽어 모델 없이 서버가 칠한다")
+    void 후속_요청의_버튼_색은_직전_요청에서_읽는다() {
+        com.newvent.generation.service.ChatLog chat = new com.newvent.generation.service.ChatLog() {
+            @Override public Long request(Long eventId, String text, String targetBlock, boolean privacy) { return 7L; }
+            @Override public void target(Long requestId, String targetBlock) { }
+            @Override public void finish(Long requestId, Long eventId,
+                    com.newvent.generation.domain.ChatMessageStatus status, String reply) { }
+            @Override public String previousRequest(Long eventId, Long beforeRequestId) { return "제목을 빨간색으로 바꿔줘"; }
+        };
+        service = new EditService(router, retry, versions, new EventGuard.Open(), jobs,
+                LlmCallRecorder.none(), gateway, new com.newvent.filtering.FilteringPolicy(), chat);
+        router.willReturn(new RawRoute("STYLE", "cta", null));
+
+        GenerationJob job = runOn("참여 버튼도 그렇게 바꿔줘", "cta");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(0, retry.calls(), "색은 직전 요청에 있다 — 모델을 부르면 상자를 또 칠한다");
+        String cta = blockOf(savedHtml(), Block.CTA);
+        assertTrue(cta.contains("background-color:#e03131"), cta);
+    }
+
+    @Test
+    @DisplayName("색 말고 시킨 게 더 있으면 모델이 나머지를 고치고, 버튼 색은 그 위에 서버가 칠한다")
+    void 버튼_색과_다른_요청이_섞이면_둘_다() {
+        router.willReturn(new RawRoute("STYLE", "cta", null));
+        retry.willReturn(ok("<section data-block=\"cta\" class=\"v-cta-pill\"><button class=\"btn\">참여하기</button></section>"));
+
+        GenerationJob job = runOn("참여 버튼을 검정 알약 모양으로", "cta");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(1, retry.calls());
+        assertTrue(retry.prompts().get(0).contains("참여 버튼 색은 서버가 따로 칠한다"),
+                "모델에게 색을 맡기지 말라고 해야 또 상자를 칠하지 않는다");
+        String cta = blockOf(savedHtml(), Block.CTA);
+        assertTrue(cta.contains("v-cta-pill") && cta.contains("background-color:#111111"), cta);
     }
 
     @Test

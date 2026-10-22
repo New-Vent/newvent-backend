@@ -1,6 +1,5 @@
 package com.newvent.event.service;
 
-import java.util.Locale;
 import java.util.UUID;
 
 import org.jsoup.Jsoup;
@@ -12,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.admin.repository.AdminRepository;
 import com.newvent.common.response.PageResponse;
+import com.newvent.common.util.LikePattern;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventTemplate;
 import com.newvent.event.dto.request.*;
@@ -48,9 +48,7 @@ public class TemplateLibraryService {
 
     public PageResponse<TemplateLibraryResponse> list(Long adminId, String keyword, Boolean builtin,
             boolean includeInactive, int page, int size) {
-        String pattern = keyword == null || keyword.isBlank() ? null
-                : "%" + keyword.trim().toLowerCase(Locale.ROOT)
-                        .replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
+        String pattern = LikePattern.contains(keyword);
         var result = templates.findLibrary(adminId, pattern, builtin, includeInactive, PageRequest.of(page, size));
         return PageResponse.of(result.getContent().stream().map(TemplateLibraryResponse::from).toList(),
                 page, size, result.getTotalElements());

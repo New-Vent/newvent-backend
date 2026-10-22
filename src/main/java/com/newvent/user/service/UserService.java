@@ -1,7 +1,6 @@
 package com.newvent.user.service;
 
 import java.time.LocalDate;
-import java.util.Locale;
 
 import org.springframework.data.domain.Page;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -9,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.common.response.PageResponse;
+import com.newvent.common.util.LikePattern;
 import com.newvent.user.domain.MembershipGrade;
 import com.newvent.user.domain.User;
 import com.newvent.user.dto.response.AdminUserSummaryResponse;
@@ -89,16 +89,9 @@ public class UserService {
     }
 
     // 검색어를 소문자 "%값%" LIKE 패턴으로 만든다. 값 안의 % _ 는 글자 그대로 찾도록 이스케이프. 비면 조건 없음(null)
+    // 이벤트 검색과 같은 규칙이라 LikePattern 하나를 같이 쓴다.
     static String likePattern(String keyword) {
-        if (keyword == null || keyword.isBlank()) {
-            return null;
-        }
-        String escape = String.valueOf(UserRepository.LIKE_ESCAPE);
-        String escaped = keyword.strip().toLowerCase(Locale.ROOT)
-                .replace(escape, escape + escape)
-                .replace("%", escape + "%")
-                .replace("_", escape + "_");
-        return "%" + escaped + "%";
+        return LikePattern.contains(keyword);
     }
 
     private User findByIdOrThrow(Long id) {
