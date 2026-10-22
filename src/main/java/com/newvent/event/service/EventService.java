@@ -62,6 +62,9 @@ public class EventService {
      */
     private final PublicEventService publicEventService;
 
+    /** 종료일을 바꿀 때 참여 설정의 발표 시각과 어긋나는지 본다 */
+    private final AnnouncementSchedule announcements;
+
     public EventService(
             EventRepository eventRepository,
             EventTemplateRepository eventTemplateRepository,
@@ -70,7 +73,8 @@ public class EventService {
             GenerationJobStore generationJobStore,
             AssetCleanup assetCleanup,
             Clock clock,
-            PublicEventService publicEventService) {
+            PublicEventService publicEventService,
+            AnnouncementSchedule announcements) {
         this.eventRepository = eventRepository;
         this.eventTemplateRepository = eventTemplateRepository;
         this.eventVersionRepository = eventVersionRepository;
@@ -79,6 +83,7 @@ public class EventService {
         this.assetCleanup = assetCleanup;
         this.clock = clock;
         this.publicEventService = publicEventService;
+        this.announcements = announcements;
     }
 
     /** 검색어(name)가 숫자뿐이면 이름이 맞는 것과 ID 가 같은 것을 함께 찾는다. */
@@ -282,6 +287,14 @@ public class EventService {
         OffsetDateTime endAt = request.endAt() != null ? request.endAt() : event.getEndDate();
         if (startAt != null && endAt != null && !endAt.isAfter(startAt)) {
             throw new EventException(EventErrorCode.INVALID_PERIOD);
+        }
+        // ★ 종료일을 바꿀 때만 본다 — 이름만 고치는 요청까지 막으면 이미 어긋난 이벤트는 아무것도 못 고친다
+        if (request.endAt() != null && !request.endAt().equals(event.getEndDate())) {
+            announcements.mustFollowEnd(id)
+                    .filter(announcementAt -> !announcementAt.isAfter(request.endAt()))
+                    .ifPresent(announcementAt -> {
+                        throw new EventException(EventErrorCode.END_AFTER_ANNOUNCEMENT);
+                    });
         }
         EventTemplate template = request.templateKey() != null
                 ? resolveTemplate(request.templateKey(), adminId)
