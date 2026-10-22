@@ -57,6 +57,27 @@ public class JpaChatLog implements ChatLog {
         }
     }
 
+    // ★ 못 읽어도 수정은 진행한다 — 맥락은 있으면 좋은 것이지 없으면 막을 일이 아니다
+    @Override
+    public String previousRequest(Long eventId, Long beforeRequestId) {
+        if (eventId == null || beforeRequestId == null) {
+            return null;
+        }
+        try {
+            return tx.execute(status -> messages
+                    .findTop3ByEventIdAndRoleAndIdLessThanOrderByIdDesc(eventId, ChatRole.ADMIN, beforeRequestId)
+                    .stream()
+                    .map(ChatMessage::getContent)
+                    // 개인정보가 감지된 요청은 원문 대신 자리표시자가 저장돼 있다 — 맥락으로 못 쓴다
+                    .filter(c -> c != null && !c.isBlank() && !ChatMessage.PRIVACY_PLACEHOLDER.equals(c))
+                    .findFirst()
+                    .orElse(null));
+        } catch (RuntimeException e) {
+            log.warn("직전 요청을 읽지 못했습니다 (event={})", eventId, e);
+            return null;
+        }
+    }
+
     @Override
     public void target(Long requestId, String targetBlock) {
         if (requestId == null) {

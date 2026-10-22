@@ -255,7 +255,12 @@ public class EditService {
             // ★ 채팅 내역을 먼저 끝맺는다. 자리를 비우면 다음 요청이 바로 들어와 메시지 순서가 뒤섞일 수 있다.
             //   남기다 터져도 자리는 반드시 비운다.
             try {
-                chatLog.finish(job, cmd.eventId(), "수정을 반영했습니다.");
+                // ★ 일부만 반영된 경우 그 안내를 채팅 내역에도 남긴다 — 작업 상태에만 담으면
+                //   대화를 다시 볼 때 "반영했습니다" 만 남아 무엇이 빠졌는지 알 수 없다
+                String doneReply = job.message() == null || job.message().isBlank()
+                        ? "수정을 반영했습니다."
+                        : "수정을 반영했습니다. " + job.message();
+                chatLog.finish(job, cmd.eventId(), doneReply);
             } finally {
                 // ★ 반드시 비운다. 안 비우면 그 이벤트는 다음 작업을 영원히 못 한다
                 jobs.finish(job);
@@ -291,7 +296,14 @@ public class EditService {
         //   이미지가 사라진다. 안 부르면 그 일이 생기지 않는다. AssetEdit 주석 참고.
         if (applyAssetEdit(job, cmd, doc, base)) return;
 
-        List<Decision.Run> plan = planAll(job, cmd, doc);
+        // ★ 생략된 후속 요청이면 직전 요청 한 줄을 들고 간다 — 없으면 null 이고 어디에도 안 붙는다.
+        //   ★★ 라우터보다 **먼저** 읽는다. 라우터가 op 을 고르는 데도 이 줄이 필요하다 —
+        //     없으면 "자주 묻는 질문도 그렇게 바꿔줘" 를 STYLE 로 읽어 모양만 바뀌었다(실측).
+        String previous = FollowUp.needsPrevious(cmd.requestText())
+                ? chatLog.previousRequest(cmd.eventId(), job.chatRequestId())
+                : null;
+
+        List<Decision.Run> plan = planAll(job, cmd, doc, previous);
         if (plan == null) return;               // 되묻기 · 거절 — job 에 문구가 담겼다
         if (!cmd.hasBlocks()) {
             // 관리자가 영역을 안 골랐으면 라우터가 정한 영역을 채팅 내역에 남긴다
@@ -313,7 +325,7 @@ public class EditService {
             if (job.checkCancelled()) return;
             String beforeStep = BlockValidator.blockOf(doc, step.block());
 
-            Applied applied = apply(job, cmd, doc, step, plan.size() > 1);
+            Applied applied = apply(job, cmd, doc, step, plan.size() > 1, previous);
             if (applied == null) return;
 
             doc = applied.html();
@@ -345,6 +357,16 @@ public class EditService {
                     plan.stream().map(r -> r.op() + ":" + r.block().key()).toList());
             job.fail(cannotDo(plan, cmd.hasBlocks()));
             return;
+        }
+
+        // ★★ 일부만 안 바뀌었으면 **그 사실을 말한다.** 전에는 noChange 를 모아 놓고
+        //   위 "전부 안 바뀜" 검사에만 쓰고 버렸다 — "A 하고 B 해줘" 에서 A 만 되어도
+        //   안내는 A 의 요약만 나가서, 관리자는 B 도 된 줄 알았다(실측).
+        //   단계는 옮기지 않는다. 저장은 그대로 진행된다
+        if (!noChange.isEmpty()) {
+            StringJoiner undone = new StringJoiner(", ");
+            for (Decision.Run r : noChange) undone.add(r.block().desc().split("[—.]")[0].strip());
+            job.notice(undone + " 영역은 바꾸지 못했습니다. 나머지는 반영했습니다.");
         }
 
         // ★ 연산을 다 통과한 뒤 한 번만 옮긴다. 진행률은 뒤로 가지 않는다
@@ -573,7 +595,7 @@ public class EditService {
      * 요청문을 실행 계획으로 바꾼다. <b>모델을 부르는 건 라우터 1회뿐이다.</b>
      *
      */
-    private List<Decision.Run> planAll(GenerationJob job, EditCommand cmd, String doc) {
+    private List<Decision.Run> planAll(GenerationJob job, EditCommand cmd, String doc, String previousRequest) {
         job.to(GenerationJob.Phase.ROUTING);
 
         // 영역을 고른 채 "페이지를 벤토 배치로"
@@ -594,7 +616,7 @@ public class EditService {
         // ★ requestId = jobId 다. 라우터 호출만 이 작업과 로그에서 이어진다.
         LlmCallContext ctx = LlmCallContext.of(cmd.eventId(), job.jobId());
 
-        Optional<List<RawRoute>> routed = router.route(ctx, RequestFilter.clean(cmd.requestText()));
+        Optional<List<RawRoute>> routed = router.route(ctx, RequestFilter.clean(cmd.requestText()), previousRequest);
         // ★ 관리자가 영역을 골랐으면 "어디를" 은 정해졌다. 라우터 결과는 "무엇을"(op · content)만 쓴다.
         //   라우터가 아무것도 못 읽었어도 되묻지 않는다 — 고른 영역을 EDIT 으로 고친다
         if (cmd.hasBlocks()) {
@@ -715,7 +737,8 @@ public class EditService {
     /**
      * 연산 하나를 문서에 반영한다.
      */
-    private Applied apply(GenerationJob job, EditCommand cmd, String doc, Decision.Run step, boolean multiArea) {
+    private Applied apply(GenerationJob job, EditCommand cmd, String doc, Decision.Run step, boolean multiArea,
+                          String previousRequest) {
         Block block = step.block();
         String before = BlockValidator.blockOf(doc, block);
 
@@ -792,7 +815,7 @@ public class EditService {
                     PromptBuilder.edit(block, isTemplateBlock(before), !cmd.hasBlocks(),
                             step.op() == Op.STYLE, addItem, uploaded,
                             RequestFilter.clean(cmd.requestText()), creating, createFormBlock),
-                    userPrompt(cmd, step, before, serverLayout != null, multiArea),
+                    userPrompt(cmd, step, before, serverLayout != null, multiArea, previousRequest),
                     // ★ 항목을 하나 더하는 요청이면 검증기에 그렇게 알린다. 안 알리면
                     //   ITEM_ADDED 로 4회가 전부 터지고 관리자는 이유를 못 듣는다
                     // ★★ **같은 목록**을 검증기에도 준다. 여기 없는 src 는 <img> 째로 떨어진다 —
@@ -915,7 +938,7 @@ public class EditService {
     }
 
     private static String userPrompt(EditCommand cmd, Decision.Run step, String before, boolean serverSetsLayout,
-                                     boolean multiArea) {
+                                     boolean multiArea, String previousRequest) {
         StringJoiner s = new StringJoiner("\n");
         if (cmd.title() != null && !cmd.title().isBlank()) {
             s.add("이벤트 제목: " + cmd.title().strip());
@@ -926,6 +949,18 @@ public class EditService {
         //   보여 주면 "좌우로 나눠줘" 를 읽고 hero 자체 모양(v-hero-split)을 바꾼다 — 배치를 서버로 옮긴 이유가 그것이다
         s.add(RequestFilter.clean(serverSetsLayout ? Layout.withoutLayoutTalk(cmd.requestText()) : cmd.requestText()));
         s.add("");
+
+        // ★★ "자주 묻는 질문도 **그렇게** 바꿔줘" 처럼 어떻게가 생략된 요청이면 직전 요청을 붙인다.
+        //   붙이지 않으면 '반말로' 가 입력 어디에도 없어 모델이 지어낸다(실측 — 답이 "아니요" 가 됐다).
+        //   ★ 대상은 주지 않는다. 이 호출이 맡은 영역은 이미 정해져 있고,
+        //     직전 요청의 영역까지 따라가면 요청하지 않은 곳이 바뀐다
+        if (previousRequest != null && !previousRequest.isBlank()) {
+            s.add("[직전 요청 — 위 요청에서 생략된 '어떻게' 가 여기 있다]");
+            s.add(RequestFilter.clean(previousRequest).strip());
+            s.add("- 위 요청에 어떻게 바꿀지가 없으면 직전 요청의 **방식만** 그대로 따른다.");
+            s.add("- 직전 요청이 말한 **영역은 따라가지 마라.** 이번에 고치는 영역은 아래 [현재 내용] 하나뿐이다.");
+            s.add("");
+        }
 
         // ★ 영역마다 모델을 따로 부르는데 요청문은 통째로 간다. 여러 영역이 섞인 요청("전체는 파랑으로 바꾸고 혜택 배경은
         //   노랑으로")에서 모델이 다른 영역의 색을 집었다 — 혜택 호출에서 노랑 대신 파랑을 골랐다(실측, PR #226 리뷰).
