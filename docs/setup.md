@@ -419,3 +419,48 @@ ASSET_PUBLIC_BASE_URL=https://newvent.duckdns.org
 `docker compose down -v` 는 **DB 볼륨과 함께 이 볼륨도 지웁니다** — 올린 이미지가 전부 사라집니다.
 
 개발용 계정 (V7 마이그레이션): 관리자 `admin / admin1234!`, 사용자 `user01 ~ / user1234!` — 운영 DB 에서는 반드시 바꿉니다.
+
+## 13. Sentry 오류 모니터링 (선택)
+
+`SENTRY_DSN`을 설정하면 백엔드 오류를 Sentry로 전송합니다.
+설정하지 않으면 오류를 전송하지 않습니다.
+
+| 환경변수             | 용도                                    | 기본값  |
+|----------------------|-----------------------------------------|---------|
+| `SENTRY_DSN`         | 백엔드 Sentry 프로젝트의 오류 수집 주소 | 빈 값   |
+| `SENTRY_ENVIRONMENT` | Sentry에서 오류를 구분할 실행 환경      | `local` |
+
+### 로컬 실행
+
+IntelliJ의 `Run → Edit Configurations → Environment variables`에 추가합니다.
+터미널 실행 시에는 해당 터미널의 환경변수로 설정합니다.
+
+```text
+SENTRY_DSN=<백엔드 Sentry 프로젝트 DSN>
+SENTRY_ENVIRONMENT=local
+```
+
+### 배포 환경
+
+EC2 서버의 `/opt/newvent/.env`에 추가합니다.
+실제 값이 들어간 파일은 Git에 커밋하지 않습니다.
+
+```dotenv
+SENTRY_DSN=<백엔드 Sentry 프로젝트 DSN>
+SENTRY_ENVIRONMENT=production
+```
+
+기존 `docker-compose.app.yml`의 `env_file` 설정으로 앱 컨테이너에 전달됩니다.
+변경한 환경변수는 재배포 등으로 앱 컨테이너를 재생성한 뒤 적용됩니다.
+
+`SENTRY_ENVIRONMENT`는 `SPRING_PROFILES_ACTIVE`와 별개입니다.
+`prod` 프로파일로 실행하더라도 Sentry 환경은 별도로 지정해야 합니다.
+
+### 수집 범위 및 확인
+
+- 전역 예외 처리에서 예상하지 못한 예외와 `BaseException`의 5xx 오류를 직접 전송합니다.
+- 기존 4xx 예외 처리에는 수동 전송을 추가하지 않습니다.
+- 개인정보 기본 전송과 성능 추적은 비활성화합니다.
+- 오류 메시지에 민감정보가 포함되지 않도록 확인합니다.
+- 배포 후 Sentry Issues에서 `newvent-backend` 프로젝트의 `production` 오류 수집을 확인합니다.
+- 검증에 사용한 임시 테스트 코드는 확인 후 제거합니다.
