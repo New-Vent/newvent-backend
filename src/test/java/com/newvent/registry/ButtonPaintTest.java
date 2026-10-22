@@ -86,7 +86,7 @@ class ButtonPaintTest {
 
     @ParameterizedTest(name = "[{index}] {0}")
     @ValueSource(strings = {"참여버튼을 검정색으로 바꿔줘", "참여버튼 배경이 아니라, 참여버튼 자체를 검정색으로 바꿔줘",
-            "버튼 색 좀 더 진한 빨강으로 해주세요"})
+            "버튼 색 좀 더 진한 빨강으로 해주세요", "참여 버튼도 그렇게 바꿔줘"})
     @DisplayName("색 말고 시킨 게 없으면 모델을 부르지 않는다")
     void 색만_시킨_요청(String request) {
         assertTrue(ButtonPaint.onlyPaint(request), request);

@@ -57,11 +57,31 @@ public class RouteService {
      *            {@code LlmCallContext.anonymous()} 를 주면 기록하지 않는다(테스트용)
      */
     public Optional<List<RawRoute>> route(LlmCallContext ctx, String requestText) {
+        return callRouter(ctx, requestText, null);
+    }
+
+    /**
+     * @param previousRequest 생략된 후속 요청일 때만 준다. null 이면 기존과 **완전히 같은 호출**이다
+     *
+     * ★ 직전 요청이 없으면 두 인자짜리를 거친다 — 그 쪽을 재정의한 가짜 라우터(테스트)가 그대로 걸린다
+     */
+    public Optional<List<RawRoute>> route(LlmCallContext ctx, String requestText, String previousRequest) {
+        if (previousRequest == null || previousRequest.isBlank()) {
+            return route(ctx, requestText);
+        }
+        return callRouter(ctx, requestText, previousRequest);
+    }
+
+    private Optional<List<RawRoute>> callRouter(LlmCallContext ctx, String requestText, String previousRequest) {
         if (requestText == null || requestText.isBlank()) return Optional.empty();
+
+        boolean withPrevious = previousRequest != null && !previousRequest.isBlank();
 
         // ★ 여기서 예외가 나면 실패 행은 문이 남긴다. 아래는 안 돈다
         LlmClient.Response res = gateway.call(ctx,
-                LlmClient.Request.router(PromptBuilder.router(), requestText.strip()));
+                LlmClient.Request.router(
+                        withPrevious ? PromptBuilder.routerWithPrevious() : PromptBuilder.router(),
+                        PromptBuilder.routerUser(requestText, withPrevious ? previousRequest : null)));
 
         // ★ 잘린 출력은 파싱 전에 버린다.
         if (res.truncated()) {

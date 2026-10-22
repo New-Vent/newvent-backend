@@ -1,5 +1,6 @@
 package com.newvent.generation.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -11,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 
 import com.newvent.generation.domain.ChatMessage;
 import com.newvent.generation.domain.ChatMessageStatus;
+import com.newvent.generation.domain.ChatRole;
 
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> {
 
@@ -22,6 +24,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     @Query(value = "SELECT m FROM ChatMessage m WHERE m.event.id = :eventId ORDER BY m.createdAt ASC, m.id ASC",
             countQuery = "SELECT COUNT(m) FROM ChatMessage m WHERE m.event.id = :eventId")
     Page<ChatMessage> findPageByEventId(@Param("eventId") Long eventId, Pageable pageable);
+
+    // 이 요청 바로 앞의 관리자 요청들. 개인정보 자리표시자가 섞일 수 있어 3건을 받아 호출부가 고른다
+    List<ChatMessage> findTop3ByEventIdAndRoleAndIdLessThanOrderByIdDesc(
+            Long eventId, ChatRole role, Long beforeId);
 
     // 서버 기동 시 정리용 - 바꾼 행 수를 돌려준다
     @Modifying

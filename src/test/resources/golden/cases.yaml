@@ -1,0 +1,328 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  생성 · 수정 골든 셋 — 모델이 하는 일만 잰다
+#
+#  ★★ 범위를 좁힌 이유
+#    서버가 결정하는 부분(이미지 배치 · 블록 삭제 · 개인정보 필터 · 지원 안 되는 색)은
+#    **모델이 필요 없고 이미 단위 테스트가 있다.**
+#      AssetEditTest      50개 — "없는 번호를 말하면 있는 번호를 알려 준다",
+#                                "업로드가 없으면 CannotDo", "여러 장이면 번호를 되묻는다",
+#                                "이미지만 들어가고 문구는 한 글자도 안 바뀐다"
+#      EditServiceTest       — "삭제는 모델을 부르지 않고 섹션만 걷어낸다",
+#                                "필수 영역 삭제는 거절한다",
+#                                "삭제만 있으면 모델 몫의 상한을 잡지 않는다"
+#                              (라우터를 고정해서 돌리는 저비용 테스트다)
+#    그 동작을 여기서 다시 검사하면 **같은 것을 느리고 비싸고 불안정하게** 재는 꼴이다.
+#    그래서 이 파일은 **모델이 하는 일 두 가지**만 잰다.
+#      ① 라우터가 요청을 맞게 분류하는가   → 기준선 미달이면 테스트가 실패한다
+#      ② 생성·수정된 HTML 이 요청대로인가  → 숫자를 보고한다 (단정하지 않는다)
+#
+#  ★ 채점기는 새로 만들지 않았다. BlockValidator · ValueCheck 가 내는 FailureCode 가 채점표다.
+#
+#  ★ 실행: GOLDEN_SET=1 일 때만 켜진다. CI 는 주지 않으므로 PR 마다 돈이 안 나간다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 라우터 분류 정확도.
+#   ★ 이 섹션은 **실패하면 테스트도 실패한다** (routerMinPercent).
+#     분류는 HTML 생성보다 안정적이라 기준선을 걸어도 덜 흔들린다.
+#
+#   ★★ 85 는 **잠정치다.** 표본이 15개라 한 건이 약 6.7%p 를 움직인다 —
+#     85% 는 사실상 "13개 이상 통과" 다. 모델을 바꾸지 않은 상태로 서너 번 돌려
+#     최저값을 보고 다시 정하는 게 맞다. 결과표에 모델명과 프롬프트 판본이 찍히니
+#     지난 실행과 비교해 모델 변동인지 회귀인지 가를 수 있다.
+#
+#   ★ 1차 실측(2026-10-21, gemma-3-27b): 라우터 섹션에서 잘못 재던 4건을 판정기로 옮기기 전
+#     12/15 = 80%. 옮긴 뒤 수치는 다시 재야 한다. 그래서 80 으로 내려 두고 시작한다.
+routerMinPercent: 80
+
+router:
+  # ── 영역과 연산을 맞게 고르는가 ────────────────────────────────────────
+  - request: "혜택을 더 구체적인 말투로 다듬어줘"
+    expectTarget: benefits
+    expectOp: EDIT
+    exactTargets: [benefits]     # 혜택 하나만 건드려야 한다
+  - request: "혜택을 체크 목록으로 바꿔줘"
+    expectTarget: benefits
+    expectOp: STYLE
+  - request: "혜택에 채용 연계 상담을 추가해줘"
+    expectTarget: benefits
+    expectOp: ADD
+    exactTargets: [benefits]
+  - request: "참여 방법 설명을 더 짧게 줄여줘"
+    expectTarget: steps
+    expectOp: EDIT
+  - request: "자주 묻는 질문 영역을 지워줘"
+    expectTarget: faq
+    expectOp: DELETE
+    exactTargets: [faq]
+  - request: "제목을 좀 더 크게 해줘"
+    expectTarget: hero
+    expectOp: STYLE
+    exactTargets: [hero]
+  - request: "일정에 수료식 시작 시각을 추가해줘"
+    expectTarget: schedule
+    expectOp: ADD
+
+  # ── 페이지 전체 요청을 영역별로 쪼개지 않는가 ──────────────────────────
+  #   쪼개면 작업이 상한(3개)을 넘겨 통째로 버려지고 조용히 되묻기로 빠진다.
+  - request: "전체 색감을 마젠타로 바꿔줘"
+    expectOp: STYLE
+    maxOps: 1
+  - request: "전체 분위기를 수료를 축하하는 분위기로 바꿔줘"
+    expectOp: STYLE
+    maxOps: 1
+  - request: "페이지 전체를 원래 색으로 되돌려줘"
+    expectOp: STYLE
+    maxOps: 1
+    forbidOp: DELETE          # "되돌리기" 를 삭제로 읽으면 안 된다
+
+  # ── 두 가지를 한 번에 말했을 때 ────────────────────────────────────────
+  - request: "혜택 문구를 더 화려하게 바꿔주고, 제목을 좀 더 크게 해줘"
+    expectTargets: [benefits, hero]
+    exactTargets: [benefits, hero]   # 말한 둘만 — 셋째를 건드리면 안 된다
+    maxOps: 3
+
+
+# 판정기(editJudge) — "이게 페이지 수정 요청인가".
+#   ★★ 이건 라우터의 일이 아니다. 실제 EditService 는 라우터보다 먼저 editJudge 로 거른다.
+#     라우터는 "수정 요청이 맞다" 는 전제에서 영역만 고르는 부품이라,
+#     "오늘 날씨 어때?" 에도 뭔가를 고르는 게 자연스럽다 — 탓할 부품이 아니다.
+judge:
+  - request: "안녕"
+    expect: ASK_BACK
+  - request: "오늘 날씨 어때?"
+    expect: ASK_BACK
+  - request: "이 이벤트 참여자가 몇 명이야?"
+    expect: ASK_BACK
+  # 정상 요청은 통과시켜야 한다 — 다 막으면 수정 기능이 죽는다
+  # ★ "좀 더 예쁘게 해줘" 를 뺐다. 1차 실측에서 판정기가 "수정 요청" 이라고 답했는데,
+  #   생각해 보면 맞는 답이다 — 페이지를 고쳐 달라는 말이 맞고, **모호한 것**일 뿐이다.
+  #   모호함은 판정기가 아니라 라우터·되묻기가 보는 몫이라 기대값이 틀렸다.
+  - request: "좀 더 예쁘게 해줘"
+  - request: "혜택을 체크 목록으로 바꿔줘"
+  - request: "전체 색감을 마젠타로 바꿔줘"
+
+
+# HTML 생성 품질. 숫자를 보고만 한다 — 모델 출력이 매번 달라 단정하면 실패가 잦다.
+generate:
+
+  # ── 트리거: 요청한 영역만 나와야 한다 ──────────────────────────────────
+  - name: 수료식
+    request: |
+      LG유플러스 유레카 4기 수료식 안내 이벤트 페이지입니다.
+      수료생 전원에게 수료증과 기념 굿즈를 드리고, 우수 수료생에게는 추천서를 드립니다.
+      참여 방법은 앱에서 이벤트 페이지에 접속한 뒤 참석 신청 버튼을 누르면 됩니다.
+      일정은 신청 마감일 10월 28일, 수료식 10월 28일 오후 5시, 장소는 멀티캠퍼스입니다.
+      자주 묻는 질문도 넣어줘. 동반 가족도 참석할 수 있나요? 1인 1명까지 가능합니다.
+      주차 지원이 되나요? 2시간 무료입니다.
+      잡지처럼 여백을 살린 분위기로 만들어줘.
+    title: LG유플러스 유레카 4기 수료식
+    period: 2026.10.28 ~ 2026.10.28
+    expectBlocks: [hero, benefits, steps, schedule, faq, cta]
+    forbidBlocks: [prize, coupon, compare, stats]
+    expectThemeIn: [editorial]
+    # ★ 요청한 핵심 문구가 실제로 들어갔나 — 블록만 있고 내용이 비면 소용없다
+    expectContains: ["수료증", "추천서", "멀티캠퍼스", "10월 28일"]
+
+  - name: 데이터3GB
+    request: "데이터 3GB 를 주는 신규 가입 이벤트 페이지 만들어줘. 참여 방법도 알려줘."
+    title: 신규 가입 데이터 이벤트
+    period: 2026.11.01 ~ 2026.11.30
+    expectBlocks: [hero, benefits, steps, cta]
+    forbidBlocks: [faq, schedule, prize, coupon]
+    expectContains: ["3GB"]
+
+  - name: 경품추첨
+    # ★ 1차 실측: "발표는" 은 일정 트리거가 아니라 schedule 이 안 나왔다 — 정상 동작이었다.
+    #   트리거 단어("일정")를 넣어 의도한 것을 시험한다.
+    request: "응모하면 추첨으로 경품을 주는 이벤트. 1등 노트북, 2등 상품권. 일정은 응모 마감 12월 4일, 당첨자 발표일 12월 5일."
+    title: 연말 경품 추첨
+    expectBlocks: [hero, prize, steps, schedule, cta]
+    forbidBlocks: [faq, compare]
+    expectContains: ["노트북", "상품권", "12월 5일"]
+
+  # ★ 반대쪽 — 날짜를 말해도 트리거 단어가 없으면 일정 영역을 만들면 안 된다
+  - name: 트리거없는날짜
+    request: "앱 출시 기념 이벤트. 11월 20일에 시작해서 11월 30일에 끝납니다."
+    title: 앱 출시 기념
+    expectBlocks: [hero, cta]
+    forbidBlocks: [schedule]
+
+  - name: FAQ만
+    request: "멤버십 혜택 안내 페이지. 자주 묻는 질문 섹션 꼭 넣어줘."
+    title: 멤버십 혜택 안내
+    expectBlocks: [hero, benefits, faq, cta]
+    forbidBlocks: [schedule, prize, coupon]
+
+  - name: 최소요청
+    request: "가을 응원 이벤트 페이지 만들어줘."
+    title: 가을 응원 이벤트
+    # 최소 요청에 일정·FAQ·경품이 따라 나오면 과생성이다
+    expectBlocks: [hero, cta]
+    forbidBlocks: [schedule, faq, prize, coupon, compare]
+
+  # ── 분위기 · 색: 요청문의 단어가 레지스트리 선택으로 이어지는가 ─────────
+  - name: 분위기_프리미엄
+    request: "VIP 고객 감사 이벤트. 프리미엄한 분위기로 만들어줘."
+    title: VIP 감사 이벤트
+    expectBlocks: [hero, benefits, cta]
+    expectThemeIn: [aurora, vip]
+
+  - name: 분위기_아기자기
+    request: "아기자기한 느낌의 사전예약 이벤트 페이지."
+    title: 서비스 사전예약
+    expectBlocks: [hero, cta]
+    expectThemeIn: [papercraft, bloom]
+
+  - name: 색_마젠타
+    request: "신규 가입 이벤트 페이지. 전체 색감을 마젠타로 해줘."
+    title: 신규 가입 이벤트
+    expectBlocks: [hero, cta]
+    expectPaletteContains: ["brand", "magenta", "pink"]
+
+  # ── 값 날조: 요청에 없는 숫자 · 기간 · 약속이 생기면 안 된다 ────────────
+  - name: 날조_숫자없음
+    request: "추석 선물 증정 이벤트 페이지. 선물은 홍삼 세트."
+    title: 추석 선물 증정
+    expectBlocks: [hero, benefits, cta]
+    expectContains: ["홍삼"]
+    forbidFailures: [VALUE_ADDED, VALUE_ADDED_PERIOD, VALUE_ADDED_PROMISE]
+
+  - name: 날조_기간없음
+    request: "구독 서비스 소개 페이지. 혜택 세 가지만 보여줘."
+    title: 구독 서비스 소개
+    expectBlocks: [hero, benefits]
+    forbidFailures: [VALUE_ADDED_PERIOD, VALUE_ADDED]
+
+  - name: 날조_선착순금지
+    request: "앱 설치하면 쿠폰 주는 이벤트."
+    title: 앱 설치 쿠폰
+    expectBlocks: [hero, cta]
+    forbidContains: ["선착순", "한정", "조기 마감"]
+    forbidFailures: [VALUE_ADDED, VALUE_ADDED_PROMISE]
+
+  # ── 구조 ───────────────────────────────────────────────────────────────
+  - name: 유의사항_침범금지
+    request: "통신 요금제 할인 이벤트. 유의사항도 자세히 적어줘."
+    title: 요금제 할인 이벤트
+    expectBlocks: [hero, cta]
+    forbidFailures: [WROTE_SERVER_BLOCK]
+
+  - name: 긴요청_잘림금지
+    request: |
+      스포츠 승부 예측 이벤트입니다. 일정은 경기 11월 15일 오후 7시,
+      홈팀과 원정팀 중 승리 팀을 맞히면 응모권을 드립니다.
+      혜택은 치킨 기프티콘, 영화 예매권, 응원 머플러 세 가지입니다.
+      참여 방법은 앱에서 예측을 고르고 응모 버튼을 누르면 됩니다.
+      자주 묻는 질문도 넣어주세요. 중복 응모가 되나요? 1인 1회입니다.
+      결과는 언제 나오나요? 경기 종료 다음 날입니다.
+    title: 스포츠 승부 예측
+    period: 2026.11.10 ~ 2026.11.15
+    expectBlocks: [hero, benefits, steps, schedule, faq, cta]
+    expectContains: ["치킨", "예매권", "머플러", "11월 15일"]
+    forbidFailures: [TRUNCATED, PLACEHOLDER]
+
+  - name: 자리표시자_금지
+    request: "브랜드 론칭 기념 이벤트 페이지 만들어줘."
+    title: 브랜드 론칭 기념
+    expectBlocks: [hero, cta]
+    forbidFailures: [PLACEHOLDER, EMPTY_BLOCK]
+
+  - name: 항목수_부족금지
+    request: "회원 등급별 혜택을 소개하는 페이지. 혜택을 여러 개 보여줘."
+    title: 등급별 혜택 소개
+    expectBlocks: [hero, benefits, cta]
+    forbidFailures: [FEW_ITEMS, EMPTY_BLOCK]
+
+
+# HTML 수정 품질. 라우터가 고른 블록만 다시 만들고, 나머지가 보존되는지 본다.
+edit:
+
+  - name: 말투만_다듬기
+    base: 수료식
+    op: EDIT
+    request: "혜택을 더 구체적인 말투로 다듬어줘"
+    expectTarget: benefits
+    itemDelta: 0
+    # ★ keepItems 를 뺀다 — 실측 근거.
+    #   "말투를 다듬어줘" 는 글이 바뀌는 게 요청의 목적이라, 앞 6글자 비교가 성립하지 않는다.
+    #   3차 실측에서 4개 항목이 모두 "사라진 것" 으로 잡혔는데, 실제로는 말투만 다듬어진 것이었다.
+    #   항목 수(itemDelta 0)와 값 날조(VALUE_ADDED)로 조이는 것으로 충분하다.
+    keepPalette: true
+    keepTheme: true
+    forbidFailures: [EXTRA_BLOCK, ITEM_ADDED, VALUE_ADDED, SLOT_LOST, ID_LOST]
+
+  - name: 모양만_체크목록
+    base: 수료식
+    op: STYLE
+    request: "혜택을 체크 목록으로 바꿔줘"
+    expectTarget: benefits
+    itemDelta: 0
+    keepItems: true            # 모양만 바뀌어야 한다 — 문구는 그대로
+    keepPalette: true
+    forbidFailures: [ITEM_ADDED, VALUE_ADDED, VALUE_REMOVED]
+
+  - name: 모양만_벤토격자
+    base: 수료식
+    op: STYLE
+    request: "혜택을 벤토 격자로 바꿔줘"
+    expectTarget: benefits
+    itemDelta: 0
+    keepItems: true
+    keepPalette: true
+    forbidFailures: [ITEM_ADDED, VALUE_REMOVED]
+
+  # ── 항목 추가: 딱 하나만, 요청한 문구가 들어가고, 기존은 보존 ───────────
+  - name: 항목추가_하나만
+    base: 수료식
+    op: ADD
+    request: "혜택에 채용 연계 상담을 추가해줘"
+    expectTarget: benefits
+    itemDelta: 1
+    expectContains: ["채용"]   # 새 칸에 요청한 말이 실제로 들어갔나
+    forbidContains: ["선착순", "한정"]
+    keepItems: true            # 기존 수료증 · 굿즈 · 추천서가 그대로 남았나
+    keepPalette: true
+    forbidFailures: [VALUE_ADDED, VALUE_ADDED_PROMISE, EXTRA_BLOCK]
+
+  - name: 항목추가_상품권
+    base: 경품추첨
+    op: ADD
+    request: "경품에 3등 문화상품권을 추가해줘"
+    expectTarget: prize
+    itemDelta: 1
+    expectContains: ["문화상품권"]
+    keepItems: true            # 1등 노트북 · 2등 상품권이 살아 있나
+    forbidFailures: [VALUE_REMOVED]
+
+  - name: 항목추가_두개금지
+    base: 데이터3GB
+    op: ADD
+    request: "혜택에 데이터 쿠폰 한 가지만 더해줘"
+    expectTarget: benefits
+    itemDelta: 1
+    keepItems: true
+    forbidFailures: [VALUE_ADDED]
+
+  # ── 색과 분위기는 서로 침범하지 않아야 한다 ────────────────────────────
+  - name: 색만_마젠타
+    base: 수료식
+    op: STYLE
+    request: "전체 색감을 마젠타로 바꿔줘"
+    expectPaletteChanged: true
+    keepTheme: true
+    keepItems: true            # 색만 바꿨는데 문구가 바뀌면 안 된다
+
+  - name: 분위기만_축하
+    base: 수료식
+    op: STYLE
+    request: "전체 분위기를 수료를 축하하는 분위기로 바꿔줘"
+    expectThemeChanged: true
+    keepPalette: true
+    keepItems: true
+
+  - name: 색만_차분하게
+    base: 데이터3GB
+    op: STYLE
+    request: "전체 색을 차분한 톤으로 바꿔줘"
+    expectPaletteChanged: true
+    keepTheme: true

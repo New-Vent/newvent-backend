@@ -62,6 +62,12 @@ class EditServiceTest {
             lastRequest = requestText;
             return next;
         }
+
+        /** 직전 요청이 붙는 후속 요청도 가짜가 받는다 — 안 덮으면 진짜 라우터가 모델을 부르러 간다 */
+        @Override
+        public Optional<List<RawRoute>> route(LlmCallContext ctx, String requestText, String previousRequest) {
+            return route(ctx, requestText);
+        }
     }
 
     /** 재시도 루프. 결과를 줄 세워 놓고 하나씩 꺼낸다 */
@@ -1018,6 +1024,28 @@ class EditServiceTest {
         assertEquals(0, retry.calls(), "색만 칠하는 데 모델을 부르면 안 된다");
         String cta = blockOf(savedHtml(), Block.CTA);
         assertTrue(cta.contains("background-color:#111111") && cta.contains("background-image:none"), cta);
+    }
+
+    @Test
+    @DisplayName("★ '참여 버튼도 그렇게 바꿔줘' — 색은 직전 요청에서 읽어 모델 없이 서버가 칠한다")
+    void 후속_요청의_버튼_색은_직전_요청에서_읽는다() {
+        com.newvent.generation.service.ChatLog chat = new com.newvent.generation.service.ChatLog() {
+            @Override public Long request(Long eventId, String text, String targetBlock, boolean privacy) { return 7L; }
+            @Override public void target(Long requestId, String targetBlock) { }
+            @Override public void finish(Long requestId, Long eventId,
+                    com.newvent.generation.domain.ChatMessageStatus status, String reply) { }
+            @Override public String previousRequest(Long eventId, Long beforeRequestId) { return "제목을 빨간색으로 바꿔줘"; }
+        };
+        service = new EditService(router, retry, versions, new EventGuard.Open(), jobs,
+                LlmCallRecorder.none(), gateway, new com.newvent.filtering.FilteringPolicy(), chat);
+        router.willReturn(new RawRoute("STYLE", "cta", null));
+
+        GenerationJob job = runOn("참여 버튼도 그렇게 바꿔줘", "cta");
+
+        assertEquals(GenerationJob.Phase.DONE, job.phase(), job.message());
+        assertEquals(0, retry.calls(), "색은 직전 요청에 있다 — 모델을 부르면 상자를 또 칠한다");
+        String cta = blockOf(savedHtml(), Block.CTA);
+        assertTrue(cta.contains("background-color:#e03131"), cta);
     }
 
     @Test
