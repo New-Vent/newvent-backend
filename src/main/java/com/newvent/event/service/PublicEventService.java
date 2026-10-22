@@ -2,7 +2,6 @@ package com.newvent.event.service;
 
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Locale;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -10,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.newvent.common.response.PageResponse;
+import com.newvent.common.util.LikePattern;
 import com.newvent.event.domain.Event;
 import com.newvent.event.domain.EventProgress;
 import com.newvent.event.domain.EventStatus;
@@ -121,7 +121,8 @@ public class PublicEventService {
             String category, String keyword, EventProgress progress, int page, int size) {
         OffsetDateTime now = OffsetDateTime.now();
         String progressName = progress == null ? null : progress.name();
-        String keywordPattern = keyword == null ? null : "%" + keyword.toLowerCase(Locale.ROOT) + "%";
+        // % _ 는 글자 그대로 찾는다 — 쿼리의 ESCAPE '!' 와 짝이다. 공백뿐인 검색어는 조건 없음으로 본다
+        String keywordPattern = LikePattern.contains(keyword);
 
         Page<Event> result = eventRepository.findPublicEvents(
                 category, keywordPattern, progressName, now, PageRequest.of(page, size));

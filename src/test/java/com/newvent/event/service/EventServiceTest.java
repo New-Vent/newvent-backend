@@ -285,6 +285,21 @@ class EventServiceTest {
     }
 
     @Test
+    @DisplayName("이름 안의 % _ 는 글자 그대로 찾도록 이스케이프해서 전달한다")
+    void 이름검색_와일드카드는_이스케이프한다() {
+        when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        eventService.findAdminEvents(1L, "100%", null, null, null, null, 0, 10);
+        eventService.findAdminEvents(1L, "a_b", null, null, null, null, 0, 10);
+
+        verify(eventRepository).findAdminEvents(
+                eq("%100!%%"), isNull(), isNull(), isNull(), eq(now), isNull(), isNull(), any());
+        verify(eventRepository).findAdminEvents(
+                eq("%a!_b%"), isNull(), isNull(), isNull(), eq(now), isNull(), isNull(), any());
+    }
+
+    @Test
     @DisplayName("검색어가 숫자뿐이면 이름 패턴과 함께 ID 로도 찾는다")
     void 숫자_검색어는_ID로도_찾는다() {
         when(eventRepository.findAdminEvents(any(), any(), any(), any(), any(), any(), any(), any()))
