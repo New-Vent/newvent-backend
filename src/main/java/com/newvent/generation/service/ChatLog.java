@@ -20,6 +20,12 @@ public interface ChatLog {
         public void finish(Long requestId, Long eventId, ChatMessageStatus status, String reply) {}
     };
 
+    // 생략된 후속 요청("자주 묻는 질문도 그렇게 바꿔줘")이 가리키는 직전 관리자 요청. 없으면 null
+    // ★ 기본이 null 이다 — 내역을 안 남기는 구현(NOOP · 테스트)은 그대로 둔다
+    default String previousRequest(Long eventId, Long beforeRequestId) {
+        return null;
+    }
+
     // 관리자의 요청이 받아들여진 경우 admin 메시지를 PENDING 으로 남긴다.
     Long request(Long eventId, String text, String targetBlock, boolean privacy);
 

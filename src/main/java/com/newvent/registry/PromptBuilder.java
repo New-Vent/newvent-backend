@@ -695,6 +695,34 @@ public final class PromptBuilder {
         return s.toString();
     }
 
+    /**
+     * 생략된 후속 요청("자주 묻는 질문도 **그렇게** 바꿔줘")일 때만 쓴다.
+     *
+     * ★★ {@link #router()} 는 글자 한 자도 건드리지 않았다 — 벤치마크 · 골든 셋의 라우터 축이
+     *   재는 것이 그 글자다. 맥락이 있는 호출에만 규칙 세 줄이 더 붙는다.
+     * ★ 실측 — 이 규칙이 없으면 "자주 묻는 질문도 그렇게 바꿔줘" 를 STYLE 로 읽어
+     *   모양만 바뀌고 말투는 그대로였다. STYLE 프롬프트는 문구를 못 고치게 막는다.
+     */
+    public static String routerWithPrevious() {
+        StringJoiner s = new StringJoiner("\n");
+        s.add(router());
+        s.add("");
+        s.add("직전 요청이 함께 주어졌을 때:");
+        s.add("- 이번 요청에 **어떻게** 바꿀지가 없고 직전 요청을 가리키는 말(그렇게 · 똑같이 · ~도)이 있으면, 직전 요청의 **동작(op)과 방식**을 따른다.");
+        s.add("- target 은 **이번 요청**에서만 고른다. 직전 요청이 말한 영역을 쓰지 마라.");
+        s.add("- 말투 · 문구 · 내용을 바꾸는 요청은 EDIT 이다. STYLE 은 색 · 크기 · 굵기 · 분위기에만 쓴다.");
+        return s.toString();
+    }
+
+    /** 직전 요청이 없으면 요청문 그대로다 */
+    public static String routerUser(String requestText, String previousRequest) {
+        String t = requestText == null ? "" : requestText.strip();
+        if (previousRequest == null || previousRequest.isBlank()) {
+            return t;
+        }
+        return "[직전 요청] " + previousRequest.strip() + "\n[이번 요청] " + t;
+    }
+
     private static final String ROUTER_RULES = """
             출력 형식:
             {"ops":[{"op":"<동작>","target":"<영역 이름>","content":<사용자가 쓴 문구 또는 null>}]}
