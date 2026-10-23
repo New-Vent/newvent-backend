@@ -22,7 +22,6 @@ import com.newvent.event.exception.EventException;
 import com.newvent.event.repository.EventRepository;
 import com.newvent.event.repository.EventVersionRepository;
 import com.newvent.generation.repository.LlmCallLogRepository;
-import com.newvent.rag.exception.RagErrorCode;
 import com.newvent.rag.exception.RagException;
 import com.newvent.rag.repository.RagChunkRepository;
 
