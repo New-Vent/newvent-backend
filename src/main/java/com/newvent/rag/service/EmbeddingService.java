@@ -19,6 +19,8 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.newvent.common.response.PageResponse;
@@ -115,10 +117,26 @@ public class EmbeddingService {
 		if (versionId == null) {
 			return runReindex(eventId, null);
 		}
-		// 선점 실패는 그대로 쳐낸다 — 이놈의 finally 가 남의 자리를 풀지 않게 guarding 으로 골라 반납한다
+		// 선점 실패는 그대로 쳐낸다 — 반납은 이 실행이 뽑은 자리 한정으로 골라 한다
 		final boolean guarding = bindReindexGuard(eventId, versionId);
 		if (!guarding) {
 			throw new RagException(RagErrorCode.REINDEX_IN_PROGRESS);
+		}
+		// ★ 반납은 커밋·롤백 '완료' 이후다. finally 에서 바로 풀면 커밋 전 창이 남는다 — 다음
+		//   요청이 자리를 뽑고 DELETE 를 날리면 선 트랜잭션의 신규 청크를 못 본다(READ COMMITTED
+		//   는 문장 시작 시점 스냅샷을 쓰고, 잠금 대기에서 풀려도 뒤에 들어온 가시 행을 다시
+		//   스캔하지 않는다). 지우지 않은 신규 청크 위로 INSERT 하면 유니크 제약을 다시 만난다
+		//   (NEWVENT-BACKEND-6 재발). 트랜잭션 동기화가 없는 경로(프록시를 안 타는 직접 호출
+		//   테스트 등)는 finally 반납으로 흘러간다.
+		boolean releaseOnTx = false;
+		if (TransactionSynchronizationManager.isSynchronizationActive()) {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override
+				public void afterCompletion(int status) {
+					unbindReindexGuard(eventId, versionId);
+				}
+			});
+			releaseOnTx = true;
 		}
 		long startMs = System.currentTimeMillis();
 		try {
@@ -132,9 +150,7 @@ public class EmbeddingService {
 					null, System.currentTimeMillis() - startMs, false, errorOf(e));
 			throw e;
 		} finally {
-			// 실패 흐름에서도 키는 반납한다. 해제가 커밋 직전이라 짧은 틈은 남지만, 다음 실행의
-			// DELETE 는 아직 커밋 못 한 행의 잠금에서 대기하므로 DB 차원에서 겹치지 않는다.
-			if (guarding) {
+			if (guarding && !releaseOnTx) {
 				unbindReindexGuard(eventId, versionId);
 			}
 		}

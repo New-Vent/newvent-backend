@@ -15,6 +15,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.newvent.event.domain.EventVersion;
 import com.newvent.event.exception.EventErrorCode;
@@ -149,5 +151,29 @@ class EmbeddingServiceReindexGuardTest {
 
         assertEquals(0, service.reindex(1L, 10L, null));
         assertTrue(service.bindReindexGuard(1L, 10L));
+    }
+
+    @Test
+    @DisplayName("트랜잭션이 살아 있으면 커밋·롤백 완료 이후에 자리를 반납한다 — afterCompletion")
+    void 커밋완료후_자리반납() {
+        EventVersionRepository versions = mock(EventVersionRepository.class);
+        RagChunkRepository chunks = mock(RagChunkRepository.class);
+        EmbeddingService service = service(versions, chunks);
+        when(versions.findByIdAndEventId(10L, 1L))
+                .thenReturn(Optional.of(EventVersion.htmlOnly("   ")));
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            assertEquals(0, service.reindex(1L, 10L, null));
+            // 메서드가 돌아온 시점은 커밋 전 — 자리가 아직 남아 있어야 새 요청이 못 뽑는다
+            assertFalse(service.bindReindexGuard(1L, 10L));
+            // 트랜잭션 완료를 흉내 낸다 — 프록시가 커밋 뒤 부르는 콜백
+            for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
+            }
+            assertTrue(service.bindReindexGuard(1L, 10L));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 }
