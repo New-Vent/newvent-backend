@@ -7,7 +7,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
@@ -34,6 +36,8 @@ import com.newvent.rag.dto.response.QualityTrendResponse;
 import com.newvent.rag.dto.response.ReindexAllResponse;
 import com.newvent.rag.dto.response.ReindexAllStatus;
 import com.newvent.rag.dto.response.ReindexLogSummaryResponse;
+import com.newvent.rag.exception.RagErrorCode;
+import com.newvent.rag.exception.RagException;
 import com.newvent.rag.repository.RagChunkRepository;
 import com.newvent.rag.repository.RagReindexLogRepository;
 import com.newvent.rag.service.RagChunkingService.Chunk;
@@ -67,6 +71,16 @@ public class EmbeddingService {
 	private volatile ReindexAllResponse lastResult;
 	private volatile Long reindexRequestedBy;
 
+	// ★ 재색인 경합 가드 (NEWVENT-BACKEND-6·7). 색인은 지우기 → 임베딩(원격 호출이라 수십 초) →
+	//   다시 넣기 순서라, 같은 버전에 실행이 겹치면 유니크 제약 위반(중복 삽입)과 삭제 줄 수 검증
+	//   실패(이미 지워진 행)를 번갈아 냈다. 전체·전체는 reindexing 플래그가, 전체 도중에 새 단건은
+	//   컨트롤러 409 가 막는다. 남은 두 경합 — ① 같은 버전 단건 중복 실행 ② 단건 진행 중 전체 시작 —
+	//   을 진행 중 버전 키 집합으로 막는다.
+	private final Set<String> inFlightVersions = ConcurrentHashMap.newKeySet();
+
+	// 선점·해제에서 검사와 기록을 잠금 하나로 묶는다 — check-then-act 틈에서 같은 키가 두 번 뽑히지 않게
+	private final Object reindexGuard = new Object();
+
 	public EmbeddingService(EventVersionRepository versions, RagChunkRepository chunks,
 	        RagChunkingService chunking, EmbeddingClient embedding,
 	        EventRepository events, LlmCallLogRepository logs, TransactionTemplate txTemplate,
@@ -88,29 +102,41 @@ public class EmbeddingService {
 	}
 
 	/**
-	 * 수동 재색인. versionId 가 없으면 그 이벤트 전체 버전을 돌린다.
-	 * 컨트롤러가 부르는 창구는 이것 하나로 통일. 관리자 재색인은 실행마다 rag_reindex_log 에 한 줄 남긴다.
+	 * 수동 재색인. 한 버전만 돌린다. 관리자 재색인은 실행마다 rag_reindex_log 에 한 줄 남긴다.
 	 *
-	 * ★ 전체 재색인(indexAllEvents)이 내부에서 이 메서드를 자기호출한다. 그때는 reindexing 플래그가
-	 *   이미 잡혀 있으므로 개별 기록을 하지 않는다 — 이벤트 수만큼 기록하면 이력이 도배되고,
-	 *   전체 실행은 ALL 행 하나로 대신 남긴다.
+	 * ★ versionId 가 null 이면 전체 재색인(indexAllEvents)이 자기호출하는 내부 창구로 본다 —
+	 *   가드·기록 없이 본문만 돈다. 이벤트 수만큼 기록하면 이력이 도배되고, 전체 실행은
+	 *   ALL 행 하나로 대신 남긴다. 컨트롤러는 ReindexRequest 로 versionId 를 필수 검증하므로
+	 *   이 경로는 내부 전용이다.
+	 * ★ 같은 버전(또는 그 이벤트)이 이미 진행 중이면 RagException(RAG409-0) 으로 쳐낸다.
 	 */
 	@Transactional
 	public int reindex(Long eventId, Long versionId, Long adminId) {
-		if (reindexing.get()) {
-			return runReindex(eventId, versionId);
+		if (versionId == null) {
+			return runReindex(eventId, null);
+		}
+		// 선점 실패는 그대로 쳐낸다 — 이놈의 finally 가 남의 자리를 풀지 않게 guarding 으로 골라 반납한다
+		final boolean guarding = bindReindexGuard(eventId, versionId);
+		if (!guarding) {
+			throw new RagException(RagErrorCode.REINDEX_IN_PROGRESS);
 		}
 		long startMs = System.currentTimeMillis();
 		try {
 			int total = runReindex(eventId, versionId);
-			recordReindex(versionId != null ? "SINGLE" : "EVENT", eventId, versionId, adminId,
+			recordReindex("SINGLE", eventId, versionId, adminId,
 					total, System.currentTimeMillis() - startMs, true, null);
 			return total;
 		} catch (RuntimeException e) {
 			// 저장·삭제가 통째로 없던 일이 되므로 청크 수는 알 수 없다 — null 로 남긴다
-			recordReindex(versionId != null ? "SINGLE" : "EVENT", eventId, versionId, adminId,
+			recordReindex("SINGLE", eventId, versionId, adminId,
 					null, System.currentTimeMillis() - startMs, false, errorOf(e));
 			throw e;
+		} finally {
+			// 실패 흐름에서도 키는 반납한다. 해제가 커밋 직전이라 짧은 틈은 남지만, 다음 실행의
+			// DELETE 는 아직 커밋 못 한 행의 잠금에서 대기하므로 DB 차원에서 겹치지 않는다.
+			if (guarding) {
+				unbindReindexGuard(eventId, versionId);
+			}
 		}
 	}
 
@@ -164,11 +190,8 @@ public class EmbeddingService {
 			return 0;
 		}
 		// 지우기와 저장을 한 트랜잭션으로 묶음. 중간에 실패하면 둘 다 없던 일이 되어 절반만 저장되는 일은 없음.
+		// 벌크 DELETE 는 곧바로 SQL 로 나가므로 이후 flush 의 INSERT 는 반드시 그 뒤로 간다.
 		chunks.deleteByEventIdAndVersionId(eventId, versionId);
-		// derived delete 는 행을 읽어 지우기로 표시만 하고 SQL 은 flush 때 나간다.
-		// 같은 키를 다시 넣기 전에 flush 로 삭제를 먼저 반영한다. 안 그러면 flush 때
-		// INSERT 가 DELETE 보다 먼저 나가 유니크 제약을 어긴다.
-		chunks.flush();
 		List<RagChunk> entities = new ArrayList<>(parts.size());
 		for(Chunk p : parts) {
 			float[] vec = embedding.embedDocument(p.content());
@@ -204,12 +227,21 @@ public class EmbeddingService {
 	 * @param requestedBy 시킨 관리자 ID. 스케줄러는 null — 이력에 system 으로 남는다
 	 */
 	public boolean tryClaimReindexSlot(Long requestedBy) {
-		if (!reindexing.compareAndSet(false, true)) {
-			return false;
+		synchronized (reindexGuard) {
+			if (!reindexing.compareAndSet(false, true)) {
+				return false;
+			}
+			// 단건이 진행 중이면 전체 재색인을 시작하지 않는다. 전체는 모든 버전을 지우고 다시
+			// 넣기 때문에 진행 중 버전과 반드시 위태워진다(NEWVENT-BACKEND-6·7). 스케줄러는
+			// 다음 cron 에, REST 는 409 진행 상태 응답으로 흘러간다.
+			if (!inFlightVersions.isEmpty()) {
+				reindexing.set(false);
+				return false;
+			}
+			reindexRequestedBy = requestedBy;
+			reindexStartedAt = Instant.now();
+			return true;
 		}
-		reindexRequestedBy = requestedBy;
-		reindexStartedAt = Instant.now();
-		return true;
 	}
 
 	/** 진행 상태 조회. 실행 중 여부·시작·종료·직전 결과. */
@@ -227,6 +259,51 @@ public class EmbeddingService {
 	public void releaseReindexSlot() {
 		reindexing.set(false);
 		reindexRequestedBy = null;
+	}
+
+	/**
+	 * 단건 재색인의 버전 자리를 뽑는다. 전체 재색인이 도는 중이거나 같은 버전(이벤트)이
+	 * 진행 중이면 false — 호출자가 RagException(RAG409-0) 으로 쳐낸다.
+	 * 패키지 공개: 가드 회귀 테스트가 직접 선점·반납을 본다.
+	 */
+	boolean bindReindexGuard(Long eventId, Long versionId) {
+		synchronized (reindexGuard) {
+			if (reindexing.get()) {
+				return false;
+			}
+			if (isConflictingReindex(eventId, versionId)) {
+				return false;
+			}
+			inFlightVersions.add(reindexKey(eventId, versionId));
+			return true;
+		}
+	}
+
+	/** 뽑은 버전 자리를 반납한다. reindex() 의 finally 가 부른다. */
+	void unbindReindexGuard(Long eventId, Long versionId) {
+		synchronized (reindexGuard) {
+			inFlightVersions.remove(reindexKey(eventId, versionId));
+		}
+	}
+
+	// 지금 진행 중인 단건 키와 겹치는지. 겹침 두 가지 — 같은 키, 이벤트 전체(단 건들 모두와 겹침)
+	private boolean isConflictingReindex(Long eventId, Long versionId) {
+		String eventKey = "e" + eventId;
+		for (String held : inFlightVersions) {
+			if (held.equals(reindexKey(eventId, versionId)) || held.equals(eventKey)) {
+				return true;
+			}
+			// 내가 이벤트 전체를 돌리는 중(versionId null)이면 그 이벤트의 버전 단건 하나만으로도 겹친다
+			if (versionId == null && held.startsWith("v" + eventId + ":")) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// 진행 중 키. "e<EventId>" = 이벤트 전체 단건, "v<EventId>:<VersionId>" = 한 버전 단건
+	private static String reindexKey(Long eventId, Long versionId) {
+		return versionId == null ? "e" + eventId : "v" + eventId + ":" + versionId;
 	}
 
 	/**

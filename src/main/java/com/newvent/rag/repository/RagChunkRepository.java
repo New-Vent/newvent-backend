@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
@@ -96,8 +97,14 @@ public interface RagChunkRepository extends JpaRepository<RagChunk, Long>{
 		@Param("versionIds") List<Long> versionIds,
 		@Param("maxDistance") double maxDistance);
 
-	// 같은 버전을 다시 색인할 때 묵은 청크를 지우는 용도
-	void deleteByEventIdAndVersionId(Long eventId, Long versionId);
+	// 같은 버전을 다시 색인할 때 묵은 청크를 지우는 용도 (벌크 DELETE — 지운 행 수를 돌려준다)
+	// ★ NEWVENT-BACKEND-7. 파생 delete 는 행을 SELECT 로 뽑아 id 마다 DELETE 하는데, 그 두 단계
+	//   사이에 다른 재색인이 행을 지우고 커밋하면 DELETE 영향행 검증(row count 0)이 실패해
+	//   ObjectOptimisticLockingFailure 로 난다. WHERE 절 하나인 벌크 DELETE 는 그 검증 틈이 없다.
+	//   질의가 즉시 SQL 로 나가므로 이후 flush 의 INSERT 는 반드시 DELETE 뒤에 간다.
+	@Modifying
+	@Query("delete from RagChunk r where r.event.id = :eventId and r.version.id = :versionId")
+	int deleteByEventIdAndVersionId(@Param("eventId") Long eventId, @Param("versionId") Long versionId);
 
 	// 청크가 하나라도 들어간 버전 수
 	@Query("select count(distinct r.version.id) from RagChunk r where r.event.id = :eventId")
